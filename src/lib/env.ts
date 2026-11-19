@@ -6,6 +6,15 @@ function required(name: string): string {
   return value;
 }
 
+/** First non-empty variable among `names`; throws naming them all if none is set. */
+function requiredAny(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  throw new Error(`Missing environment variable: set one of ${names.join(", ")} (see .env.example)`);
+}
+
 export const env = {
   get appUrl() {
     return required("APP_URL").replace(/\/$/, "");
@@ -13,11 +22,13 @@ export const env = {
   get tenantSlug() {
     return process.env.TENANT_SLUG || "watchat";
   },
+  // The Vercel ↔ Supabase integration sets NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY
+  // (new-style sb_secret_ key); manual setups often use SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.
   get supabaseUrl() {
-    return required("SUPABASE_URL");
+    return requiredAny("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL");
   },
   get supabaseServiceRoleKey() {
-    return required("SUPABASE_SERVICE_ROLE_KEY");
+    return requiredAny("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY");
   },
   get waPhoneNumberId() {
     return required("WHATSAPP_PHONE_NUMBER_ID");
