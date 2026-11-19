@@ -1,0 +1,10 @@
+# Watchat — notes for coding agents
+
+- Arabic first: every viewer-facing string has Arabic and English, Arabic is the default, layouts are RTL.
+- WhatsApp messages go through `src/lib/whatsapp/messages.ts` (it enforces Meta's limits: 3 buttons, 20-char titles, 10 list rows). Never call the Graph API with hand-built payloads.
+- Bot behaviour lives in `src/lib/bot/flow.ts` behind the `BotDeps` interface; add a test in `flow.test.ts` for every new branch.
+- Database access is server-only via `db()` (service role). Never import `src/lib/supabase.ts` into client components.
+- Never store raw phone numbers in events or logs; use `phone_hmac`.
+- `wallet_ledger` is append-only: never update or delete rows.
+- Schema changes: add a new file in `supabase/migrations/`, never edit an applied migration.
+- Before committing: `npm test`, `npm run typecheck`, `npm run build`.
