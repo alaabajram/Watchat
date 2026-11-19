@@ -10,7 +10,7 @@ This repo is the **prototype starter**: the WhatsApp bot (welcome → language �
 
 | Part | Choice |
 | --- | --- |
-| App (player, API, webhook) | Next.js 16 on **Vercel**, functions in the Dubai region (`dxb1`) |
+| App (player, API, webhook) | Next.js 16 on **Vercel**, functions in Mumbai (`bom1`), next to the Supabase database (ap-south-1). Switch to Dubai (`dxb1`) when it is available to your account |
 | Database | **Supabase** Postgres (all tables server-only via RLS) |
 | WhatsApp | **Meta WhatsApp Cloud API**, direct (no BSP) |
 | Web video | **Cloudflare Stream** (adaptive HLS, iframe player) |
@@ -67,7 +67,7 @@ Upload each episode, copy its video id into `episodes.stream_uid`, and set `CLOU
 ### 4. Vercel
 1. Import this GitHub repo in Vercel.
 2. Add every key from `.env.example` under **Settings → Environment Variables** (`APP_URL` = your Vercel URL).
-3. Deploy. `vercel.json` pins functions to Dubai (`dxb1`).
+3. Deploy. `vercel.json` pins functions to Mumbai (`bom1`), the same region as the database.
 
 ### Local development
 ```bash
