@@ -283,6 +283,7 @@ alter view wallet_balances set (security_invoker = true);
 create or replace function redeem_link_token(p_token_hash text)
 returns table (viewer_id uuid, series_id uuid, episode_number int, purpose text)
 language sql
+set search_path = public
 as $$
   update link_tokens
      set uses_left = uses_left - 1
@@ -291,3 +292,7 @@ as $$
      and expires_at > now()
   returning link_tokens.viewer_id, link_tokens.series_id, link_tokens.episode_number, link_tokens.purpose;
 $$;
+
+-- Only the server may call it (not the public anon / publishable keys).
+revoke execute on function redeem_link_token(text) from public, anon, authenticated;
+grant execute on function redeem_link_token(text) to service_role;
