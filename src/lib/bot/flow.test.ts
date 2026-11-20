@@ -46,7 +46,7 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
   const deps: BotDeps = {
     upsertViewer: async (m) => ({ id: "v1", waId: m.from, language, pinHintSent }),
     mintAccountLink: async () => "https://watchat.test/w/token-account",
-    accountUrl: () => "https://watchat.test/me",
+    accountUrl: async () => "https://watchat.test/me",
     markPinHintSent: async (id) => {
       pinHintSent = true;
       pinMarks.push(id);

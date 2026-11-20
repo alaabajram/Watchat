@@ -4,6 +4,7 @@
 // Coming back here costs no WhatsApp messages.
 
 import Link from "next/link";
+import { SiteFooter } from "@/components/site/SiteFooter";
 import { TopBar } from "@/components/TopBar";
 import { getLibrary } from "@/lib/content";
 import { env } from "@/lib/env";
@@ -102,6 +103,7 @@ export default async function MyAccountPage() {
 
         <p className="muted" style={{ fontSize: 13 }}>{t.pinTip}</p>
       </div>
+      <SiteFooter locale={locale} />
     </main>
   );
 }

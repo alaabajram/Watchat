@@ -6,7 +6,7 @@ import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
 import { db } from "@/lib/supabase";
-import { env } from "@/lib/env";
+import { siteUrl } from "@/lib/site/store";
 import { getBusinessProfile, type BusinessProfile } from "@/lib/whatsapp/profile";
 import { saveBotMessagesAction, setAccountLinkOnProfileAction } from "../../bot-actions";
 
@@ -17,7 +17,7 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const { data: rows } = await db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId).is("series_id", null);
   const current = new Map((rows ?? []).map((r) => [`${r.key}.${r.lang}`, r.body as string]));
-  const accountUrl = `${env.appUrl}/me`;
+  const accountUrl = `${await siteUrl()}/me`;
   // The profile box is a nice-to-have: whatever Meta does, the replies below must still load.
   let profile: BusinessProfile | string;
   try {

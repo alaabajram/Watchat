@@ -1,12 +1,19 @@
 // Privacy notice (required by Meta to publish the WhatsApp app). Draft — have counsel review before launch.
 
 import type { Metadata } from "next";
+import { SitePageView } from "@/components/site/SitePageView";
+import { getPublishedPage } from "@/lib/site/store";
 
 export const metadata: Metadata = { title: "Privacy · الخصوصية — Watchat" };
 
 const UPDATED = "20 November 2026";
 
-export default function PrivacyPage() {
+export const dynamic = "force-dynamic";
+
+export default async function PrivacyPage() {
+  // The version published in Admin → Brand & site wins; this built-in notice is the fallback.
+  const page = await getPublishedPage("privacy");
+  if (page) return <SitePageView page={page} />;
   return (
     <main className="page">
       <section dir="rtl" lang="ar">

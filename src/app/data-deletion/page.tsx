@@ -1,6 +1,7 @@
 // Data deletion instructions (required by Meta to publish the WhatsApp app).
 
 import type { Metadata } from "next";
+import { SiteFooter } from "@/components/site/SiteFooter";
 
 export const metadata: Metadata = { title: "Delete my data · حذف بياناتي — Watchat" };
 
@@ -36,6 +37,7 @@ export default function DataDeletionPage() {
         </ol>
         <p className="muted">We keep purchase records only where tax law requires it, and only for as long as it requires.</p>
       </section>
+      <SiteFooter />
     </main>
   );
 }

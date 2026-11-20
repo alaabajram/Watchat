@@ -22,7 +22,7 @@ function Poster({ s, title }: { s: HomeSeries; title: string }) {
   );
 }
 
-export function HomeScreen({ locale, balance, catalogue, watching, genre }: Props) {
+export function HomeScreen({ locale, balance, catalogue, watching, genre, logo = null }: Props & { logo?: string | null }) {
   const t = webCopy(locale);
   const rtl = locale === "ar";
   const title = (s: { titleAr: string; titleEn: string }) => (locale === "en" ? s.titleEn : s.titleAr);
@@ -47,7 +47,7 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre }: Prop
   const activeGenre = genre && genresPresent.includes(genre as (typeof GENRES)[number]) ? genre : null;
   const explore = activeGenre ? catalogue.filter((s) => s.genres.includes(activeGenre)) : catalogue;
   const continueList = watching.filter((w) => w.resume).slice(0, 3);
-  const wordmark = locale === "en" ? "/brand/wordmark-en-dark.png" : "/brand/wordmark-ar-dark.png";
+  const wordmark = logo ?? (locale === "en" ? "/brand/wordmark-en-dark.png" : "/brand/wordmark-ar-dark.png");
 
   return (
     <div className="wc" dir={dirFor(locale)} lang={locale}>

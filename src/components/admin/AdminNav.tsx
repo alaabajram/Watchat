@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 export type NavItem = { href: string; label: string; icon: IconName; group: string };
 export type IconName =
   | "dashboard" | "spend" | "cms" | "flow" | "replies" | "template" | "sequence" | "campaign"
-  | "growth" | "viewers" | "orders" | "pricing" | "team" | "ai" | "audit";
+  | "growth" | "viewers" | "orders" | "pricing" | "team" | "ai" | "audit" | "brand";
 
 const PATHS: Record<IconName, string> = {
   dashboard: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z",
@@ -25,6 +25,7 @@ const PATHS: Record<IconName, string> = {
   team: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
   ai: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z",
   audit: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7zM9 12l2 2 4-4",
+  brand: "M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3 3h-2a2 2 0 0 0-1 3.7A1.5 1.5 0 0 1 12 21zM7.5 11.5h.01M10.5 7.5h.01M15 8h.01",
 };
 
 // Pictures instead of line icons for a few tabs (the growth agent's robot mascot).

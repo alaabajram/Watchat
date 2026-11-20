@@ -6,6 +6,7 @@
 // where the bot sends a fresh link to *their own* number. So a forwarded link never opens the sender's
 // account, wallet or progress — the receiver gets their own.
 
+import { siteUrl } from "./site/store";
 import { randomToken, sha256Hex } from "./crypto";
 import { env } from "./env";
 import type { MsgRef } from "./ctr/ctr";
@@ -46,7 +47,7 @@ export async function mintLink(params: {
     ...refColumns(params.ref),
   });
   if (error) throw new Error(`mintLink failed: ${error.message}`);
-  return `${env.appUrl}/w/${token}`;
+  return `${await siteUrl()}/w/${token}`;
 }
 
 /** Sign-in link with no series: opens "My account" (/me). */
@@ -62,7 +63,7 @@ export async function mintAccountLink(viewerId: string): Promise<string> {
     expires_at: new Date(Date.now() + LINK_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
   if (error) throw new Error(`mintAccountLink failed: ${error.message}`);
-  return `${env.appUrl}/w/${token}`;
+  return `${await siteUrl()}/w/${token}`;
 }
 
 export const refColumns = (ref?: MsgRef) => (ref ? { ref_type: ref.type, ref_id: ref.id, node_id: ref.node ?? null } : {});

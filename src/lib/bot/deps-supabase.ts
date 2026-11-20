@@ -1,5 +1,6 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import { siteUrl } from "../site/store";
 import { ensurePublishedFlow } from "../flows/standard";
 import type { SeriesProgress } from "../flows/engine";
 import { sanitizeGraph } from "../flows/sanitize";
@@ -284,7 +285,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       return mintAccountLink(viewerId);
     },
 
-    accountUrl: () => `${env.appUrl}/me`,
+    accountUrl: async () => `${await siteUrl()}/me`,
 
     async markPinHintSent(viewerId: string): Promise<void> {
       await db().from("viewers").update({ pin_hint_at: new Date().toISOString() }).eq("id", viewerId);

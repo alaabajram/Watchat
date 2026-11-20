@@ -1,5 +1,6 @@
 "use server";
 
+import { siteUrl } from "@/lib/site/store";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done } from "@/lib/admin/forms";
 import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
@@ -42,7 +43,7 @@ export async function saveBotMessagesAction(fd: FormData) {
 export async function setAccountLinkOnProfileAction() {
   const admin = await requireAdmin("bot");
   const back = "/admin/bot";
-  const accountUrl = `${env.appUrl}/me`;
+  const accountUrl = `${await siteUrl()}/me`;
   try {
     const profile = await getBusinessProfile();
     const websites = websitesWithAccount(profile.websites, accountUrl);

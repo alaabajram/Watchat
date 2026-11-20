@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { AdminNavLinks, type NavItem } from "@/components/admin/AdminNav";
 import { can, requireSignedIn, type Area } from "@/lib/admin/auth";
+import { getSiteSafe } from "@/lib/site/store";
 import { logoutAction } from "../auth-actions";
 
 export const dynamic = "force-dynamic";
@@ -22,19 +23,20 @@ const NAV: (NavItem & { area: Area })[] = [
   { href: "/admin/viewers", label: "Viewers", area: "viewers", icon: "viewers", group: "Viewers & money" },
   { href: "/admin/orders", label: "Orders & payments", area: "orders", icon: "orders", group: "Viewers & money" },
   { href: "/admin/pricing", label: "Pricing", area: "pricing", icon: "pricing", group: "Viewers & money" },
+  { href: "/admin/site", label: "Brand & site", area: "site", icon: "brand", group: "Settings" },
   { href: "/admin/team", label: "Team", area: "team", icon: "team", group: "Settings" },
   { href: "/admin/ai", label: "AI account", area: "aiAccount", icon: "ai", group: "Settings" },
   { href: "/admin/audit", label: "Audit log", area: "audit", icon: "audit", group: "Settings" },
 ];
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
-  const admin = await requireSignedIn();
+  const [admin, site] = await Promise.all([requireSignedIn(), getSiteSafe()]);
   return (
     <div className="admin-shell">
       <nav className="admin-nav">
         <Link href="/admin" className="brand" aria-label="Watchat admin home">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/wordmark-en-white.png" alt="Watchat" />
+          <img src={site.logoOnDark} alt={site.nameEn} />
           <span>Admin</span>
         </Link>
         <AdminNavLinks items={NAV.filter((n) => can(admin, n.area)).map(({ href, label, icon, group }) => ({ href, label, icon, group }))} />

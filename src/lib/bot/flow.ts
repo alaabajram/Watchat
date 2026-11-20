@@ -98,7 +98,7 @@ export interface BotDeps {
   /** A personal sign-in link that opens "My account" (/me). */
   mintAccountLink(viewerId: string): Promise<string>;
   /** The fixed account address everyone keeps (watchat.pro/me). */
-  accountUrl(): string;
+  accountUrl(): Promise<string>;
   markPinHintSent(viewerId: string): Promise<void>;
   /** `ref` says which flow card (or other sender) this is, for the CTR meters. */
   send(to: string, msg: OutMessage, ref?: MsgRef): Promise<void>;
@@ -158,7 +158,7 @@ function withPinHint(viewer: Viewer, deps: BotDeps): BotDeps {
     async send(to, m, ref) {
       if (viewer.pinHintSent || m.kind !== "cta_url" || !m.url.includes("/w/")) return deps.send(to, m, ref);
       const { t } = await ctxFor(viewer, null, deps);
-      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${deps.accountUrl()}` }, ref);
+      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${await deps.accountUrl()}` }, ref);
       viewer.pinHintSent = true;
       await deps.markPinHintSent(viewer.id);
     },

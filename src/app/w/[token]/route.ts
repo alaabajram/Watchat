@@ -6,6 +6,7 @@
 //    → /continue: the opener continues in WhatsApp and gets a fresh link for THEIR OWN number.
 //    A forwarded link therefore never opens the sender's account, wallet or progress.
 
+import { siteUrl } from "@/lib/site/store";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
@@ -25,7 +26,7 @@ function noStore(res: NextResponse) {
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const base = env.appUrl;
+  const base = await siteUrl();
   const ip = clientIp(req.headers);
 
   // Slow down anyone guessing tokens.

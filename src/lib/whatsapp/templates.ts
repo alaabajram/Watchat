@@ -3,6 +3,7 @@
 // Templates with an image header need an example image upload on Meta's side: create those in
 // WhatsApp Manager, then use "Sync from Meta" in the admin.
 
+import { siteUrl } from "../site/store";
 import { env } from "../env";
 
 export type TemplateRow = {
@@ -41,14 +42,14 @@ export async function submitTemplate(t: TemplateRow): Promise<{ ok: true; metaId
   const res = await fetch(graph(`${wabaId}/message_templates`), {
     method: "POST",
     headers: { Authorization: `Bearer ${env.waAccessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: t.name, language: t.lang, category: t.category.toUpperCase(), components: templateComponents(t) }),
+    body: JSON.stringify({ name: t.name, language: t.lang, category: t.category.toUpperCase(), components: templateComponents(t, await siteUrl()) }),
   });
   const json = (await res.json().catch(() => ({}))) as { id?: string; status?: string; error?: { message?: string; error_user_msg?: string } };
   if (!res.ok || !json.id) return { ok: false, error: json.error?.error_user_msg ?? json.error?.message ?? `HTTP ${res.status}` };
   return { ok: true, metaId: json.id, status: json.status ?? "PENDING" };
 }
 
-function templateComponents(t: Omit<TemplateRow, "id">): Record<string, unknown>[] {
+function templateComponents(t: Omit<TemplateRow, "id">, base: string): Record<string, unknown>[] {
   const n = placeholderCount(t.body);
   const components: Record<string, unknown>[] = [
     { type: "BODY", text: t.body, ...(n ? { example: { body_text: [EXAMPLE_PARAMS.slice(0, n)] } } : {}) },
@@ -58,7 +59,7 @@ function templateComponents(t: Omit<TemplateRow, "id">): Record<string, unknown>
   } else if (t.button_text) {
     components.push({
       type: "BUTTONS",
-      buttons: [{ type: "URL", text: t.button_text, url: `${env.appUrl}/w/{{1}}`, example: [`${env.appUrl}/w/Xk3exampleToken`] }],
+      buttons: [{ type: "URL", text: t.button_text, url: `${base}/w/{{1}}`, example: [`${base}/w/Xk3exampleToken`] }],
     });
   }
   return components;
@@ -72,7 +73,7 @@ export async function editTemplateOnMeta(metaId: string, t: Omit<TemplateRow, "i
   const res = await fetch(graph(metaId), {
     method: "POST",
     headers: { Authorization: `Bearer ${env.waAccessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ components: templateComponents(t), ...(opts.category ? { category: t.category.toUpperCase() } : {}) }),
+    body: JSON.stringify({ components: templateComponents(t, await siteUrl()), ...(opts.category ? { category: t.category.toUpperCase() } : {}) }),
   });
   const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: { message?: string; error_user_msg?: string } };
   if (!res.ok || !json.success) return { ok: false, error: json.error?.error_user_msg ?? json.error?.message ?? `HTTP ${res.status}` };

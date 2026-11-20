@@ -3,16 +3,17 @@
 
 import { businessHtml } from "./content";
 import { env } from "@/lib/env";
+import { getSiteSafe } from "@/lib/site/store";
 
-/** Where "talk to partnerships" and "support" go: BUSINESS_CONTACT_EMAIL if set, else the Watchat WhatsApp chat. */
-function contactHref(): string {
-  const email = process.env.BUSINESS_CONTACT_EMAIL;
+/** Where "talk to partnerships" and "support" go: the business email from Brand & site (or BUSINESS_CONTACT_EMAIL), else the WhatsApp chat. */
+function contactHref(businessEmail: string | null): string {
+  const email = businessEmail;
   if (email && /^[^\s@<>"]+@[^\s@<>"]+$/.test(email)) return `mailto:${email}`;
   return env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}` : "https://watchat.pro";
 }
 
-export function BusinessPage({ locale }: { locale: "ar" | "en" }) {
-  const href = contactHref();
+export async function BusinessPage({ locale }: { locale: "ar" | "en" }) {
+  const href = contactHref((await getSiteSafe()).businessEmail);
   const html = businessHtml[locale].replaceAll("__PARTNERS__", href).replaceAll("__SUPPORT__", href);
   return <div className="wc-biz" lang={locale} dangerouslySetInnerHTML={{ __html: html }} />;
 }

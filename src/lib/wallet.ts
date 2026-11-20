@@ -1,6 +1,7 @@
 // Wallet: balance, history, coin unlocks and paid orders. Every money change runs inside a Postgres
 // function (unlock_episode, fulfil_order, grant_coins) so it is atomic and the ledger stays append-only.
 
+import { siteUrl } from "./site/store";
 import { env } from "./env";
 import { trackEvent } from "./events";
 import { createCharge, getCharge } from "./payments/tap";
@@ -178,14 +179,15 @@ export async function startCheckout(params: {
   const digits = (viewer?.phone_e164 ?? "").replace(/\D/g, "");
   const cc = ["971", "966", "965", "974", "973", "968"].find((p) => digits.startsWith(p)) ?? digits.slice(0, 3);
 
+  const base = await siteUrl();
   const charge = await createCharge({
     orderId: order.id,
     amount,
     currency,
     description,
     phone: { countryCode: cc, number: digits.slice(cc.length) },
-    redirectUrl: `${env.appUrl}/payment/return?order=${order.id}&back=${encodeURIComponent(params.returnTo)}`,
-    webhookUrl: `${env.appUrl}/api/payments/tap`,
+    redirectUrl: `${base}/payment/return?order=${order.id}&back=${encodeURIComponent(params.returnTo)}`,
+    webhookUrl: `${base}/api/payments/tap`,
   });
   const url = charge.transaction?.url;
   if (!url) throw new Error("Tap returned no checkout URL.");

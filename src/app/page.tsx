@@ -9,6 +9,8 @@ import { HomeScreen } from "@/components/home/HomeScreen";
 import { getHome } from "@/lib/content";
 import { env } from "@/lib/env";
 import { getSessionViewer } from "@/lib/session";
+import { DEFAULT_SITE } from "@/lib/site/brand";
+import { getSiteSafe } from "@/lib/site/store";
 import { getBalance } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +25,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
     return <Splash locale={locale} waHref={wa} />;
   }
 
-  const [{ catalogue, watching }, balance] = await Promise.all([getHome(viewer.id), getBalance(viewer.id)]);
-  return <HomeScreen locale={viewer.uiLocale} balance={balance} catalogue={catalogue} watching={watching} genre={params.genre ?? null} />;
+  const [{ catalogue, watching }, balance, site] = await Promise.all([getHome(viewer.id), getBalance(viewer.id), getSiteSafe()]);
+  const logo = site.logoOnLight === DEFAULT_SITE.logoOnLight ? null : site.logoOnLight; // a label's own logo, else the Arabic/English Watchat wordmark
+  return <HomeScreen locale={viewer.uiLocale} balance={balance} catalogue={catalogue} watching={watching} genre={params.genre ?? null} logo={logo} />;
 }
