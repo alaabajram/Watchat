@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
 import { EMPTY_STATE, handleInbound, type BotDeps, type ChatState, type Series, type ViewerLang } from "./flow";
+import type { CopyOverrides } from "./copy";
 import { IDS } from "./intents";
 
 const SERIES: Series = {
@@ -13,11 +14,15 @@ const SERIES: Series = {
   trailerUrl: "https://cdn.example/trailer.mp4",
   episodeCount: 30,
   waEpisodeCount: 3,
+  askLanguage: true,
+  sendTrailer: true,
+  askOptIn: true,
 };
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
-function fakeDeps() {
+function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string } = {}) {
+  const series: Series = { ...SERIES, ...opts.series };
   const sent: OutMessage[] = [];
   const events: string[] = [];
   let state: ChatState = EMPTY_STATE;
@@ -33,8 +38,8 @@ function fakeDeps() {
     setViewerLanguage: async (_id, l) => {
       language = l;
     },
-    findSeriesByCode: async (code) => [SERIES, OTHER].find((s) => s.code === code) ?? null,
-    getSeries: async (id) => [SERIES, OTHER].find((s) => s.id === id) ?? null,
+    findSeriesByCode: async (code) => [series, OTHER].find((s) => s.code === code) ?? null,
+    getSeries: async (id) => [series, OTHER].find((s) => s.id === id) ?? null,
     getClip: async (_sid, n) => ({
       number: n,
       titleAr: null,
@@ -42,7 +47,9 @@ function fakeDeps() {
       videoUrlAr: `https://cdn.example/ep${n}-ar.mp4`,
       videoUrlEn: `https://cdn.example/ep${n}-en.mp4`,
     }),
-    listOtherSeries: async (exclude) => [SERIES, OTHER].filter((s) => s.id !== exclude),
+    listOtherSeries: async (exclude) => [series, OTHER].filter((s) => s.id !== exclude),
+    getCopyOverrides: async () => opts.overrides ?? {},
+    confirmSpendCode: async (_v, code) => code === opts.validCode,
     getOptIn: async () => optIn,
     setOptIn: async (_id, s) => {
       optIn = s;
@@ -148,6 +155,30 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.events).toContain("data_deletion_requested");
     expect(f.getOptIn()).toBe("out");
     expect(f.sent.at(-1)).toMatchObject({ kind: "text" });
+  });
+
+  it("uses admin text overrides", async () => {
+    const f = fakeDeps({ overrides: { trailerBody: "Custom trailer for {title}" } });
+    await handleInbound(text("SECRETS01"), f.deps);
+    await handleInbound(tap(IDS.langAr), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: "Custom trailer for أسرار البيت" });
+  });
+
+  it("follows the scenario: no language question, no trailer, no opt-in, 1 chat episode", async () => {
+    const f = fakeDeps({ series: { askLanguage: false, sendTrailer: false, askOptIn: false, waEpisodeCount: 1 } });
+    await handleInbound(text("SECRETS01"), f.deps);
+    // Straight to episode 1 (the only chat episode), then the link to episode 2, no opt-in question.
+    expect(f.sent.map((m) => m.kind)).toEqual(["video", "cta_url"]);
+    expect(f.sent[1]).toMatchObject({ url: "https://watchat.test/w/token-ep2" });
+    expect(f.getState()).toMatchObject({ step: "linked", waEpisode: 1 });
+  });
+
+  it("confirms a device with the right code only", async () => {
+    const f = fakeDeps({ validCode: "123456" });
+    await handleInbound(text("CONFIRM 999999"), f.deps);
+    expect(f.events).not.toContain("device_confirmed");
+    await handleInbound(text("confirm 123456"), f.deps);
+    expect(f.events).toContain("device_confirmed");
   });
 
   it("answers random text with the menu", async () => {

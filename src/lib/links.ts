@@ -31,7 +31,16 @@ export async function mintLink(params: {
   return `${env.appUrl}/w/${token}`;
 }
 
-export type RedeemedLink = { viewerId: string; seriesId: string | null; episodeNumber: number | null };
+export type RedeemedLink = {
+  viewerId: string;
+  seriesId: string | null;
+  episodeNumber: number | null;
+  /** First open of a link that was sent minutes ago: almost certainly the number's owner. */
+  fresh: boolean;
+};
+
+/** A link opened for the first time within this many minutes of being sent starts a trusted session. */
+export const FRESH_LINK_MINUTES = 30;
 
 /** Consume one use of a link. Returns null if the token is unknown, expired or used up. */
 export async function redeemLink(token: string): Promise<RedeemedLink | null> {
@@ -40,5 +49,7 @@ export async function redeemLink(token: string): Promise<RedeemedLink | null> {
   if (error) throw new Error(`redeemLink failed: ${error.message}`);
   const row = Array.isArray(data) ? data[0] : null;
   if (!row) return null;
-  return { viewerId: row.viewer_id, seriesId: row.series_id, episodeNumber: row.episode_number };
+  const mintedAt = row.minted_at ? new Date(row.minted_at).getTime() : 0;
+  const fresh = row.first_use === true && Date.now() - mintedAt < FRESH_LINK_MINUTES * 60 * 1000;
+  return { viewerId: row.viewer_id, seriesId: row.series_id, episodeNumber: row.episode_number, fresh };
 }

@@ -3,11 +3,12 @@
 // (see flow.test.ts) and easy to re-host for a partner brand.
 //
 // Messages follow the screens doc: W1 welcome+language · W2 trailer · W3/W4 episodes · W5 cliffhanger link
-// · W6 opt-in · W7 not for me · W12 menu · W14 alerts stopped.
+// · W6 opt-in · W7 not for me · W12 menu · W13 device confirmed · W14 alerts stopped.
+// Texts come from copy.ts with admin overrides; the scenario switches come from the series row.
 
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
-import { copyFor, type CopyLang } from "./copy";
+import { makeT, type CopyLang, type CopyOverrides, type T } from "./copy";
 import { IDS, parseIntent, type Intent } from "./intents";
 
 export type ViewerLang = "ar" | "ar_en_subs";
@@ -23,6 +24,9 @@ export type Series = {
   trailerUrl: string | null;
   episodeCount: number;
   waEpisodeCount: number; // episodes sent inside the chat (default 3)
+  askLanguage: boolean; // scenario: ask Arabic / English subtitles first
+  sendTrailer: boolean; // scenario: send the trailer before episode 1
+  askOptIn: boolean; // scenario: ask for new-episode alerts after the link
 };
 
 export type Clip = {
@@ -44,7 +48,8 @@ export type EventName =
   | "link_sent"
   | "opt_in_changed"
   | "language_set"
-  | "data_deletion_requested";
+  | "data_deletion_requested"
+  | "device_confirmed";
 
 export interface BotDeps {
   upsertViewer(msg: InboundMessage): Promise<Viewer>;
@@ -57,6 +62,10 @@ export interface BotDeps {
   listOtherSeries(excludeSeriesId: string | null): Promise<Series[]>;
   getOptIn(viewerId: string): Promise<"in" | "out" | null>;
   setOptIn(viewerId: string, status: "in" | "out", source: string): Promise<void>;
+  /** Admin overrides of bot texts (defaults first, then the series' own). */
+  getCopyOverrides(seriesId: string | null, lang: CopyLang): Promise<CopyOverrides>;
+  /** Mark the browser session waiting for this code as trusted. */
+  confirmSpendCode(viewerId: string, code: string): Promise<boolean>;
   /** Web episode the viewer should land on (first unwatched, at least the one after the chat episodes). */
   resumeEpisode(viewerId: string, series: Series): Promise<number>;
   /** Create a personal signed link and return its full URL. */
@@ -71,8 +80,15 @@ export interface BotDeps {
 
 export const EMPTY_STATE: ChatState = { seriesId: null, step: "idle", waEpisode: 0 };
 
-const copyLang = (v: Viewer): CopyLang => (v.language === "ar_en_subs" ? "en" : "ar");
+const langOf = (v: Viewer): CopyLang => (v.language === "ar_en_subs" ? "en" : "ar");
 const titleOf = (s: Series, lang: CopyLang) => (lang === "en" ? s.titleEn : s.titleAr);
+
+type Ctx = { viewer: Viewer; deps: BotDeps; lang: CopyLang; t: T };
+
+async function ctxFor(viewer: Viewer, series: Series | null, deps: BotDeps): Promise<Ctx> {
+  const lang = langOf(viewer);
+  return { viewer, deps, lang, t: makeT(lang, await deps.getCopyOverrides(series?.id ?? null, lang)) };
+}
 
 /** Handle one inbound WhatsApp message end to end. */
 export async function handleInbound(msg: InboundMessage, deps: BotDeps): Promise<void> {
@@ -90,80 +106,69 @@ async function route(
   msg: InboundMessage,
   deps: BotDeps,
 ): Promise<ChatState | null> {
-  const t = copyFor(copyLang(viewer));
-  const to = viewer.waId;
   const current = state.seriesId ? await deps.getSeries(state.seriesId) : null;
+  const c = await ctxFor(viewer, current, deps);
+  const { t } = c;
+  const to = viewer.waId;
 
   switch (intent.type) {
     case "series_code": {
       const series = await deps.findSeriesByCode(intent.code);
       if (!series) {
-        await deps.send(to, { kind: "text", body: t.seriesNotFound });
+        await deps.send(to, { kind: "text", body: t("seriesNotFound") });
         return null;
       }
       await deps.track(viewer.id, "chat_started", {
         seriesId: series.id,
         props: { code: series.code, source: msg.referral ? "ctwa_ad" : "organic", referral: msg.referral ?? null },
       });
-      if (!viewer.language) {
+      if (!viewer.language && series.askLanguage) {
         await sendLanguageChoice(to, series, deps);
         return { seriesId: series.id, step: "lang", waEpisode: 0 };
       }
-      await sendTrailer(viewer, series, deps);
-      return { seriesId: series.id, step: "trailer", waEpisode: 0 };
+      const sc = await ctxFor(viewer, series, deps);
+      return startSeries(sc, series);
     }
 
     case "language": {
       await deps.setViewerLanguage(viewer.id, intent.lang);
       await deps.track(viewer.id, "language_set", { props: { language: intent.lang } });
-      const updated: Viewer = { ...viewer, language: intent.lang };
-      if (current && state.step === "lang") {
-        await sendTrailer(updated, current, deps);
-        return { ...state, step: "trailer" };
-      }
-      await sendMenu(updated, deps);
+      const updated = await ctxFor({ ...viewer, language: intent.lang }, current, deps);
+      if (current && state.step === "lang") return startSeries(updated, current);
+      await sendMenu(updated);
       return null;
     }
 
     case "next_episode": {
       if (!current) {
-        await deps.send(to, { kind: "text", body: t.needSeriesFirst });
+        await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
         return null;
       }
       if (state.waEpisode >= 1) {
         await deps.track(viewer.id, "wa_episode_done", { seriesId: current.id, episode: state.waEpisode });
       }
       if (state.waEpisode >= current.waEpisodeCount) {
-        // Already past the chat episodes: just resend the link.
-        await sendPlayerLink(viewer, current, deps);
+        await sendPlayerLink(c, current); // already past the chat episodes
         return null;
       }
-      const n = state.waEpisode + 1;
-      await sendEpisode(viewer, current, n, deps);
-      if (n < current.waEpisodeCount) return { ...state, step: "episodes", waEpisode: n };
-
-      // Last chat episode: cliffhanger link to the web (W5), then ask for alerts (W6) once.
-      await sendCliffhangerLink(viewer, current, deps);
-      if ((await deps.getOptIn(viewer.id)) === null) await sendOptInAsk(viewer, deps);
-      return { ...state, step: "linked", waEpisode: n };
+      return sendNextChatEpisode(c, current, state.waEpisode + 1);
     }
 
     case "not_for_me": {
       await deps.track(viewer.id, "wa_dropout", { seriesId: current?.id, episode: state.waEpisode });
       const others = await deps.listOtherSeries(current?.id ?? null);
       if (others.length === 0) {
-        await deps.send(to, { kind: "text", body: t.noOtherSeries });
+        await deps.send(to, { kind: "text", body: t("noOtherSeries") });
         return null;
       }
-      const lang = copyLang(viewer);
       await deps.send(to, {
         kind: "list",
-        body: t.notForMeBody,
-        buttonText: t.btnSeeSeries,
+        body: t("notForMeBody"),
+        buttonText: t("btnSeeSeries"),
         sections: [
           {
-            title: t.seriesSectionTitle,
-            rows: others.map((s) => ({ id: `${IDS.seriesPrefix}${s.code}`, title: titleOf(s, lang) })),
+            title: t("seriesSectionTitle"),
+            rows: others.map((s) => ({ id: `${IDS.seriesPrefix}${s.code}`, title: titleOf(s, c.lang) })),
           },
         ],
       });
@@ -173,39 +178,41 @@ async function route(
     case "opt_in": {
       await deps.setOptIn(viewer.id, intent.yes ? "in" : "out", "button");
       await deps.track(viewer.id, "opt_in_changed", { props: { status: intent.yes ? "in" : "out", source: "button" } });
-      await deps.send(to, { kind: "text", body: intent.yes ? t.optInConfirmed : t.optInDeclined });
+      await deps.send(to, { kind: "text", body: intent.yes ? t("optInConfirmed") : t("optInDeclined") });
       return null;
     }
 
     case "stop": {
       await deps.setOptIn(viewer.id, "out", "stop_command");
       await deps.track(viewer.id, "opt_in_changed", { props: { status: "out", source: "stop_command" } });
-      await deps.send(to, {
-        kind: "buttons",
-        body: t.stopConfirmed,
-        buttons: [{ id: IDS.optInYes, title: t.btnAlertsOn }],
-      });
+      await deps.send(to, { kind: "buttons", body: t("stopConfirmed"), buttons: [{ id: IDS.optInYes, title: t("btnAlertsOn") }] });
       return null;
     }
 
     case "toggle_alerts": {
-      const status = await deps.getOptIn(viewer.id);
-      if (status === "in") {
+      if ((await deps.getOptIn(viewer.id)) === "in") {
         await deps.setOptIn(viewer.id, "out", "menu");
         await deps.track(viewer.id, "opt_in_changed", { props: { status: "out", source: "menu" } });
-        await deps.send(to, { kind: "buttons", body: t.stopConfirmed, buttons: [{ id: IDS.optInYes, title: t.btnAlertsOn }] });
+        await deps.send(to, { kind: "buttons", body: t("stopConfirmed"), buttons: [{ id: IDS.optInYes, title: t("btnAlertsOn") }] });
       } else {
-        await sendOptInAsk(viewer, deps);
+        await sendOptInAsk(c);
       }
       return null;
     }
 
     case "link": {
       if (!current) {
-        await deps.send(to, { kind: "text", body: t.needSeriesFirst });
+        await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
         return null;
       }
-      await sendPlayerLink(viewer, current, deps);
+      await sendPlayerLink(c, current);
+      return null;
+    }
+
+    case "confirm_code": {
+      const ok = await deps.confirmSpendCode(viewer.id, intent.code);
+      if (ok) await deps.track(viewer.id, "device_confirmed");
+      await deps.send(to, { kind: "text", body: ok ? t("confirmOk") : t("confirmFailed") });
       return null;
     }
 
@@ -215,85 +222,104 @@ async function route(
     }
 
     case "support": {
-      await deps.send(to, { kind: "text", body: t.supportBody });
+      await deps.send(to, { kind: "text", body: t("supportBody") });
       return null;
     }
 
     case "delete_data": {
-      // Logged for the team to action manually (see /data-deletion). Automate before launch.
+      // Logged for the team to action (see /data-deletion). Alerts stop immediately.
       await deps.track(viewer.id, "data_deletion_requested");
       await deps.setOptIn(viewer.id, "out", "delete_request");
-      await deps.send(to, { kind: "text", body: t.deleteRequested });
+      await deps.send(to, { kind: "text", body: t("deleteRequested") });
       return null;
     }
 
     case "menu":
     case "unknown": {
       if (!current && intent.type === "unknown") {
-        await deps.send(to, { kind: "text", body: t.needSeriesFirst });
+        await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
       }
-      await sendMenu(viewer, deps);
+      await sendMenu(c);
       return null;
     }
   }
+}
+
+/** After the code (and language): trailer if the scenario wants one, otherwise straight to episode 1. */
+async function startSeries(c: Ctx, series: Series): Promise<ChatState> {
+  if (series.sendTrailer) {
+    await sendTrailer(c, series);
+    return { seriesId: series.id, step: "trailer", waEpisode: 0 };
+  }
+  return sendNextChatEpisode(c, series, 1);
+}
+
+/** Send chat episode n; after the last chat episode, the cliffhanger link and (optionally) the alerts question. */
+async function sendNextChatEpisode(c: Ctx, series: Series, n: number): Promise<ChatState> {
+  if (series.waEpisodeCount <= 0) {
+    await sendCliffhangerLink(c, series, 1);
+    return { seriesId: series.id, step: "linked", waEpisode: 0 };
+  }
+  await sendEpisode(c, series, n);
+  if (n < series.waEpisodeCount) return { seriesId: series.id, step: "episodes", waEpisode: n };
+
+  await sendCliffhangerLink(c, series, series.waEpisodeCount + 1);
+  if (series.askOptIn && (await c.deps.getOptIn(c.viewer.id)) === null) await sendOptInAsk(c);
+  return { seriesId: series.id, step: "linked", waEpisode: n };
 }
 
 // ---------------------------------------------------------------------------
 // Message builders
 // ---------------------------------------------------------------------------
 
-/** W1 — bilingual welcome with language buttons. */
+/** W1 — bilingual welcome with language buttons (always shown in its Arabic-first default). */
 async function sendLanguageChoice(to: string, series: Series | null, deps: BotDeps) {
-  const t = copyFor("ar");
+  const t = makeT("ar", await deps.getCopyOverrides(series?.id ?? null, "ar"));
   await deps.send(to, {
     kind: "buttons",
-    body: t.welcomeAskLanguage(series ? `${series.titleAr} · ${series.titleEn}` : "Watchat"),
+    body: t("welcomeAskLanguage", { title: series ? `${series.titleAr} · ${series.titleEn}` : "Watchat" }),
     ...(series?.posterUrl ? { header: { type: "image" as const, link: series.posterUrl } } : {}),
     buttons: [
-      { id: IDS.langAr, title: t.btnArabic },
-      { id: IDS.langEn, title: t.btnEnglishSubs },
+      { id: IDS.langAr, title: t("btnArabic") },
+      { id: IDS.langEn, title: t("btnEnglishSubs") },
     ],
   });
 }
 
 /** W2 — trailer with Start / Not for me. */
-async function sendTrailer(viewer: Viewer, series: Series, deps: BotDeps) {
-  const lang = copyLang(viewer);
-  const t = copyFor(lang);
+async function sendTrailer({ viewer, deps, lang, t }: Ctx, series: Series) {
   await deps.send(viewer.waId, {
     kind: "buttons",
-    body: t.trailerBody(titleOf(series, lang)),
+    body: t("trailerBody", { title: titleOf(series, lang) }),
     ...(series.trailerUrl ? { header: { type: "video" as const, link: series.trailerUrl } } : {}),
     buttons: [
-      { id: IDS.start, title: t.btnStartEp1 },
-      { id: IDS.notForMe, title: t.btnNotForMe },
+      { id: IDS.start, title: t("btnStartEp1") },
+      { id: IDS.notForMe, title: t("btnNotForMe") },
     ],
   });
 }
 
 /** W3 / W4 — one chat episode. Episodes before the last get Next / Not for me buttons. */
-async function sendEpisode(viewer: Viewer, series: Series, n: number, deps: BotDeps) {
-  const lang = copyLang(viewer);
-  const t = copyFor(lang);
+async function sendEpisode({ viewer, deps, lang, t }: Ctx, series: Series, n: number) {
   const clip = await deps.getClip(series.id, n);
   const videoUrl = lang === "en" ? (clip?.videoUrlEn ?? clip?.videoUrlAr) : clip?.videoUrlAr;
   const epTitle = (lang === "en" ? clip?.titleEn : clip?.titleAr) ?? titleOf(series, lang);
-  const caption = t.episodeCaption(n, series.episodeCount, epTitle);
-  const isLast = n >= series.waEpisodeCount;
+  const caption = t("episodeCaption", { n, total: series.episodeCount, title: epTitle });
+  const missing = t("videoMissing", { n });
 
-  if (isLast) {
+  if (n >= series.waEpisodeCount) {
     await deps.send(
       viewer.waId,
-      videoUrl ? { kind: "video", link: videoUrl, caption } : { kind: "text", body: `${caption}\n${t.videoMissing(n)}` },
+      videoUrl ? { kind: "video", link: videoUrl, caption } : { kind: "text", body: `${caption}\n${missing}` },
     );
   } else {
     await deps.send(viewer.waId, {
       kind: "buttons",
-      body: videoUrl ? caption : `${caption}\n${t.videoMissing(n)}`,
+      body: videoUrl ? caption : `${caption}\n${missing}`,
       ...(videoUrl ? { header: { type: "video" as const, link: videoUrl } } : {}),
       buttons: [
-        { id: IDS.next, title: t.btnNext },
-        { id: IDS.notForMe, title: t.btnNotForMe },
+        { id: IDS.next, title: t("btnNext") },
+        { id: IDS.notForMe, title: t("btnNotForMe") },
       ],
     });
   }
@@ -301,14 +327,12 @@ async function sendEpisode(viewer: Viewer, series: Series, n: number, deps: BotD
 }
 
 /** W5 — personal link to the first web episode. */
-async function sendCliffhangerLink(viewer: Viewer, series: Series, deps: BotDeps) {
-  const t = copyFor(copyLang(viewer));
-  const nextEp = series.waEpisodeCount + 1;
+async function sendCliffhangerLink({ viewer, deps, t }: Ctx, series: Series, nextEp: number) {
   const url = await deps.mintLink(viewer.id, series, nextEp);
   await deps.send(viewer.waId, {
     kind: "cta_url",
-    body: t.cliffhangerBody(nextEp),
-    buttonText: t.btnWatchEp(nextEp),
+    body: t("cliffhangerBody", { next: nextEp }),
+    buttonText: t("btnWatchEp", { next: nextEp }),
     url,
     ...(series.posterUrl ? { header: { type: "image" as const, link: series.posterUrl } } : {}),
   });
@@ -316,48 +340,44 @@ async function sendCliffhangerLink(viewer: Viewer, series: Series, deps: BotDeps
 }
 
 /** W12 "Send me my link" — link to where the viewer left off. */
-async function sendPlayerLink(viewer: Viewer, series: Series, deps: BotDeps) {
-  const lang = copyLang(viewer);
-  const t = copyFor(lang);
+async function sendPlayerLink({ viewer, deps, lang, t }: Ctx, series: Series) {
   const ep = await deps.resumeEpisode(viewer.id, series);
   const url = await deps.mintLink(viewer.id, series, ep);
   await deps.send(viewer.waId, {
     kind: "cta_url",
-    body: t.linkBody(titleOf(series, lang), ep),
-    buttonText: t.btnOpenPlayer,
+    body: t("linkBody", { title: titleOf(series, lang), n: ep }),
+    buttonText: t("btnOpenPlayer"),
     url,
   });
   await deps.track(viewer.id, "link_sent", { seriesId: series.id, episode: ep, props: { purpose: "menu" } });
 }
 
 /** W6 — alerts opt-in. */
-async function sendOptInAsk(viewer: Viewer, deps: BotDeps) {
-  const t = copyFor(copyLang(viewer));
+async function sendOptInAsk({ viewer, deps, t }: Ctx) {
   await deps.send(viewer.waId, {
     kind: "buttons",
-    body: t.optInBody,
+    body: t("optInBody"),
     buttons: [
-      { id: IDS.optInYes, title: t.btnYesNotify },
-      { id: IDS.optInNo, title: t.btnNoThanks },
+      { id: IDS.optInYes, title: t("btnYesNotify") },
+      { id: IDS.optInNo, title: t("btnNoThanks") },
     ],
   });
 }
 
 /** W12 — menu list. */
-async function sendMenu(viewer: Viewer, deps: BotDeps) {
-  const t = copyFor(copyLang(viewer));
+async function sendMenu({ viewer, deps, t }: Ctx) {
   await deps.send(viewer.waId, {
     kind: "list",
-    body: t.menuBody,
-    buttonText: t.btnMenu,
+    body: t("menuBody"),
+    buttonText: t("btnMenu"),
     sections: [
       {
-        title: t.menuSectionTitle,
+        title: t("menuSectionTitle"),
         rows: [
-          { id: IDS.menuLink, title: t.menuLink },
-          { id: IDS.menuLang, title: t.menuLanguage },
-          { id: IDS.menuAlerts, title: t.menuAlerts },
-          { id: IDS.menuSupport, title: t.menuSupport },
+          { id: IDS.menuLink, title: t("menuLink") },
+          { id: IDS.menuLang, title: t("menuLanguage") },
+          { id: IDS.menuAlerts, title: t("menuAlerts") },
+          { id: IDS.menuSupport, title: t("menuSupport") },
         ],
       },
     ],

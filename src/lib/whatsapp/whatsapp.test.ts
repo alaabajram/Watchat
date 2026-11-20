@@ -81,3 +81,31 @@ describe("webhook", () => {
     expect(statuses[0]).toMatchObject({ waMessageId: "wamid.out", status: "delivered" });
   });
 });
+
+describe("templates and policy", () => {
+  it("builds a template payload with body params and a URL button", async () => {
+    const payload = toGraphPayload("971500000000", {
+      kind: "template",
+      name: "resume_reminder",
+      language: "ar",
+      bodyParams: ["أسرار البيت", "12"],
+      urlButtonParam: "tok123",
+    }) as { template: { name: string; language: { code: string }; components: { type: string }[] } };
+    expect(payload.template.name).toBe("resume_reminder");
+    expect(payload.template.language.code).toBe("ar");
+    expect(payload.template.components.map((c) => c.type)).toEqual(["body", "button"]);
+  });
+
+  it("counts template placeholders", async () => {
+    const { placeholderCount } = await import("./templates");
+    expect(placeholderCount("Hi {{1}}, episode {{2}} is ready")).toBe(2);
+    expect(placeholderCount("No params")).toBe(0);
+  });
+
+  it("respects Gulf quiet hours and estimates cost", async () => {
+    const { isQuietHours, estimateCost } = await import("../messaging/policy");
+    expect(isQuietHours(new Date("2026-11-20T19:00:00Z"))).toBe(true); // 23:00 Dubai
+    expect(isQuietHours(new Date("2026-11-20T08:00:00Z"))).toBe(false); // 12:00 Dubai
+    expect(estimateCost("marketing", ["AE", "SA"])).toBeCloseTo(0.13, 2);
+  });
+});

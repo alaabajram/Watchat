@@ -7,6 +7,8 @@ import { mintLink } from "../links";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import type { InboundMessage } from "../whatsapp/inbound";
+import { countryFromPhone } from "../phone";
+import { isCopyKey, type CopyLang, type CopyOverrides } from "./copy";
 import { EMPTY_STATE, type BotDeps, type ChatState, type Clip, type Series, type Viewer, type ViewerLang } from "./flow";
 
 type SeriesRow = {
@@ -17,11 +19,14 @@ type SeriesRow = {
   poster_url: string | null;
   trailer_video_url: string | null;
   wa_episode_count: number;
+  ask_language: boolean;
+  send_trailer: boolean;
+  ask_opt_in: boolean;
   episodes: { count: number }[] | null;
 };
 
 const SERIES_SELECT =
-  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, episodes(count)";
+  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, ask_language, send_trailer, ask_opt_in, episodes(count)";
 
 function toSeries(row: SeriesRow): Series {
   return {
@@ -33,6 +38,9 @@ function toSeries(row: SeriesRow): Series {
     trailerUrl: row.trailer_video_url,
     waEpisodeCount: row.wa_episode_count,
     episodeCount: row.episodes?.[0]?.count ?? 0,
+    askLanguage: row.ask_language,
+    sendTrailer: row.send_trailer,
+    askOptIn: row.ask_opt_in,
   };
 }
 
@@ -86,6 +94,7 @@ export function createSupabaseDeps(): BotDeps {
             phone_e164: `+${msg.from}`,
             phone_hmac: hmac,
             wa_profile_name: msg.profileName ?? null,
+            country: countryFromPhone(msg.from),
             first_source_id: firstSourceId,
           },
           { onConflict: "tenant_id,phone_hmac" },
@@ -182,6 +191,25 @@ export function createSupabaseDeps(): BotDeps {
 
     async setOptIn(viewerId: string, status: "in" | "out", source: string): Promise<void> {
       await db().from("opt_ins").insert({ viewer_id: viewerId, topic: "new_episodes", status, source });
+    },
+
+    async getCopyOverrides(seriesId: string | null, lang: CopyLang): Promise<CopyOverrides> {
+      const tenantId = await currentTenantId();
+      let query = db().from("bot_messages").select("key, body, series_id").eq("tenant_id", tenantId).eq("lang", lang);
+      query = seriesId ? query.or(`series_id.is.null,series_id.eq.${seriesId}`) : query.is("series_id", null);
+      const { data } = await query;
+      const out: CopyOverrides = {};
+      // Defaults first, then the series' own overrides win.
+      for (const row of [...(data ?? [])].sort((a, b) => (a.series_id ? 1 : 0) - (b.series_id ? 1 : 0))) {
+        if (isCopyKey(row.key) && row.body.trim()) out[row.key] = row.body;
+      }
+      return out;
+    },
+
+    async confirmSpendCode(viewerId: string, code: string): Promise<boolean> {
+      const { data, error } = await db().rpc("confirm_spend_code", { p_viewer: viewerId, p_code: code });
+      if (error) throw new Error(`confirmSpendCode failed: ${error.message}`);
+      return data === true;
     },
 
     async resumeEpisode(viewerId: string, series: Series): Promise<number> {

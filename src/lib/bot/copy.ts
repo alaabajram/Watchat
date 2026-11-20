@@ -1,125 +1,154 @@
-// Bot copy (drafts — have a Gulf copywriter polish the Arabic).
-// Button titles must stay within 20 characters; messages.ts clips anything longer.
-// Later: move these into a database table so the admin panel can edit them without a deploy.
+// Every text the bot sends, with defaults in Arabic and English (drafts — have a Gulf copywriter polish).
+// The admin panel can override any of them, for all series or for one series (table bot_messages).
+// Placeholders: {title} series title · {n} episode number · {total} episode count · {next} next episode · {code} code
+// Button labels must stay within 20 characters (messages.ts clips anything longer).
 
 export type CopyLang = "ar" | "en";
 
-type Copy = {
-  welcomeAskLanguage: (seriesTitle: string) => string;
-  btnArabic: string;
-  btnEnglishSubs: string;
-  trailerBody: (seriesTitle: string) => string;
-  btnStartEp1: string;
-  btnNext: string;
-  btnNotForMe: string;
-  episodeCaption: (n: number, total: number, title: string) => string;
-  videoMissing: (n: number) => string;
-  cliffhangerBody: (nextEp: number) => string;
-  btnWatchEp: (nextEp: number) => string;
-  optInBody: string;
-  btnYesNotify: string;
-  btnNoThanks: string;
-  optInConfirmed: string;
-  optInDeclined: string;
-  notForMeBody: string;
-  btnSeeSeries: string;
-  noOtherSeries: string;
-  seriesSectionTitle: string;
-  seriesNotFound: string;
-  menuBody: string;
-  btnMenu: string;
-  menuSectionTitle: string;
-  menuLink: string;
-  menuLanguage: string;
-  menuAlerts: string;
-  menuSupport: string;
-  linkBody: (seriesTitle: string, ep: number) => string;
-  btnOpenPlayer: string;
-  needSeriesFirst: string;
-  stopConfirmed: string;
-  btnAlertsOn: string;
-  supportBody: string;
-  deleteRequested: string;
-};
+type Entry = { label: string; kind: "text" | "button"; ar: string; en: string };
 
-const ar: Copy = {
-  welcomeAskLanguage: (title) =>
-    `أهلًا بك في واتشات 🎬\nمسلسل «${title}» جاهز.\nاختر اللغة:\n\nWelcome to Watchat. Choose your language:`,
-  btnArabic: "عربي",
-  btnEnglishSubs: "English subtitles",
-  trailerBody: (title) => `هذا الإعلان الرسمي لـ «${title}». جاهز تبدأ؟`,
-  btnStartEp1: "ابدأ الحلقة 1",
-  btnNext: "الحلقة التالية",
-  btnNotForMe: "ما يناسبني",
-  episodeCaption: (n, total, title) => `الحلقة ${n} من ${total} · ${title}`,
-  videoMissing: (n) => `(فيديو الحلقة ${n} غير متوفر حاليًا)`,
-  cliffhangerBody: (next) => `الحلقة ${next} بانتظارك 👀\nكمّل المشاهدة الحين، بدون تطبيق وبدون تسجيل.`,
-  btnWatchEp: (next) => `شاهد الحلقة ${next}`,
-  optInBody: "تبي نرسل لك رسالة لما تنزل حلقات جديدة؟",
-  btnYesNotify: "نعم، نبّهني",
-  btnNoThanks: "لا، شكرًا",
-  optInConfirmed: "تم ✅ بنبلغك أول ما تنزل حلقات جديدة. تقدر توقف التنبيهات أي وقت بإرسال STOP.",
-  optInDeclined: "ولا يهمك. تقدر تفعّل التنبيهات أي وقت من القائمة.",
-  notForMeBody: "ولا يهمك! جرّب واحد من هذي المسلسلات:",
-  btnSeeSeries: "شوف المسلسلات",
-  noOtherSeries: "ما عندنا مسلسلات ثانية حاليًا، بنبلغك أول ما ينزل جديد.",
-  seriesSectionTitle: "مسلسلات",
-  seriesNotFound: "ما لقينا هذا الكود 🤔 تأكد منه وأرسله مرة ثانية.",
-  menuBody: "كيف نقدر نساعدك؟",
-  btnMenu: "القائمة",
-  menuSectionTitle: "القائمة",
-  menuLink: "رابط المشغّل",
-  menuLanguage: "تغيير اللغة",
-  menuAlerts: "التنبيهات",
-  menuSupport: "التواصل مع الدعم",
-  linkBody: (title, ep) => `«${title}» — كمّل من الحلقة ${ep}.`,
-  btnOpenPlayer: "افتح المشغّل",
-  needSeriesFirst: "أرسل كود المسلسل اللي شفته في الإعلان عشان نبدأ (مثال: SECRETS01).",
-  stopConfirmed: "تم إيقاف التنبيهات. ما راح نرسل لك رسائل تسويقية.",
-  btnAlertsOn: "شغّل التنبيهات",
-  supportBody: "اكتب مشكلتك هنا وبيرد عليك فريق الدعم في أقرب وقت.",
-  deleteRequested: "استلمنا طلب حذف بياناتك ✅ أوقفنا التنبيهات، وبنحذف بياناتك خلال 30 يومًا.",
-};
+export const COPY = {
+  welcomeAskLanguage: {
+    label: "W1 · Welcome + language question",
+    kind: "text",
+    ar: "أهلًا بك في واتشات 🎬\nمسلسل «{title}» جاهز.\nاختر اللغة:\n\nWelcome to Watchat. Choose your language:",
+    en: "Welcome to Watchat 🎬\n“{title}” is ready.\nChoose your language:\n\nأهلًا بك في واتشات. اختر اللغة:",
+  },
+  btnArabic: { label: "W1 · Arabic button", kind: "button", ar: "عربي", en: "عربي" },
+  btnEnglishSubs: { label: "W1 · English subtitles button", kind: "button", ar: "English subtitles", en: "English subtitles" },
+  trailerBody: {
+    label: "W2 · Trailer message",
+    kind: "text",
+    ar: "هذا الإعلان الرسمي لـ «{title}». جاهز تبدأ؟",
+    en: "Here's the official trailer for “{title}”. Ready to start?",
+  },
+  btnStartEp1: { label: "W2 · Start button", kind: "button", ar: "ابدأ الحلقة 1", en: "Start episode 1" },
+  btnNext: { label: "W3 · Next episode button", kind: "button", ar: "الحلقة التالية", en: "Next episode" },
+  btnNotForMe: { label: "W2/W3 · Not for me button", kind: "button", ar: "ما يناسبني", en: "Not for me" },
+  episodeCaption: {
+    label: "W3/W4 · Episode caption",
+    kind: "text",
+    ar: "الحلقة {n} من {total} · {title}",
+    en: "Episode {n} of {total} · {title}",
+  },
+  videoMissing: {
+    label: "Episode video not uploaded yet",
+    kind: "text",
+    ar: "(فيديو الحلقة {n} غير متوفر حاليًا)",
+    en: "(Episode {n} video isn't available yet)",
+  },
+  cliffhangerBody: {
+    label: "W5 · Cliffhanger link message",
+    kind: "text",
+    ar: "الحلقة {next} بانتظارك 👀\nكمّل المشاهدة الحين، بدون تطبيق وبدون تسجيل.",
+    en: "Episode {next} is waiting for you 👀\nKeep watching now — no app, no sign-up.",
+  },
+  btnWatchEp: { label: "W5 · Watch link button", kind: "button", ar: "شاهد الحلقة {next}", en: "Watch episode {next}" },
+  optInBody: {
+    label: "W6 · Alerts question",
+    kind: "text",
+    ar: "تبي نرسل لك رسالة لما تنزل حلقات جديدة؟",
+    en: "Want a message when new episodes drop?",
+  },
+  btnYesNotify: { label: "W6 · Yes button", kind: "button", ar: "نعم، نبّهني", en: "Yes, notify me" },
+  btnNoThanks: { label: "W6 · No button", kind: "button", ar: "لا، شكرًا", en: "No thanks" },
+  optInConfirmed: {
+    label: "W6 · Alerts on confirmation",
+    kind: "text",
+    ar: "تم ✅ بنبلغك أول ما تنزل حلقات جديدة. تقدر توقف التنبيهات أي وقت بإرسال STOP.",
+    en: "Done ✅ We'll message you when new episodes drop. Send STOP any time to turn alerts off.",
+  },
+  optInDeclined: {
+    label: "W6 · Alerts declined reply",
+    kind: "text",
+    ar: "ولا يهمك. تقدر تفعّل التنبيهات أي وقت من القائمة.",
+    en: "No problem. You can turn alerts on any time from the menu.",
+  },
+  notForMeBody: { label: "W7 · Not for me message", kind: "text", ar: "ولا يهمك! جرّب واحد من هذي المسلسلات:", en: "No problem! Try one of these:" },
+  btnSeeSeries: { label: "W7 · See series button", kind: "button", ar: "شوف المسلسلات", en: "See series" },
+  noOtherSeries: {
+    label: "W7 · No other series",
+    kind: "text",
+    ar: "ما عندنا مسلسلات ثانية حاليًا، بنبلغك أول ما ينزل جديد.",
+    en: "No other series right now — we'll let you know when a new one drops.",
+  },
+  seriesSectionTitle: { label: "W7 · List section title", kind: "button", ar: "مسلسلات", en: "Series" },
+  seriesNotFound: {
+    label: "Unknown series code",
+    kind: "text",
+    ar: "ما لقينا هذا الكود 🤔 تأكد منه وأرسله مرة ثانية.",
+    en: "We couldn't find that code 🤔 Please check it and send it again.",
+  },
+  menuBody: { label: "W12 · Menu message", kind: "text", ar: "كيف نقدر نساعدك؟", en: "How can we help?" },
+  btnMenu: { label: "W12 · Menu button", kind: "button", ar: "القائمة", en: "Menu" },
+  menuSectionTitle: { label: "W12 · Menu section title", kind: "button", ar: "القائمة", en: "Menu" },
+  menuLink: { label: "W12 · My player link", kind: "button", ar: "رابط المشغّل", en: "My player link" },
+  menuLanguage: { label: "W12 · Change language", kind: "button", ar: "تغيير اللغة", en: "Change language" },
+  menuAlerts: { label: "W12 · Alerts on/off", kind: "button", ar: "التنبيهات", en: "Alerts on/off" },
+  menuSupport: { label: "W12 · Talk to support", kind: "button", ar: "التواصل مع الدعم", en: "Talk to support" },
+  linkBody: {
+    label: "W12 · Player link message",
+    kind: "text",
+    ar: "«{title}» — كمّل من الحلقة {n}.",
+    en: "“{title}” — continue from episode {n}.",
+  },
+  btnOpenPlayer: { label: "W12 · Open player button", kind: "button", ar: "افتح المشغّل", en: "Open my player" },
+  needSeriesFirst: {
+    label: "No series yet",
+    kind: "text",
+    ar: "أرسل كود المسلسل اللي شفته في الإعلان عشان نبدأ (مثال: SECRETS01).",
+    en: "Send the series code from the ad to get started (e.g. SECRETS01).",
+  },
+  stopConfirmed: {
+    label: "W14 · Alerts stopped",
+    kind: "text",
+    ar: "تم إيقاف التنبيهات. ما راح نرسل لك رسائل تسويقية.",
+    en: "Alerts are off. We won't send you marketing messages.",
+  },
+  btnAlertsOn: { label: "W14 · Turn alerts on button", kind: "button", ar: "شغّل التنبيهات", en: "Turn alerts back on" },
+  supportBody: {
+    label: "Support reply",
+    kind: "text",
+    ar: "اكتب مشكلتك هنا وبيرد عليك فريق الدعم في أقرب وقت.",
+    en: "Write your question here and our support team will reply soon.",
+  },
+  deleteRequested: {
+    label: "Data deletion requested",
+    kind: "text",
+    ar: "استلمنا طلب حذف بياناتك ✅ أوقفنا التنبيهات، وبنحذف بياناتك خلال 30 يومًا.",
+    en: "We've received your request to delete your data ✅ Alerts are off, and your data will be deleted within 30 days.",
+  },
+  confirmOk: {
+    label: "W13 · Device confirmed",
+    kind: "text",
+    ar: "تم التأكيد ✅ ارجع للمتصفح وكمّل.",
+    en: "Confirmed ✅ Go back to your browser to continue.",
+  },
+  confirmFailed: {
+    label: "W13 · Wrong or expired code",
+    kind: "text",
+    ar: "الكود غير صحيح أو انتهت صلاحيته. اطلب كود جديد من المتصفح.",
+    en: "That code is wrong or has expired. Get a new code in your browser.",
+  },
+} satisfies Record<string, Entry>;
 
-const en: Copy = {
-  welcomeAskLanguage: (title) =>
-    `Welcome to Watchat 🎬\n“${title}” is ready.\nChoose your language:\n\nأهلًا بك في واتشات. اختر اللغة:`,
-  btnArabic: "عربي",
-  btnEnglishSubs: "English subtitles",
-  trailerBody: (title) => `Here's the official trailer for “${title}”. Ready to start?`,
-  btnStartEp1: "Start episode 1",
-  btnNext: "Next episode",
-  btnNotForMe: "Not for me",
-  episodeCaption: (n, total, title) => `Episode ${n} of ${total} · ${title}`,
-  videoMissing: (n) => `(Episode ${n} video isn't available yet)`,
-  cliffhangerBody: (next) => `Episode ${next} is waiting for you 👀\nKeep watching now — no app, no sign-up.`,
-  btnWatchEp: (next) => `Watch episode ${next}`,
-  optInBody: "Want a message when new episodes drop?",
-  btnYesNotify: "Yes, notify me",
-  btnNoThanks: "No thanks",
-  optInConfirmed: "Done ✅ We'll message you when new episodes drop. Send STOP any time to turn alerts off.",
-  optInDeclined: "No problem. You can turn alerts on any time from the menu.",
-  notForMeBody: "No problem! Try one of these:",
-  btnSeeSeries: "See series",
-  noOtherSeries: "No other series right now — we'll let you know when a new one drops.",
-  seriesSectionTitle: "Series",
-  seriesNotFound: "We couldn't find that code 🤔 Please check it and send it again.",
-  menuBody: "How can we help?",
-  btnMenu: "Menu",
-  menuSectionTitle: "Menu",
-  menuLink: "My player link",
-  menuLanguage: "Change language",
-  menuAlerts: "Alerts on/off",
-  menuSupport: "Talk to support",
-  linkBody: (title, ep) => `“${title}” — continue from episode ${ep}.`,
-  btnOpenPlayer: "Open my player",
-  needSeriesFirst: "Send the series code from the ad to get started (e.g. SECRETS01).",
-  stopConfirmed: "Alerts are off. We won't send you marketing messages.",
-  btnAlertsOn: "Turn alerts back on",
-  supportBody: "Write your question here and our support team will reply soon.",
-  deleteRequested: "We've received your request to delete your data ✅ Alerts are off, and your data will be deleted within 30 days.",
-};
+export type CopyKey = keyof typeof COPY;
+export type CopyOverrides = Partial<Record<CopyKey, string>>;
+export type CopyVars = Partial<Record<"title" | "n" | "total" | "next" | "code", string | number>>;
 
-export function copyFor(lang: CopyLang): Copy {
-  return lang === "en" ? en : ar;
+export const COPY_KEYS = Object.keys(COPY) as CopyKey[];
+
+export function isCopyKey(key: string): key is CopyKey {
+  return key in COPY;
 }
+
+export function renderCopy(template: string, vars: CopyVars = {}): string {
+  return template.replace(/\{(title|n|total|next|code)\}/g, (_, k: keyof CopyVars) => String(vars[k] ?? ""));
+}
+
+/** A translator for one language, with admin overrides applied on top of the defaults. */
+export function makeT(lang: CopyLang, overrides: CopyOverrides = {}) {
+  return (key: CopyKey, vars?: CopyVars) => renderCopy(overrides[key] ?? COPY[key][lang], vars);
+}
+
+export type T = ReturnType<typeof makeT>;

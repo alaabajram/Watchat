@@ -29,6 +29,7 @@ export type Intent =
   | { type: "toggle_alerts" }
   | { type: "support" }
   | { type: "delete_data" }
+  | { type: "confirm_code"; code: string }
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
@@ -53,6 +54,9 @@ export function parseIntent(msg: InboundMessage): Intent {
     const word = upper.replace(/[^\p{L}\p{N}]/gu, "");
 
     if (DELETE_WORDS.includes(word)) return { type: "delete_data" };
+    // "CONFIRM 123456" / "تأكيد 123456": proves the viewer owns this number before spending on a new device.
+    const confirm = upper.match(/^(?:CONFIRM|تأكيد|تاكيد)\s*([0-9]{6})$/u);
+    if (confirm) return { type: "confirm_code", code: confirm[1] };
     if (STOP_WORDS.includes(word) || STOP_WORDS.includes(text)) return { type: "stop" };
     if (MENU_WORDS.includes(word) || MENU_WORDS.includes(text)) return { type: "menu" };
     if (LINK_WORDS.includes(word) || LINK_WORDS.includes(text)) return { type: "link" };

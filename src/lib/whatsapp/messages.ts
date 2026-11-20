@@ -18,6 +18,15 @@ export type OutMessage =
     }
   | { kind: "cta_url"; body: string; buttonText: string; url: string; header?: MediaHeader; footer?: string }
   | {
+      // Pre-approved template: the only kind allowed outside the 24-hour customer service window.
+      kind: "template";
+      name: string;
+      language: "ar" | "en";
+      headerImage?: string;
+      bodyParams?: string[];
+      urlButtonParam?: string; // replaces {{1}} in the template's URL button
+    }
+  | {
       kind: "list";
       body: string;
       buttonText: string;
@@ -104,6 +113,22 @@ export function toGraphPayload(to: string, msg: OutMessage): Record<string, unkn
           },
         },
       };
+
+    case "template": {
+      const components: Record<string, unknown>[] = [];
+      if (msg.headerImage) components.push({ type: "header", parameters: [{ type: "image", image: { link: msg.headerImage } }] });
+      if (msg.bodyParams?.length) {
+        components.push({ type: "body", parameters: msg.bodyParams.map((text) => ({ type: "text", text: clip(text, 200) })) });
+      }
+      if (msg.urlButtonParam) {
+        components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: msg.urlButtonParam }] });
+      }
+      return {
+        ...base,
+        type: "template",
+        template: { name: msg.name, language: { code: msg.language }, ...(components.length ? { components } : {}) },
+      };
+    }
 
     case "list": {
       let remaining = LIMITS.maxRows;

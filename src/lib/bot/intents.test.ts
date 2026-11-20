@@ -28,6 +28,12 @@ describe("parseIntent", () => {
     expect(parseIntent(reply("series:DESERT02"))).toEqual({ type: "series_code", code: "DESERT02" });
   });
 
+  it("reads device confirmation codes", () => {
+    expect(parseIntent(text("CONFIRM 482913"))).toEqual({ type: "confirm_code", code: "482913" });
+    expect(parseIntent(text("تأكيد ٤٨٢٩١٣"))).toEqual({ type: "confirm_code", code: "482913" });
+    expect(parseIntent(text("CONFIRM 12"))).toMatchObject({ type: "unknown" });
+  });
+
   it("falls back to unknown", () => {
     expect(parseIntent(text("hello"))).toMatchObject({ type: "unknown" });
   });

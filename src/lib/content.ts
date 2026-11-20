@@ -14,6 +14,7 @@ export type WebSeries = {
   paywallEp: number;
   coinsPerEpisode: number;
   seasonPassPriceAed: number | null;
+  seasonPassPriceSar: number | null;
 };
 
 export type WebEpisode = {
@@ -30,7 +31,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
@@ -48,7 +49,8 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
     freeWebUntilEp: data.free_web_until_ep,
     paywallEp: data.paywall_ep,
     coinsPerEpisode: data.coins_per_episode,
-    seasonPassPriceAed: data.season_pass_price_aed,
+    seasonPassPriceAed: data.season_pass_price_aed === null ? null : Number(data.season_pass_price_aed),
+    seasonPassPriceSar: data.season_pass_price_sar === null ? null : Number(data.season_pass_price_sar),
   };
 }
 
@@ -85,4 +87,36 @@ export async function getUnlocked(viewerId: string, seriesId: string): Promise<{
 
 export function canWatch(series: WebSeries, episodeNumber: number, unlocked: { all: boolean; episodes: Set<number> }) {
   return episodeNumber <= series.freeWebUntilEp || unlocked.all || unlocked.episodes.has(episodeNumber);
+}
+
+/** Cloudflare Stream HLS manifest and poster for a video id. */
+export function streamUrls(streamUid: string | null, customerCode: string) {
+  if (!streamUid || !customerCode) return { hls: null, poster: null };
+  const base = `https://customer-${customerCode}.cloudflarestream.com/${streamUid}`;
+  return { hls: `${base}/manifest/video.m3u8`, poster: `${base}/thumbnails/thumbnail.jpg?time=1s&height=960` };
+}
+
+/** Saved position (seconds) for one episode, if the viewer stopped mid-way. */
+export async function getPosition(viewerId: string, episodeId: string): Promise<number> {
+  const { data } = await db()
+    .from("progress")
+    .select("position_s, completed_at")
+    .eq("viewer_id", viewerId)
+    .eq("episode_id", episodeId)
+    .maybeSingle();
+  if (!data || data.completed_at) return 0;
+  return data.position_s ?? 0;
+}
+
+/** Episode numbers watched to the end, and the last one started, for "continue watching". */
+export async function getSeriesProgress(viewerId: string, seriesId: string): Promise<{ completed: Set<number>; lastStarted: number | null }> {
+  const { data } = await db()
+    .from("progress")
+    .select("completed_at, updated_at, episodes!inner(number, series_id)")
+    .eq("viewer_id", viewerId)
+    .eq("episodes.series_id", seriesId);
+  const rows = (data ?? []) as unknown as { completed_at: string | null; updated_at: string; episodes: { number: number } }[];
+  const completed = new Set(rows.filter((r) => r.completed_at).map((r) => r.episodes.number));
+  const latest = rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+  return { completed, lastStarted: latest ? latest.episodes.number : null };
 }
