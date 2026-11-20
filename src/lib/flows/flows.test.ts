@@ -71,10 +71,10 @@ describe("flows", () => {
     const issues = validateFlow(g, ctx);
     expect(issues.some((i) => i.level === "error" && i.nodeId === "m" && /23 hours/.test(i.message))).toBe(true);
 
-    let s = await previewStart(g, series, { ...viewer, optIn: "in" }, { come_back: "We miss you" }, "X");
+    let s = await previewStart(g, series, { ...viewer, optIn: "in" }, { come_back: { approved: true, ar: { body: "اشتقنا لك في «{{1}}»", button: "كمّل" }, en: null } }, "X");
     expect(s.result.status).toBe("wait");
     s = await previewSkipWait(g, s);
-    expect(s.items.some((i) => i.from === "system" && /come_back/.test(i.text))).toBe(true);
+    expect(s.items.some((i) => i.from === "bot" && i.msg.kind === "cta_url" && i.msg.body === "اشتقنا لك في «أسرار»")).toBe(true);
 
     let blocked = await previewStart(g, series, { ...viewer, optIn: "out", withinWindow: false }, {}, "X");
     blocked = await previewSkipWait(g, blocked);
