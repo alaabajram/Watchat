@@ -5,7 +5,7 @@ import { TopBar } from "@/components/TopBar";
 import { getSessionViewer } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import { getBalance, getHistory } from "@/lib/wallet";
-import { dirFor, webCopy } from "@/lib/web-copy";
+import { dirFor, formatMoney, webCopy } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +20,17 @@ export default async function WalletPage() {
       </main>
     );
   }
-  const [balance, history, { data: passes }] = await Promise.all([
+  const [balance, history, { data: passes }, { data: pending }] = await Promise.all([
     getBalance(viewer.id),
     getHistory(viewer.id),
     db().from("entitlements").select("series_id, series!inner(code, title_ar, title_en)").eq("viewer_id", viewer.id).is("episode_number", null),
+    db()
+      .from("orders")
+      .select("id, payment_ref, amount, currency, note, created_at")
+      .eq("viewer_id", viewer.id)
+      .eq("gateway", "cash")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false }),
   ]);
   const fmt = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", { dateStyle: "medium" });
 
@@ -41,6 +48,25 @@ export default async function WalletPage() {
             {t.getCoins}
           </Link>
         </div>
+
+        {(pending ?? []).length > 0 && (
+          <section>
+            <h2>{t.pendingOrders}</h2>
+            <ul className="list">
+              {(pending ?? []).map((o) => (
+                <li key={o.id}>
+                  <span>
+                    {o.note}
+                    <span className="muted" style={{ display: "block", fontSize: 13 }}>
+                      {t.reference}: <span dir="ltr">{o.payment_ref}</span>
+                    </span>
+                  </span>
+                  <strong>{formatMoney(Number(o.amount), o.currency as "AED" | "SAR", locale)}</strong>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {(passes ?? []).length > 0 && (
           <section>

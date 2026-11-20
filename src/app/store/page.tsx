@@ -6,7 +6,7 @@ import { env } from "@/lib/env";
 import { currencyFor } from "@/lib/phone";
 import { getSessionViewer } from "@/lib/session";
 import { currentTenantId, db } from "@/lib/supabase";
-import { getBalance } from "@/lib/wallet";
+import { getBalance, paymentMode } from "@/lib/wallet";
 import { dirFor, formatMoney, webCopy } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +60,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           );
         })}
         <p className="muted" style={{ margin: 0 }}>
-          {t.storeNote}
+          {paymentMode() === "cash" ? t.storeNoteCash : t.storeNote}
         </p>
       </div>
     </main>

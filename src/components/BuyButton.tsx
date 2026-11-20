@@ -3,7 +3,7 @@
 // Starts a Tap checkout for a coin pack or season pass (asks to confirm the device first if needed).
 
 import { useState } from "react";
-import { webCopy, type Locale } from "@/lib/web-copy";
+import { formatMoney, webCopy, type Locale } from "@/lib/web-copy";
 import { ConfirmDevice } from "./ConfirmDevice";
 
 export function BuyButton({
@@ -32,7 +32,19 @@ export function BuyButton({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, id, returnTo }),
     });
-    const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+    const j = (await res.json().catch(() => ({}))) as {
+      url?: string;
+      error?: string;
+      pending?: boolean;
+      reference?: string;
+      amount?: number;
+      currency?: "AED" | "SAR";
+    };
+    if (j.pending && j.reference) {
+      setBusy(false);
+      setMessage(t.cashRequested(j.reference, formatMoney(j.amount ?? 0, j.currency ?? "AED", locale)));
+      return;
+    }
     if (j.url) {
       setMessage(t.redirecting);
       window.location.href = j.url;
@@ -40,7 +52,7 @@ export function BuyButton({
     }
     setBusy(false);
     if (j.error === "confirm_device") return setConfirming(true);
-    setMessage(j.error === "payments_not_configured" ? t.paymentsSoon : t.error);
+    setMessage(j.error === "too_many_pending" ? t.tooManyPending : j.error === "payments_not_configured" ? t.paymentsSoon : t.error);
   }
 
   if (confirming) {
@@ -61,7 +73,7 @@ export function BuyButton({
         {busy ? t.redirecting : label}
       </button>
       {message && (
-        <span className="muted" role="status" style={{ fontSize: 13 }}>
+        <span className="muted" role="status" style={{ fontSize: 13, whiteSpace: "pre-line" }}>
           {message}
         </span>
       )}

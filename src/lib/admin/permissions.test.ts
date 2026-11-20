@@ -17,5 +17,7 @@ describe("admin roles", () => {
     expect(can(as("support"), "pricing")).toBe(false);
     expect(can(as("finance"), "pricing")).toBe(true);
     expect(can(as("finance"), "team")).toBe(false);
+    expect(can(as("finance"), "orders")).toBe(true);
+    expect(can(as("marketing"), "orders")).toBe(false);
   });
 });

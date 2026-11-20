@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   messaging: ["owner", "marketing"],
   viewers: ["owner", "support", "finance"],
   grantCoins: ["owner", "support"],
+  orders: ["owner", "finance", "support"],
   pricing: ["owner", "finance"],
   team: ["owner"],
   audit: ["owner", "finance"],
