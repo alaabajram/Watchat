@@ -22,7 +22,8 @@ export type PreviewSeries = {
 export type PreviewTemplate = { approved: boolean; ar: { body: string; button: string | null } | null; en: { body: string; button: string | null } | null };
 export type PreviewTemplates = Record<string, PreviewTemplate>;
 
-export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean };
+/** reachedEpisode: furthest episode watched on the web. watchedRecently: watched on the web in the last hour. */
+export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean; watchedRecently?: boolean };
 
 /** `items` is a fresh array after every step (handy for React state); the env writes to `sink`. */
 export type PreviewSession = {
@@ -34,6 +35,7 @@ export type PreviewSession = {
 
 export function previewEnv(series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, sink: { items: PreviewItem[] }): FlowEnv {
   let clock = Date.parse("2026-01-01T10:00:00Z");
+  let chatEpisode = 0;
   const state = { ...viewer };
   const env: FlowEnv = {
     lang: state.language ?? "ar",
@@ -50,9 +52,18 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
     setOptIn: async (yes) => {
       state.optIn = yes ? "in" : "out";
     },
-    link: async (ep) => {
-      const episode = ep === "resume" ? Math.max(state.reachedEpisode, 1) : ep;
+    link: async (ep, resumeIfFurther) => {
+      const resume = Math.min(Math.max(state.reachedEpisode + 1, 1), Math.max(series.episodeCount, 1));
+      const episode = ep === "resume" ? resume : resumeIfFurther ? Math.max(ep, resume) : ep;
       return { url: `https://watchat.pro/w/your-personal-link`, episode };
+    },
+    progress: async () => ({
+      maxStarted: state.reachedEpisode,
+      maxCompleted: Math.max(state.reachedEpisode, chatEpisode),
+      lastWatchedAt: state.watchedRecently ? clock - 3600_000 : state.reachedEpisode > 0 ? clock - 3 * 86400_000 : null,
+    }),
+    noteChatEpisode: (n) => {
+      chatEpisode = Math.max(chatEpisode, n);
     },
     clip: async (n, l) => ({ url: series.clips[n]?.[l] ?? series.clips[n]?.ar ?? null, title: null }),
     mediaUrl: (ref: MediaRef) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
@@ -83,6 +94,10 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
           return state.paid;
         case "reached_episode":
           return state.reachedEpisode >= c.episode;
+        case "started":
+          return state.reachedEpisode > 0 || chatEpisode > 0;
+        case "watched_within":
+          return Boolean(state.watchedRecently) && c.hours >= 1;
       }
     },
     suggest: async () => {
@@ -115,10 +130,17 @@ export function formatMinutes(m: number): string {
   return `${m} minute${m === 1 ? "" : "s"}`;
 }
 
-export async function previewStart(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string): Promise<PreviewSession> {
-  const sink = { items: [{ from: "viewer", text: code }] as PreviewItem[] };
+export async function previewStart(
+  g: FlowGraph,
+  series: PreviewSeries,
+  viewer: SampleViewer,
+  templates: PreviewTemplates,
+  code: string,
+  entry: "chat" | "web" = "chat",
+): Promise<PreviewSession> {
+  const sink = { items: [entry === "web" ? { from: "system", text: "🌐 Viewer starts watching on the web" } : { from: "viewer", text: code }] as PreviewItem[] };
   const env = previewEnv(series, viewer, templates, sink);
-  const result = await startFlow(g, env);
+  const result = await startFlow(g, env, entry);
   note(sink.items, result, g);
   return { items: [...sink.items], result, env, sink };
 }

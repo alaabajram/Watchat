@@ -1,7 +1,8 @@
 // Player heartbeat: saves where the viewer is in an episode (every ~10 s) and marks it complete at 90%.
 
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { onWebWatch } from "@/lib/flows/web-trigger";
 import { trackEvent } from "@/lib/events";
 import { allow } from "@/lib/security/rate-limit";
 import { err, readJson, sameOrigin } from "@/lib/security/request";
@@ -56,5 +57,13 @@ export async function POST(req: NextRequest) {
       episodeNumber: episode.number,
     });
   }
+  // The bot follows what the viewer watches: this series becomes active and its "On the web" flow can run.
+  after(async () => {
+    try {
+      await onWebWatch(viewer.id, episode.series_id);
+    } catch (e) {
+      console.error("[progress] web trigger failed", e instanceof Error ? e.message : e);
+    }
+  });
   return NextResponse.json({ ok: true, completed: Boolean(completedAt) });
 }

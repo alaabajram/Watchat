@@ -1,4 +1,5 @@
 // Continues flows whose Wait card is due. Called by the messaging cron every 15 minutes.
+// Each (viewer, series) run is separate; runs paused because the viewer moved to another series are skipped.
 // Rules: nothing during quiet hours (22:00–09:00 Gulf time; runs stay due and go out after),
 // each run is claimed (status wait → running) before anything is sent so overlapping runs can't
 // double-send, and free-form cards are only sent within 24 h of the viewer's last WhatsApp message.
@@ -20,7 +21,7 @@ export async function runFlowWaits(now = new Date()): Promise<FlowRunSummary> {
 
   const { data: due } = await db()
     .from("flow_runs")
-    .select("viewer_id, series_id, version_id, node_id")
+    .select("viewer_id, series_id, version_id, node_id, entry, chat_episode, web_triggered_at")
     .eq("status", "wait")
     .lte("resume_at", now.toISOString())
     .order("resume_at")
@@ -34,6 +35,7 @@ export async function runFlowWaits(now = new Date()): Promise<FlowRunSummary> {
       .from("flow_runs")
       .update({ status: "running", updated_at: new Date().toISOString() })
       .eq("viewer_id", run.viewer_id)
+      .eq("series_id", run.series_id)
       .eq("status", "wait")
       .eq("node_id", run.node_id)
       .select("viewer_id");
@@ -50,15 +52,16 @@ export async function runFlowWaits(now = new Date()): Promise<FlowRunSummary> {
       primeViewer(v.id, waId);
       const viewer = { id: v.id as string, waId, language: v.language as ViewerLang | null };
       const lastInbound = v.last_inbound_at ? Date.parse(v.last_inbound_at) : 0;
-      const env = flowEnvFor(viewer, series, deps, { canSendFreeform: now.getTime() - lastInbound < WINDOW_MS, now: () => now.getTime() });
+      const ctx = { chatEpisode: run.chat_episode as number };
+      const env = flowEnvFor(viewer, series, deps, { canSendFreeform: now.getTime() - lastInbound < WINDOW_MS, now: () => now.getTime(), run: ctx });
       const result = await resumeAfterWait(graph, run.node_id, env);
-      await saveRunResult(deps, viewer, run.series_id, run.version_id, result);
+      await saveRunResult(deps, viewer, run.series_id, run.version_id, result, { entry: run.entry, chatEpisode: ctx.chatEpisode, webTriggeredAt: run.web_triggered_at });
       if (result.status === "blocked") summary.blocked++;
       else summary.resumed++;
     } catch (e) {
       summary.failed++;
       console.error("[flows] resume failed", { viewer: run.viewer_id, err: e instanceof Error ? e.message : e });
-      await db().from("flow_runs").update({ status: "blocked", updated_at: new Date().toISOString() }).eq("viewer_id", run.viewer_id);
+      await db().from("flow_runs").update({ status: "blocked", updated_at: new Date().toISOString() }).eq("viewer_id", run.viewer_id).eq("series_id", run.series_id);
     }
   }
   return summary;

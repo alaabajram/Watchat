@@ -16,18 +16,22 @@ const CONDITION_TEXT = {
   language_en: "Viewer watches with English subtitles?",
   paid: "Viewer has paid before?",
   reached_episode: "Viewer reached episode",
+  started: "Viewer already started this series?",
+  watched_within: "Watched on the web in the last",
 } as const;
 
 function summary(d: NodeData, templateBody?: string | null): { text: string; dir: "rtl" | "ltr" } {
   switch (d.kind) {
     case "start":
       return { text: "Viewer sends the series code", dir: "ltr" };
+    case "web":
+      return { text: "Viewer starts watching this series on the web", dir: "ltr" };
     case "message":
       return { text: d.body.ar || d.body.en || (d.media ? "" : "(empty message)"), dir: "rtl" };
     case "language":
       return { text: d.body.ar, dir: "rtl" };
     case "episode":
-      return { text: `Episode ${d.episode} · ${d.caption.ar}`, dir: "rtl" };
+      return { text: `Episode ${d.episode}${d.skipIfWatched ? " (skipped if watched)" : ""} · ${d.caption.ar}`, dir: "rtl" };
     case "link":
       return { text: `${d.episode === "resume" ? "Where they left off" : `Episode ${d.episode}`} · ${d.body.ar}`, dir: "rtl" };
     case "optin":
@@ -35,7 +39,15 @@ function summary(d: NodeData, templateBody?: string | null): { text: string; dir
     case "wait":
       return { text: `Wait ${formatMinutes(d.minutes)}`, dir: "ltr" };
     case "condition":
-      return { text: d.condition.check === "reached_episode" ? `${CONDITION_TEXT.reached_episode} ${d.condition.episode}?` : CONDITION_TEXT[d.condition.check], dir: "ltr" };
+      return {
+        text:
+          d.condition.check === "reached_episode"
+            ? `${CONDITION_TEXT.reached_episode} ${d.condition.episode}?`
+            : d.condition.check === "watched_within"
+              ? `${CONDITION_TEXT.watched_within} ${d.condition.hours} h?`
+              : CONDITION_TEXT[d.condition.check],
+        dir: "ltr",
+      };
     case "template":
       return { text: d.name ? `${d.name}${templateBody ? ` · ${templateBody}` : ""}` : "(pick a template)", dir: d.name && templateBody ? "rtl" : "ltr" };
     case "suggest":
@@ -61,7 +73,7 @@ export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
         fontSize: 12,
       }}
     >
-      {d.kind !== "start" && <Handle type="target" position={Position.Left} style={{ top: 18, width: 10, height: 10, background: "#94a3b8" }} />}
+      {d.kind !== "start" && d.kind !== "web" && <Handle type="target" position={Position.Left} style={{ top: 18, width: 10, height: 10, background: "#94a3b8" }} />}
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: style.color, color: "#fff", borderRadius: "7px 7px 0 0" }}>
         <span>{style.icon}</span>
         <strong style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} dir="auto">

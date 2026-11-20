@@ -2,7 +2,7 @@
 
 import { LIMITS } from "../whatsapp/messages";
 import { pick } from "./engine";
-import { CARD_LABELS, isFreeform, portsOf, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
+import { CARD_LABELS, isEntry, isFreeform, portsOf, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
 
 export type Issue = { level: "error" | "warning"; nodeId?: string; message: string };
 export type ValidateCtx = { episodeCount: number; templates: { name: string; approved: boolean }[] };
@@ -21,6 +21,8 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
 
   const starts = g.nodes.filter((n) => n.data.kind === "start");
   if (starts.length !== 1) err("The flow needs exactly one Start card.");
+  const webs = g.nodes.filter((n) => n.data.kind === "web");
+  if (webs.length > 1) err("Use at most one 'On the web' card.", webs[1].id);
 
   const text = (n: FlowNode, label: string, b: { ar: string; en: string }, max: number, required = true) => {
     if (required && !b.ar.trim()) err(`${label}: Arabic text is empty.`, n.id);
@@ -76,6 +78,7 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
         break;
       case "condition":
         if (d.condition.check === "reached_episode") episodeOk(n, d.condition.episode, "Condition");
+        if (d.condition.check === "watched_within" && (d.condition.hours < 1 || d.condition.hours > 720)) err("Condition: hours must be 1–720.", n.id);
         break;
       case "template": {
         const t = ctx.templates.find((x) => x.name === d.name);
@@ -89,6 +92,8 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
 
   // Arrows
   for (const e of g.edges) {
+    const tgt = g.nodes.find((n) => n.id === e.target);
+    if (tgt && isEntry(tgt.data)) err(`Arrows can't point into ${tgt.data.kind === "start" ? "Start" : "On the web"}; it's where the flow begins.`, tgt.id);
     const src = g.nodes.find((n) => n.id === e.source);
     if (!src || !ids.has(e.target)) err("An arrow points to a card that no longer exists.");
     else if (!portsOf(src.data).some((p) => p.id === e.sourceHandle)) err(`${name(src)}: an arrow starts from a button that no longer exists.`, src.id);
@@ -101,12 +106,13 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
     }
   }
 
-  // Reachability
+  // Reachability (from Start and from On the web)
   const start = starts[0];
+  for (const w of webs) if (!g.edges.some((e) => e.source === w.id)) warn("'On the web' isn't connected, so it does nothing.", w.id);
   if (start) {
     if (!g.edges.some((e) => e.source === start.id)) err("Connect the Start card to the first card.", start.id);
-    const seen = new Set<string>([start.id]);
-    const queue = [start.id];
+    const seen = new Set<string>([start.id, ...webs.map((w) => w.id)]);
+    const queue = [start.id, ...webs.map((w) => w.id)];
     while (queue.length) {
       const id = queue.shift()!;
       for (const e of g.edges.filter((x) => x.source === id)) if (!seen.has(e.target)) (seen.add(e.target), queue.push(e.target));
@@ -148,6 +154,23 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
         err(`${name(n)} comes after a wait of 23 hours or more. WhatsApp only allows approved templates then; use a Template card.`, n.id);
         continue;
       }
+      for (const e of g.edges.filter((x) => x.source === id)) queue.push(e.target);
+    }
+  }
+  // On the web: the viewer may not have messaged in 24 h, so free-form cards only reach some viewers.
+  for (const w of webs) {
+    const seen = new Set<string>();
+    const queue = g.edges.filter((e) => e.source === w.id).map((e) => e.target);
+    while (queue.length) {
+      const id = queue.shift()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const n = g.nodes.find((x) => x.id === id);
+      if (!n) continue;
+      if (isFreeform(n.data) && !issues.some((i) => i.nodeId === n.id && /24 hours/.test(i.message))) {
+        warn(`${name(n)} after 'On the web' only reaches viewers who messaged the bot in the last 24 hours; a Template card reaches everyone with alerts on.`, n.id);
+      }
+      if (waitsForInput(n.data)) continue;
       for (const e of g.edges.filter((x) => x.source === id)) queue.push(e.target);
     }
   }

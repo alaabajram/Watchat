@@ -14,14 +14,19 @@ export type Condition =
   | { check: "opted_in" }
   | { check: "language_en" }
   | { check: "paid" }
-  | { check: "reached_episode"; episode: number };
+  | { check: "reached_episode"; episode: number }
+  | { check: "started" } // watched any episode of this series (chat or web)
+  | { check: "watched_within"; hours: number }; // watched this series on the web in the last N hours
 
 export type NodeData =
   | { kind: "start" }
+  | { kind: "web" }
   | { kind: "message"; body: Bi; buttons: FlowButton[]; media: MediaRef | null }
   | { kind: "language"; body: Bi; btnAr: string; btnEn: string; skipIfKnown: boolean; media: MediaRef | null }
-  | { kind: "episode"; episode: number; caption: Bi; buttons: FlowButton[] }
-  | { kind: "link"; episode: number | "resume"; body: Bi; button: Bi; media: MediaRef | null }
+  // skipIfWatched: viewers who already watched this episode (chat or web) continue via the first button / Then.
+  | { kind: "episode"; episode: number; caption: Bi; buttons: FlowButton[]; skipIfWatched: boolean }
+  // resumeIfFurther: open where the viewer left off when that's past `episode`.
+  | { kind: "link"; episode: number | "resume"; body: Bi; button: Bi; media: MediaRef | null; resumeIfFurther: boolean }
   | { kind: "optin"; body: Bi; yes: Bi; no: Bi; skipIfAnswered: boolean }
   | { kind: "wait"; minutes: number }
   | { kind: "condition"; condition: Condition }
@@ -64,6 +69,9 @@ export function portsOf(data: NodeData): { id: string; label: string }[] {
   }
 }
 
+/** Entry cards: where a flow begins. Nothing can point into them. */
+export const isEntry = (d: NodeData) => d.kind === "start" || d.kind === "web";
+
 /** Cards that stop and wait for the viewer to tap a button. */
 export const waitsForInput = (d: NodeData) =>
   ((d.kind === "message" || d.kind === "episode") && d.buttons.length > 0) || d.kind === "language" || d.kind === "optin";
@@ -73,6 +81,7 @@ export const isFreeform = (d: NodeData) => ["message", "language", "episode", "l
 
 export const CARD_LABELS: Record<NodeKind, string> = {
   start: "Start: viewer sends the series code",
+  web: "On the web: viewer starts watching",
   message: "Message",
   language: "Ask language",
   episode: "Episode in chat",

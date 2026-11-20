@@ -6,6 +6,7 @@ import { COPY, COPY_KEYS, type CopyKey, type CopyOverrides } from "./copy";
 import { defaultFlow } from "../flows/defaults";
 import { IDS } from "./intents";
 import type { FlowGraph } from "../flows/types";
+import type { SeriesProgress } from "../flows/engine";
 import type { FlowRun } from "./flow";
 
 const SERIES: Series = {
@@ -21,20 +22,22 @@ const SERIES: Series = {
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
-function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph } = {}) {
+function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; progress?: Partial<SeriesProgress> } = {}) {
   const series: Series = { ...SERIES, ...opts.series };
   const sent: OutMessage[] = [];
   const events: string[] = [];
   let state: ChatState = EMPTY_STATE;
   let language: ViewerLang | null = null;
   let optIn: "in" | "out" | null = null;
-  let run: FlowRun | null = null;
+  const runs = new Map<string, FlowRun>();
+  const paused: string[] = [];
+  const progress: SeriesProgress = { maxStarted: 0, maxCompleted: 0, lastWatchedAt: null, ...opts.progress };
   const texts = Object.fromEntries(
     COPY_KEYS.map((k) => [k, { ar: opts.overrides?.[k] ?? COPY[k].ar, en: opts.overrides?.[k] ?? COPY[k].en }]),
   ) as Record<CopyKey, { ar: string; en: string }>;
-  const flow =
-    opts.flow ??
-    defaultFlow({ askLanguage: true, sendTrailer: true, hasTrailer: Boolean(series.trailerUrl), askOptIn: true, waEpisodeCount: series.waEpisodeCount, episodeCount: series.episodeCount, texts });
+  const standard = (x: Series) =>
+    defaultFlow({ askLanguage: true, sendTrailer: true, hasTrailer: Boolean(x.trailerUrl), askOptIn: true, waEpisodeCount: x.waEpisodeCount, episodeCount: x.episodeCount, texts });
+  const flows: Record<string, FlowGraph> = { s1: opts.flow ?? standard(series), s2: standard(OTHER) };
 
   const deps: BotDeps = {
     upsertViewer: async (m) => ({ id: "v1", waId: m.from, language }),
@@ -70,16 +73,22 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
       events.push(name);
     },
     // Like production: the series' flow, or the standard flow published automatically.
-    getPublishedFlow: async (sid) => (sid === series.id ? { versionId: "ver1", graph: flow } : null),
-    getFlowVersion: async (id) => (id === "ver1" ? flow : null),
-    getFlowRun: async () => run,
+    getPublishedFlow: async (sid) => (flows[sid] ? { versionId: `ver-${sid}`, graph: flows[sid] } : null),
+    getFlowVersion: async (id) => flows[id.replace("ver-", "")] ?? null,
+    getFlowRun: async (_v, sid) => runs.get(sid) ?? null,
+    listFlowRuns: async () => [...runs.values()].reverse(),
     saveFlowRun: async (_v, r) => {
-      run = r;
+      runs.delete(r.seriesId);
+      runs.set(r.seriesId, r);
     },
+    pauseOtherRuns: async (_v, active) => {
+      paused.push(active);
+    },
+    seriesProgress: async (_v, sid) => (sid === "s1" ? progress : { maxStarted: 0, maxCompleted: 0, lastWatchedAt: null }),
     sendFlowTemplate: async () => "sent",
     checkCondition: async (_v, _s, c) => c.check === "opted_in" && optIn === "in",
   };
-  return { deps, sent, events, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: () => run };
+  return { deps, sent, events, progress, paused, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
 }
 
 let seq = 0;
@@ -223,7 +232,7 @@ describe("bot flow: series code to cliffhanger link", () => {
             media: null,
           },
         },
-        { id: "e1", position: { x: 0, y: 0 }, data: { kind: "episode", episode: 1, caption: { ar: "الحلقة {n}", en: "Episode {n}" }, buttons: [] } },
+        { id: "e1", position: { x: 0, y: 0 }, data: { kind: "episode", episode: 1, caption: { ar: "الحلقة {n}", en: "Episode {n}" }, buttons: [], skipIfWatched: true } },
         { id: "w", position: { x: 0, y: 0 }, data: { kind: "wait", minutes: 120 } },
       ],
       edges: [
@@ -235,13 +244,59 @@ describe("bot flow: series code to cliffhanger link", () => {
     const f = fakeDeps({ flow });
     await handleInbound(text("SECRETS01"), f.deps);
     expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: "تبي تشوف؟", buttons: [{ id: "f:q:yes" }, { id: "f:q:no" }] });
-    expect(f.getRun()).toMatchObject({ nodeId: "q", status: "input", versionId: "ver1" });
+    expect(f.getRun()).toMatchObject({ nodeId: "q", status: "input", versionId: "ver-s1" });
     expect(f.events).toContain("flow_started");
 
     await handleInbound(tap("f:q:yes"), f.deps);
     expect(f.sent.at(-1)).toMatchObject({ kind: "video", link: "https://cdn.example/ep1-ar.mp4", caption: "الحلقة 1" });
     expect(f.getRun()).toMatchObject({ nodeId: "w", status: "wait" });
     expect(f.getRun()?.resumeAt).toBeTruthy();
+  });
+
+  it("skips chat episodes the viewer already watched on the web", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("SECRETS01"), f.deps);
+    await tapButton(f, 0); // Arabic
+    await tapButton(f, 0); // Start → episode 1
+    expect(f.sent.at(-1)).toMatchObject({ header: { link: "https://cdn.example/ep1-ar.mp4" } });
+
+    // Meanwhile on the web they watch episodes 2–5
+    Object.assign(f.progress, { maxStarted: 5, maxCompleted: 5 });
+    const before = f.sent.length;
+    await tapButton(f, 0); // "Next" on episode 1
+    const burst = f.sent.slice(before);
+    // Episodes 2 and 3 are skipped; the link opens episode 6, where they are
+    expect(burst.some((m) => m.kind === "video" || ("header" in m && m.header?.type === "video"))).toBe(false);
+    expect(burst[0]).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-ep6" });
+  });
+
+  it("sends returning viewers straight to where they left off", async () => {
+    const f = fakeDeps({ progress: { maxStarted: 8, maxCompleted: 7 } });
+    await handleInbound(text("SECRETS01"), f.deps);
+    const before = f.sent.length;
+    await tapButton(f, 0); // Arabic (first time on WhatsApp)
+    const burst = f.sent.slice(before);
+    // No trailer, no chat episodes: their link to episode 8, then the alerts question
+    expect(burst.map((m) => m.kind)).toEqual(["cta_url", "buttons"]);
+    expect(burst[0]).toMatchObject({ url: "https://watchat.test/w/token-ep8" });
+  });
+
+  it("keeps each series' place and routes old buttons to the right series", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("SECRETS01"), f.deps);
+    await tapButton(f, 0); // Arabic → SECRETS01 trailer
+    const secretsTrailer = f.sent.at(-1) as Extract<OutMessage, { kind: "buttons" }>;
+
+    await handleInbound(text("DESERT02"), f.deps); // explores another series
+    expect(f.paused.at(-1)).toBe("s2");
+    expect(f.getRun("s1")).toBeTruthy();
+    expect(f.getRun("s2")).toMatchObject({ seriesId: "s2", entry: "chat" });
+
+    // Tapping Start on the older SECRETS01 trailer continues SECRETS01
+    await handleInbound(tap(secretsTrailer.buttons[0].id), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ header: { link: "https://cdn.example/ep1-ar.mp4" } });
+    expect(f.paused.at(-1)).toBe("s1");
+    expect(f.getRun("s1")?.chatEpisode).toBe(1);
   });
 
   it("answers random text with the menu", async () => {

@@ -1,7 +1,8 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
 import { ensurePublishedFlow } from "../flows/standard";
-import type { FlowGraph } from "../flows/types";
+import type { SeriesProgress } from "../flows/engine";
+import { sanitizeGraph } from "../flows/sanitize";
 import { sendNamedTemplate } from "../messaging/runner";
 import { hmacHex } from "../crypto";
 import { env } from "../env";
@@ -12,7 +13,7 @@ import { sendWhatsApp } from "../whatsapp/client";
 import type { InboundMessage } from "../whatsapp/inbound";
 import { countryFromPhone } from "../phone";
 import { isCopyKey, type CopyLang, type CopyOverrides } from "./copy";
-import { EMPTY_STATE, type BotDeps, type ChatState, type Clip, type Series, type Viewer, type ViewerLang } from "./flow";
+import { EMPTY_STATE, type BotDeps, type ChatState, type Clip, type FlowRun, type Series, type Viewer, type ViewerLang } from "./flow";
 
 export type SeriesRow = {
   id: string;
@@ -49,6 +50,37 @@ export function phoneHmac(waId: string): string {
 const hmacByViewer = new Map<string, string>();
 /** wa_id → viewer id, so outgoing messages can be logged against the viewer without another query. */
 const viewerByWaId = new Map<string, string>();
+
+const RUN_SELECT = "series_id, version_id, node_id, status, resume_at, entry, chat_episode, web_triggered_at";
+type RunRow = { series_id: string; version_id: string; node_id: string; status: FlowRun["status"]; resume_at: string | null; entry: "chat" | "web"; chat_episode: number; web_triggered_at: string | null };
+const toRun = (r: RunRow): FlowRun => ({
+  seriesId: r.series_id,
+  versionId: r.version_id,
+  nodeId: r.node_id,
+  status: r.status,
+  resumeAt: r.resume_at,
+  entry: r.entry,
+  chatEpisode: r.chat_episode,
+  webTriggeredAt: r.web_triggered_at,
+});
+
+/** Furthest episode started and finished on the web, and when the viewer last watched this series. */
+export async function seriesProgress(viewerId: string, seriesId: string): Promise<SeriesProgress> {
+  const { data } = await db()
+    .from("progress")
+    .select("completed_at, updated_at, episodes!inner(number, series_id)")
+    .eq("viewer_id", viewerId)
+    .eq("episodes.series_id", seriesId);
+  let maxStarted = 0;
+  let maxCompleted = 0;
+  let last: number | null = null;
+  for (const row of (data ?? []) as unknown as { completed_at: string | null; updated_at: string; episodes: { number: number } }[]) {
+    maxStarted = Math.max(maxStarted, row.episodes.number);
+    if (row.completed_at) maxCompleted = Math.max(maxCompleted, row.episodes.number);
+    last = Math.max(last ?? 0, Date.parse(row.updated_at));
+  }
+  return { maxStarted, maxCompleted, lastWatchedAt: last };
+}
 
 /** Let sends and events from scheduled jobs be logged against a viewer (no inbound message to learn it from). */
 export function primeViewer(viewerId: string, waId: string): void {
@@ -256,30 +288,52 @@ export function createSupabaseDeps(): BotDeps {
 
     async getFlowVersion(versionId) {
       const { data } = await db().from("flow_versions").select("graph").eq("id", versionId).maybeSingle();
-      return (data?.graph as FlowGraph | undefined) ?? null;
+      return sanitizeGraph(data?.graph); // fills defaults for options added after a version was published
     },
 
-    async getFlowRun(viewerId) {
-      const { data } = await db().from("flow_runs").select("series_id, version_id, node_id, status, resume_at").eq("viewer_id", viewerId).maybeSingle();
-      return data
-        ? { seriesId: data.series_id, versionId: data.version_id, nodeId: data.node_id, status: data.status, resumeAt: data.resume_at }
-        : null;
+    async getFlowRun(viewerId, seriesId) {
+      const { data } = await db().from("flow_runs").select(RUN_SELECT).eq("viewer_id", viewerId).eq("series_id", seriesId).maybeSingle();
+      return data ? toRun(data) : null;
+    },
+
+    async listFlowRuns(viewerId) {
+      const { data } = await db().from("flow_runs").select(RUN_SELECT).eq("viewer_id", viewerId).order("updated_at", { ascending: false }).limit(10);
+      return (data ?? []).map(toRun);
     },
 
     async saveFlowRun(viewerId, run) {
       const { error } = await db()
         .from("flow_runs")
-        .upsert({
-          viewer_id: viewerId,
-          tenant_id: await currentTenantId(),
-          series_id: run.seriesId,
-          version_id: run.versionId,
-          node_id: run.nodeId,
-          status: run.status,
-          resume_at: run.resumeAt,
-          updated_at: new Date().toISOString(),
-        });
+        .upsert(
+          {
+            viewer_id: viewerId,
+            tenant_id: await currentTenantId(),
+            series_id: run.seriesId,
+            version_id: run.versionId,
+            node_id: run.nodeId,
+            status: run.status,
+            resume_at: run.resumeAt,
+            entry: run.entry,
+            chat_episode: run.chatEpisode,
+            web_triggered_at: run.webTriggeredAt ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "viewer_id,series_id" },
+        );
       if (error) throw new Error(`saveFlowRun failed: ${error.message}`);
+    },
+
+    async pauseOtherRuns(viewerId, activeSeriesId) {
+      await db()
+        .from("flow_runs")
+        .update({ status: "paused", updated_at: new Date().toISOString() })
+        .eq("viewer_id", viewerId)
+        .eq("status", "wait")
+        .neq("series_id", activeSeriesId);
+    },
+
+    async seriesProgress(viewerId, seriesId) {
+      return seriesProgress(viewerId, seriesId);
     },
 
     async sendFlowTemplate(viewer, series, name) {
@@ -301,6 +355,9 @@ export function createSupabaseDeps(): BotDeps {
           const { count } = await db().from("orders").select("id", { count: "exact", head: true }).eq("viewer_id", viewer.id).eq("status", "paid");
           return (count ?? 0) > 0;
         }
+        case "started":
+        case "watched_within":
+          return false; // answered from progress in flowEnvFor
         case "reached_episode": {
           const { count } = await db()
             .from("progress")

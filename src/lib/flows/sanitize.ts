@@ -41,7 +41,8 @@ function buttons(v: unknown): FlowButton[] {
 function condition(v: unknown): Condition {
   const c = obj(v);
   if (c.check === "reached_episode") return { check: "reached_episode", episode: num(c.episode, 1, 999, 1) };
-  if (c.check === "language_en" || c.check === "paid") return { check: c.check };
+  if (c.check === "watched_within") return { check: "watched_within", hours: num(c.hours, 1, 720, 24) };
+  if (c.check === "language_en" || c.check === "paid" || c.check === "started") return { check: c.check };
   return { check: "opted_in" };
 }
 
@@ -50,14 +51,16 @@ function data(v: unknown): NodeData | null {
   switch (d.kind) {
     case "start":
       return { kind: "start" };
+    case "web":
+      return { kind: "web" };
     case "message":
       return { kind: "message", body: bi(d.body), buttons: buttons(d.buttons), media: media(d.media) };
     case "language":
       return { kind: "language", body: bi(d.body), btnAr: str(d.btnAr, 40), btnEn: str(d.btnEn, 40), skipIfKnown: bool(d.skipIfKnown, true), media: media(d.media) };
     case "episode":
-      return { kind: "episode", episode: num(d.episode, 1, 999, 1), caption: bi(d.caption), buttons: buttons(d.buttons) };
+      return { kind: "episode", episode: num(d.episode, 1, 999, 1), caption: bi(d.caption), buttons: buttons(d.buttons), skipIfWatched: bool(d.skipIfWatched, true) };
     case "link":
-      return { kind: "link", episode: d.episode === "resume" ? "resume" : num(d.episode, 1, 999, 1), body: bi(d.body), button: bi(d.button, 40), media: media(d.media) };
+      return { kind: "link", episode: d.episode === "resume" ? "resume" : num(d.episode, 1, 999, 1), body: bi(d.body), button: bi(d.button, 40), media: media(d.media), resumeIfFurther: bool(d.resumeIfFurther, true) };
     case "optin":
       return { kind: "optin", body: bi(d.body), yes: bi(d.yes, 40), no: bi(d.no, 40), skipIfAnswered: bool(d.skipIfAnswered, true) };
     case "wait":
@@ -106,7 +109,7 @@ export function sanitizeGraph(input: unknown): FlowGraph | null {
 export function sanitizeBlock(input: unknown): FlowGraph | null {
   const g = sanitizeGraph(input);
   if (!g) return null;
-  const nodes = g.nodes.filter((n) => n.data.kind !== "start").slice(0, 30);
+  const nodes = g.nodes.filter((n) => n.data.kind !== "start" && n.data.kind !== "web").slice(0, 30);
   if (!nodes.length) return null;
   const ids = new Set(nodes.map((n) => n.id));
   const minX = Math.min(...nodes.map((n) => n.position.x));

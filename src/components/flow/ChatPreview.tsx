@@ -20,8 +20,8 @@ type Props = {
   onSelectNode: (id: string) => void;
 };
 
-async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string, path: Tap[]) {
-  let s = await previewStart(g, series, viewer, templates, code);
+async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string, path: Tap[], entry: "chat" | "web") {
+  let s = await previewStart(g, series, viewer, templates, code, entry);
   const kept: Tap[] = [];
   for (const t of path) {
     if (s.result.status === "wait") s = await previewSkipWait(g, s);
@@ -78,7 +78,9 @@ function Bubble({ item, current, selected, onTap, onSelect, lang }: { item: Extr
 }
 
 export function ChatPreview(p: Props) {
-  const [viewer, setViewer] = useState<SampleViewer>({ language: null, optIn: null, paid: false, reachedEpisode: 0, withinWindow: true });
+  const [viewer, setViewer] = useState<SampleViewer>({ language: null, optIn: null, paid: false, reachedEpisode: 0, withinWindow: true, watchedRecently: false });
+  const [entry, setEntry] = useState<"chat" | "web">("chat");
+  const hasWeb = p.graph.nodes.some((n) => n.data.kind === "web");
   const [path, setPath] = useState<Tap[]>([]);
   const [session, setSession] = useState<PreviewSession | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -88,7 +90,7 @@ export function ChatPreview(p: Props) {
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(async () => {
-      const { s, kept } = await replay(graphRef.current, p.series, viewer, p.templates, p.code, path);
+      const { s, kept } = await replay(graphRef.current, p.series, viewer, p.templates, p.code, path, hasWeb ? entry : "chat");
       if (cancelled) return;
       setSession(s);
       if (kept.length !== path.length) setPath(kept);
@@ -98,7 +100,7 @@ export function ChatPreview(p: Props) {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.logicKey, viewer, path, p.series, p.templates, p.code]);
+  }, [p.logicKey, viewer, path, p.series, p.templates, p.code, entry, hasWeb]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -122,6 +124,12 @@ export function ChatPreview(p: Props) {
           </button>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {hasWeb && (
+            <select value={entry} onChange={(e) => (setEntry(e.target.value as "chat" | "web"), setPath([]))} style={{ fontSize: 12 }}>
+              <option value="chat">Starts: sends the code</option>
+              <option value="web">Starts: watching on the web</option>
+            </select>
+          )}
           <select value={viewer.language ?? ""} onChange={(e) => (setViewer({ ...viewer, language: (e.target.value || null) as Lang | null }), setPath([]))} style={{ fontSize: 12 }}>
             <option value="">New viewer</option>
             <option value="ar">Arabic viewer</option>
@@ -135,9 +143,12 @@ export function ChatPreview(p: Props) {
           <label className="inline">
             <input type="checkbox" checked={viewer.paid} onChange={(e) => setViewer({ ...viewer, paid: e.target.checked })} /> Paid
           </label>
-          <label className="inline">
-            Reached ep{" "}
+          <label className="inline" title="Furthest episode watched on the web (0 = new to this series)">
+            Watched up to ep{" "}
             <input type="number" min={0} max={p.series.episodeCount} value={viewer.reachedEpisode} onChange={(e) => setViewer({ ...viewer, reachedEpisode: Number(e.target.value) || 0 })} style={{ width: 48, fontSize: 12 }} />
+          </label>
+          <label className="inline" title="Watched this series on the web in the last hour">
+            <input type="checkbox" checked={Boolean(viewer.watchedRecently)} onChange={(e) => setViewer({ ...viewer, watchedRecently: e.target.checked })} /> Watching now
           </label>
           <label className="inline" title="WhatsApp only allows templates once 24 hours pass after the viewer's last message">
             <input type="checkbox" checked={!viewer.withinWindow} onChange={(e) => setViewer({ ...viewer, withinWindow: !e.target.checked })} /> 24 h passed

@@ -12,6 +12,8 @@ export type DefaultFlowInput = {
   waEpisodeCount: number;
   episodeCount: number;
   texts: Record<CopyKey, Bi>;
+  /** Send returning viewers straight to where they left off (default true). */
+  resumeReturning?: boolean;
 };
 
 export function newId(): string {
@@ -46,6 +48,21 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
     connect(id, "ar", "en"); // both answers continue to the same next card
   }
 
+  // Returning viewers (watched any episode, in the chat or on the web) go straight to where they left off.
+  let resumeLink: string | null = null;
+  if (s.resumeReturning !== false) {
+    const cond = add({ kind: "condition", condition: { check: "started" } });
+    connect(cond, "no");
+    resumeLink = newId();
+    nodes.push({
+      id: resumeLink,
+      position: { x: PER_ROW * 330 + 40, y: 520 },
+      name: "Returning viewer",
+      data: { kind: "link", episode: "resume", body: t.linkBody, button: t.btnOpenPlayer, media: { source: "poster", type: "image" }, resumeIfFurther: true },
+    });
+    link(cond, "yes", resumeLink);
+  }
+
   if (s.sendTrailer && s.hasTrailer) {
     const id = add({
       kind: "message",
@@ -66,6 +83,7 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
     const id = add({
       kind: "episode",
       episode: n,
+      skipIfWatched: true,
       caption: t.episodeCaption,
       buttons: last
         ? []
@@ -78,12 +96,13 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
     if (!last) notForMe.push({ id, port: "nfm" });
   }
 
-  const linkId = add({ kind: "link", episode: Math.min(chatEps + 1, Math.max(s.episodeCount, 1)), body: t.cliffhangerBody, button: t.btnWatchEp, media: { source: "poster", type: "image" } });
+  const linkId = add({ kind: "link", episode: Math.min(chatEps + 1, Math.max(s.episodeCount, 1)), body: t.cliffhangerBody, button: t.btnWatchEp, media: { source: "poster", type: "image" }, resumeIfFurther: true });
   connect(linkId, "next");
 
   if (s.askOptIn) {
     const id = add({ kind: "optin", body: t.optInBody, yes: t.btnYesNotify, no: t.btnNoThanks, skipIfAnswered: true });
     connect(id);
+    if (resumeLink) link(resumeLink, "next", id);
   }
 
   if (notForMe.length) {

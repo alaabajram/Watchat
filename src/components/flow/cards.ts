@@ -6,6 +6,11 @@ import type { NodeData, NodeKind } from "@/lib/flows/types";
 
 export const CARD_STYLE: Record<NodeKind, { icon: string; color: string; help: string }> = {
   start: { icon: "▶", color: "#0f766e", help: "Where every chat begins: the viewer sends the series code (from an ad, a link, or typed)." },
+  web: {
+    icon: "🌐",
+    color: "#0e7490",
+    help: "Starts when the viewer begins watching this series on the web (at most once every 6 hours). Use it for follow-ups: e.g. Wait 2 h → Condition 'watched in the last 2 hours' → reminder. Other series' waiting follow-ups pause.",
+  },
   message: { icon: "💬", color: "#2563eb", help: "Text, image or video, with up to 3 buttons. Each button can lead somewhere different." },
   language: { icon: "🌐", color: "#7c3aed", help: "Arabic or English subtitles. Skipped automatically for viewers who already chose." },
   episode: { icon: "🎬", color: "#db2777", help: "Sends an episode's chat clip (uploaded on the series page) with its caption." },
@@ -17,7 +22,7 @@ export const CARD_STYLE: Record<NodeKind, { icon: string; color: string; help: s
   suggest: { icon: "📚", color: "#9333ea", help: "Sends the list of other series. Ends this flow." },
 };
 
-export const ADDABLE: NodeKind[] = ["message", "episode", "link", "language", "optin", "wait", "condition", "template", "suggest"];
+export const ADDABLE: NodeKind[] = ["message", "episode", "link", "language", "optin", "wait", "condition", "template", "suggest", "web"];
 
 const bi = (k: keyof typeof COPY) => ({ ar: COPY[k].ar, en: COPY[k].en });
 
@@ -31,6 +36,7 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
       return {
         kind,
         episode: 1,
+        skipIfWatched: true,
         caption: bi("episodeCaption"),
         buttons: [
           { id: newId(), title: bi("btnNext") },
@@ -38,7 +44,7 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
         ],
       };
     case "link":
-      return { kind, episode: Math.min(4, Math.max(episodeCount, 1)), body: bi("cliffhangerBody"), button: bi("btnWatchEp"), media: { source: "poster", type: "image" } };
+      return { kind, episode: Math.min(4, Math.max(episodeCount, 1)), body: bi("cliffhangerBody"), button: bi("btnWatchEp"), media: { source: "poster", type: "image" }, resumeIfFurther: true };
     case "optin":
       return { kind, body: bi("optInBody"), yes: bi("btnYesNotify"), no: bi("btnNoThanks"), skipIfAnswered: true };
     case "wait":
@@ -50,6 +56,7 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
     case "suggest":
       return { kind };
     case "start":
+    case "web":
       return { kind };
   }
 }

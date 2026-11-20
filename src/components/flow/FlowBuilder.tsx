@@ -81,7 +81,8 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   const graph = useMemo(() => toGraph(nodes, edges), [nodes, edges]);
   const logicKey = useMemo(() => JSON.stringify({ n: graph.nodes.map((n) => [n.id, n.data]), e: graph.edges }), [graph]);
   const fullKey = useMemo(() => JSON.stringify(graph), [graph]);
-  const savedKey = useRef(JSON.stringify(props.draft));
+  // Compare against the canvas's own serialization so opening the builder never counts as a change.
+  const savedKey = useRef(JSON.stringify(toGraph(initial.nodes, initial.edges)));
   const dirty = fullKey !== savedKey.current;
 
   const templateBodies = useMemo(() => Object.fromEntries(templates.map((t) => [t.name, t.bodyAr ?? ""])), [templates]);

@@ -6,7 +6,7 @@
 // when none exists) and button taps move through it. Everything else here is shared replies:
 // menu, language, alerts, links, support, device confirmation, data deletion (texts: Shared replies).
 
-import { answer, startFlow, type FlowEnv, type RunResult } from "../flows/engine";
+import { answer, startFlow, type FlowEnv, type RunResult, type SeriesProgress } from "../flows/engine";
 import type { Condition, FlowGraph, Lang } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
@@ -52,13 +52,16 @@ export type EventName =
   | "flow_started"
   | "flow_blocked";
 
-/** Where a viewer is in a series' published flow. */
+/** Where a viewer is in one series' flow (a viewer has one per series they've started). */
 export type FlowRun = {
   seriesId: string;
   versionId: string;
   nodeId: string;
-  status: "input" | "wait" | "running" | "done" | "blocked";
+  status: "input" | "wait" | "running" | "done" | "blocked" | "paused";
   resumeAt: string | null;
+  entry: "chat" | "web"; // how this run last began: the series code, or watching on the web
+  chatEpisode: number; // furthest episode sent in the chat
+  webTriggeredAt?: string | null;
 };
 
 export interface BotDeps {
@@ -84,8 +87,14 @@ export interface BotDeps {
   /** The series' live flow; the standard flow is published automatically if none exists. Null only if the series is gone. */
   getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
   getFlowVersion(versionId: string): Promise<FlowGraph | null>;
-  getFlowRun(viewerId: string): Promise<FlowRun | null>;
+  getFlowRun(viewerId: string, seriesId: string): Promise<FlowRun | null>;
+  /** The viewer's runs, most recently active first. */
+  listFlowRuns(viewerId: string): Promise<FlowRun[]>;
   saveFlowRun(viewerId: string, run: FlowRun): Promise<void>;
+  /** The viewer moved to another series: hold that series' waiting follow-ups. */
+  pauseOtherRuns(viewerId: string, activeSeriesId: string): Promise<void>;
+  /** What the viewer watched of a series on the web. */
+  seriesProgress(viewerId: string, seriesId: string): Promise<SeriesProgress>;
   /** Send an approved template (respects opt-in and the marketing frequency cap). */
   sendFlowTemplate(viewer: Viewer, series: Series, name: string): Promise<"sent" | "skipped" | "failed">;
   checkCondition(viewer: Viewer, series: Series, condition: Condition): Promise<boolean>;
@@ -145,9 +154,13 @@ async function route(
         await deps.send(to, { kind: "text", body: t("seriesNotFound") });
         return null;
       }
-      await deps.track(viewer.id, "flow_started", { seriesId: series.id, props: { version: flow.versionId } });
-      const result = await startFlow(flow.graph, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
-      await saveRunResult(deps, viewer, series.id, flow.versionId, result);
+      // Each series keeps its own place; the flow itself skips what the viewer already watched.
+      const previous = await deps.getFlowRun(viewer.id, series.id);
+      await deps.pauseOtherRuns(viewer.id, series.id);
+      await deps.track(viewer.id, "flow_started", { seriesId: series.id, props: { version: flow.versionId, returning: Boolean(previous) } });
+      const run = { chatEpisode: previous?.chatEpisode ?? 0 };
+      const result = await startFlow(flow.graph, flowEnvFor(viewer, series, deps, { canSendFreeform: true, run }));
+      await saveRunResult(deps, viewer, series.id, flow.versionId, result, { entry: "chat", chatEpisode: run.chatEpisode, webTriggeredAt: previous?.webTriggeredAt ?? null });
       return { seriesId: series.id, step: "flow", waEpisode: 0 };
     }
 
@@ -175,16 +188,25 @@ async function route(
     }
 
     case "flow_reply": {
-      const run = await deps.getFlowRun(viewer.id);
-      const graph = run ? await deps.getFlowVersion(run.versionId) : null;
-      const series = run ? await deps.getSeries(run.seriesId) : null;
-      if (!run || !graph || !series) {
+      // Find the series whose flow has the tapped card (the viewer may be in several series).
+      let found: { run: FlowRun; graph: FlowGraph } | null = null;
+      for (const r of await deps.listFlowRuns(viewer.id)) {
+        const graph = await deps.getFlowVersion(r.versionId);
+        if (graph?.nodes.some((n) => n.id === intent.nodeId)) {
+          found = { run: r, graph };
+          break;
+        }
+      }
+      const series = found ? await deps.getSeries(found.run.seriesId) : null;
+      if (!found || !series) {
         await sendMenu(c);
         return null;
       }
-      const result = await answer(graph, intent.nodeId, intent.port, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
-      await saveRunResult(deps, viewer, series.id, run.versionId, result);
-      return null;
+      await deps.pauseOtherRuns(viewer.id, series.id);
+      const run = { chatEpisode: found.run.chatEpisode };
+      const result = await answer(found.graph, intent.nodeId, intent.port, flowEnvFor(viewer, series, deps, { canSendFreeform: true, run }));
+      await saveRunResult(deps, viewer, series.id, found.run.versionId, result, { entry: found.run.entry, chatEpisode: run.chatEpisode, webTriggeredAt: found.run.webTriggeredAt ?? null });
+      return { seriesId: series.id, step: "flow", waEpisode: 0 };
     }
 
     case "opt_in": {
@@ -286,8 +308,21 @@ async function route(
 const viewerLangToFlow = (l: ViewerLang | null): Lang | null => (l === "ar_en_subs" ? "en" : l === "ar" ? "ar" : null);
 
 /** Connect the pure flow engine to WhatsApp and the database for one viewer. */
-export function flowEnvFor(viewer: Viewer, series: Series, deps: BotDeps, opts: { canSendFreeform: boolean; now?: () => number }): FlowEnv {
+/** `run.chatEpisode` is updated as episodes are sent in the chat; save it with the run afterwards. */
+export function flowEnvFor(
+  viewer: Viewer,
+  series: Series,
+  deps: BotDeps,
+  opts: { canSendFreeform: boolean; now?: () => number; run?: { chatEpisode: number } },
+): FlowEnv {
   const v = { ...viewer };
+  const run = opts.run ?? { chatEpisode: 0 };
+  let web: SeriesProgress | null = null;
+  const progress = async (): Promise<SeriesProgress> => {
+    web ??= await deps.seriesProgress(v.id, series.id);
+    return { maxStarted: web.maxStarted, maxCompleted: Math.max(web.maxCompleted, run.chatEpisode), lastWatchedAt: web.lastWatchedAt };
+  };
+  const clamp = (n: number) => Math.min(Math.max(n, 1), Math.max(series.episodeCount, 1));
   const env: FlowEnv = {
     lang: viewerLangToFlow(v.language) ?? "ar",
     title: (l) => titleOf(series, l),
@@ -304,9 +339,17 @@ export function flowEnvFor(viewer: Viewer, series: Series, deps: BotDeps, opts: 
       await deps.setOptIn(v.id, yes ? "in" : "out", "flow");
       await deps.track(v.id, "opt_in_changed", { props: { status: yes ? "in" : "out", source: "flow" } });
     },
-    link: async (ep) => {
-      const episode = ep === "resume" ? await deps.resumeEpisode(v.id, series) : Math.min(Math.max(ep, 1), Math.max(series.episodeCount, 1));
+    link: async (ep, resumeIfFurther) => {
+      const p = await progress();
+      // The next episode to watch: one they started but didn't finish, otherwise the one after the last finished.
+      const further = p.maxStarted > p.maxCompleted ? p.maxStarted : p.maxCompleted > 0 ? p.maxCompleted + 1 : 0;
+      const episode =
+        ep === "resume" ? clamp(further || (await deps.resumeEpisode(v.id, series))) : resumeIfFurther ? clamp(Math.max(ep, further)) : clamp(ep);
       return { url: await deps.mintLink(v.id, series, episode), episode };
+    },
+    progress,
+    noteChatEpisode: (n) => {
+      run.chatEpisode = Math.max(run.chatEpisode, n);
     },
     clip: async (n, l) => {
       const clip = await deps.getClip(series.id, n);
@@ -314,7 +357,17 @@ export function flowEnvFor(viewer: Viewer, series: Series, deps: BotDeps, opts: 
     },
     mediaUrl: (ref) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
     template: (name) => deps.sendFlowTemplate(v, series, name),
-    check: (cond) => deps.checkCondition(v, series, cond),
+    check: async (cond) => {
+      if (cond.check === "started") {
+        const p = await progress();
+        return p.maxStarted > 0 || p.maxCompleted > 0;
+      }
+      if (cond.check === "watched_within") {
+        const p = await progress();
+        return p.lastWatchedAt !== null && (opts.now ?? Date.now)() - p.lastWatchedAt <= cond.hours * 3600_000;
+      }
+      return deps.checkCondition(v, series, cond);
+    },
     suggest: async () => {
       await deps.track(v.id, "wa_dropout", { seriesId: series.id });
       const lang = viewerLangToFlow(v.language) ?? "ar";
@@ -327,7 +380,14 @@ export function flowEnvFor(viewer: Viewer, series: Series, deps: BotDeps, opts: 
   return env;
 }
 
-export async function saveRunResult(deps: BotDeps, viewer: Viewer, seriesId: string, versionId: string, r: RunResult): Promise<void> {
+export async function saveRunResult(
+  deps: BotDeps,
+  viewer: Viewer,
+  seriesId: string,
+  versionId: string,
+  r: RunResult,
+  meta: { entry: "chat" | "web"; chatEpisode: number; webTriggeredAt?: string | null },
+): Promise<void> {
   if (r.status === "blocked") await deps.track(viewer.id, "flow_blocked", { seriesId, props: { node: r.nodeId, reason: r.reason } });
   await deps.saveFlowRun(viewer.id, {
     seriesId,
@@ -335,6 +395,7 @@ export async function saveRunResult(deps: BotDeps, viewer: Viewer, seriesId: str
     nodeId: "nodeId" in r ? r.nodeId : "",
     status: r.status,
     resumeAt: r.status === "wait" ? new Date(r.resumeAt).toISOString() : null,
+    ...meta,
   });
 }
 

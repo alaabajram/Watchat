@@ -14,7 +14,12 @@ export interface FlowEnv {
   setLanguage(lang: Lang): Promise<void>;
   optIn(): Promise<"in" | "out" | null>;
   setOptIn(yes: boolean): Promise<void>;
-  link(episode: number | "resume"): Promise<{ url: string; episode: number }>;
+  /** Personal link. resumeIfFurther: open where the viewer left off when that's past `episode`. */
+  link(episode: number | "resume", resumeIfFurther: boolean): Promise<{ url: string; episode: number }>;
+  /** What the viewer has watched of this series: chat episodes received count as completed. */
+  progress(): Promise<SeriesProgress>;
+  /** Record that an episode was sent in the chat. */
+  noteChatEpisode(episode: number): void;
   clip(episode: number, lang: Lang): Promise<{ url: string | null; title: string | null }>;
   mediaUrl(ref: MediaRef): string | null;
   template(name: string, nodeId: string): Promise<"sent" | "skipped" | "failed">;
@@ -25,6 +30,11 @@ export interface FlowEnv {
   track(name: string, data?: { episode?: number; props?: Record<string, unknown> }): Promise<void>;
   now(): number;
 }
+
+export type SeriesProgress = { maxStarted: number; maxCompleted: number; lastWatchedAt: number | null };
+
+/** Already seen: completed, sent in the chat, or the viewer has moved past it. */
+export const hasWatched = (p: SeriesProgress, episode: number) => episode <= p.maxCompleted || episode < p.maxStarted;
 
 export type RunResult =
   | { status: "input"; nodeId: string }
@@ -71,6 +81,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
 
   switch (d.kind) {
     case "start":
+    case "web":
       return next();
 
     case "message": {
@@ -107,6 +118,9 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
     }
 
     case "episode": {
+      if (d.skipIfWatched && hasWatched(await env.progress(), d.episode)) {
+        return next(d.buttons[0]?.id ?? "next"); // already seen: continue as if they tapped the first button
+      }
       const clip = await env.clip(d.episode, lang);
       const caption = renderCopy(pick(d.caption, lang), { ...vars, n: d.episode, title: clip.title ?? vars.title });
       if (d.buttons.length) {
@@ -122,12 +136,13 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
       } else {
         await env.send(clip.url ? { kind: "video", link: clip.url, caption } : { kind: "text", body: caption }, node.id);
       }
+      env.noteChatEpisode(d.episode);
       await env.track("wa_episode_sent", { episode: d.episode });
       return d.buttons.length ? input : next();
     }
 
     case "link": {
-      const { url, episode } = await env.link(d.episode);
+      const { url, episode } = await env.link(d.episode, d.resumeIfFurther);
       const h = header(env, d.media);
       await env.send(
         {
@@ -178,11 +193,13 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
   }
 }
 
-/** Start the flow from its Start card. */
-export async function startFlow(g: FlowGraph, env: FlowEnv): Promise<RunResult> {
-  const start = findStart(g);
-  return start ? runFrom(g, start.id, env) : { status: "done" };
+/** Start the flow from its Start card (the viewer sent the code) or its On the web card. */
+export async function startFlow(g: FlowGraph, env: FlowEnv, entry: "chat" | "web" = "chat"): Promise<RunResult> {
+  const card = entry === "web" ? g.nodes.find((n) => n.data.kind === "web") : findStart(g);
+  return card ? runFrom(g, card.id, env) : { status: "done" };
 }
+
+export const hasWebEntry = (g: FlowGraph) => g.nodes.some((n) => n.data.kind === "web");
 
 /** The viewer tapped a button (port) on a card. Old buttons still work as long as the card exists. */
 export async function answer(g: FlowGraph, nodeId: string, port: string, env: FlowEnv): Promise<RunResult> {

@@ -138,4 +138,53 @@ describe("flows", () => {
     expect(block.nodes.find((n) => n.name === "Trailer hook")).toBeTruthy();
     expect(sanitizeBlock({ v: 1, nodes: [named.nodes[0]], edges: [] })).toBeNull(); // Start alone can't be saved
   });
+
+  it("runs follow-ups from 'On the web' and stays quiet for viewers watching right now", async () => {
+    const g: FlowGraph = {
+      v: 1,
+      nodes: [
+        { id: "s", position: { x: 0, y: 0 }, data: { kind: "start" } },
+        { id: "w", position: { x: 0, y: 0 }, data: { kind: "web" } },
+        { id: "wait", position: { x: 0, y: 0 }, data: { kind: "wait", minutes: 120 } },
+        { id: "c", position: { x: 0, y: 0 }, data: { kind: "condition", condition: { check: "watched_within", hours: 2 } } },
+        { id: "t", position: { x: 0, y: 0 }, data: { kind: "template", name: "come_back" } },
+      ],
+      edges: [
+        { id: "1", source: "w", sourceHandle: "next", target: "wait" },
+        { id: "2", source: "wait", sourceHandle: "next", target: "c" },
+        { id: "3", source: "c", sourceHandle: "no", target: "t" },
+      ],
+    };
+    const tpl = { come_back: { approved: true, ar: { body: "كمّل «{{1}}» من الحلقة {{2}}", button: "كمّل" }, en: null } };
+    // Stopped watching → reminder
+    let s = await previewStart(g, series, { ...viewer, reachedEpisode: 5, optIn: "in" }, tpl, "X", "web");
+    expect(s.result.status).toBe("wait");
+    s = await previewSkipWait(g, s);
+    expect(s.items.some((i) => i.from === "bot" && i.msg.kind === "cta_url")).toBe(true);
+    // Still watching → nothing
+    let busy = await previewStart(g, series, { ...viewer, reachedEpisode: 5, optIn: "in", watchedRecently: true }, tpl, "X", "web");
+    busy = await previewSkipWait(g, busy);
+    expect(busy.items.some((i) => i.from === "bot")).toBe(false);
+
+    // Arrows can't point into an entry card, and only one 'On the web' card is allowed
+    const bad = validateFlow(
+      { ...g, nodes: [...g.nodes, { id: "w2", position: { x: 0, y: 0 }, data: { kind: "web" } }], edges: [...g.edges, { id: "4", source: "c", sourceHandle: "yes", target: "w" }] },
+      ctx,
+    )
+      .filter((i) => i.level === "error")
+      .map((i) => i.message)
+      .join("\n");
+    expect(bad).toMatch(/at most one/);
+    expect(bad).toMatch(/can't point into/);
+  });
+
+  it("skips episodes already watched and links to where the viewer is", async () => {
+    let s = await previewStart(std(), series, { ...viewer, language: "ar", reachedEpisode: 2 }, {}, "SECRETS01");
+    // Started this series before → straight to the resume link (episode 3), then alerts
+    const link = s.items.find((i) => i.from === "bot" && i.msg.kind === "cta_url") as { msg: { body: string } } | undefined;
+    expect(link).toBeTruthy();
+    expect(s.result.status).toBe("input");
+    s = await previewStart(std(), series, { ...viewer, language: "ar" }, {}, "SECRETS01");
+    expect(lastButtons(s.items)[0].title).toBe(COPY.btnStartEp1.ar); // new viewer still gets the trailer
+  });
 });

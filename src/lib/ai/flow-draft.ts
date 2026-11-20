@@ -9,8 +9,8 @@ import { validateFlow, type Issue, type ValidateCtx } from "../flows/validate";
 import { LIMITS } from "../whatsapp/messages";
 import type { Tool } from "./anthropic";
 
-const KINDS: NodeKind[] = ["start", "message", "language", "episode", "link", "optin", "wait", "condition", "template", "suggest"];
-const CHECKS = ["none", "opted_in", "language_en", "paid", "reached_episode"] as const;
+const KINDS: NodeKind[] = ["start", "web", "message", "language", "episode", "link", "optin", "wait", "condition", "template", "suggest"];
+const CHECKS = ["none", "opted_in", "language_en", "paid", "reached_episode", "started", "watched_within"] as const;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 
 export type StepButton = { ar: string; en: string; goto: string };
@@ -78,15 +78,19 @@ export const FLOW_TOOL: Tool = {
                 properties: { ar: str("Arabic title, max 20 characters"), en: str("English title, max 20 characters"), goto: str("id of the step this button leads to, or empty to end") },
               },
             },
-            next: str("Step that follows when there are no reply buttons (start, message/episode without buttons, link, wait, template). Empty to end."),
+            next: str("Step that follows when there are no reply buttons (start, web, message/episode without buttons, link, wait, template). Empty to end."),
             yes: str("condition only: step when the check is true. Empty to end."),
             no: str("condition only: step when the check is false. Empty to end."),
             episode: { type: "integer", description: "episode: episode number. link: episode to open (0 = where the viewer left off). condition reached_episode: the episode. Otherwise 0." },
-            minutes: { type: "integer", description: "wait only: minutes to wait (1440 = 1 day). Otherwise 0." },
+            minutes: { type: "integer", description: "wait: minutes to wait (1440 = 1 day). condition watched_within: the time window in minutes. Otherwise 0." },
             check: { type: "string", enum: CHECKS, description: "condition only; otherwise none." },
             template: str("template only: the template name. Otherwise empty."),
             media: str("message/language: none, poster, trailer, or a media library id. link: none, poster or an image id. Otherwise none."),
-            skip: { type: "boolean", description: "language: skip for viewers who already chose. optin: skip for viewers who already answered. Otherwise false." },
+            skip: {
+              type: "boolean",
+              description:
+                "language: skip for viewers who already chose. optin: skip for viewers who already answered. episode: skip if the viewer already watched it (usually true). link: open where the viewer left off if further (usually true). Otherwise false.",
+            },
           },
         },
       },
@@ -107,6 +111,7 @@ export function graphToSteps(g: FlowGraph): Step[] {
     const s: Step = { id: n.id, kind: d.kind, ar: "", en: "", buttons: [], next: "", yes: "", no: "", episode: 0, minutes: 0, check: "none", template: "", media: "none", skip: false };
     switch (d.kind) {
       case "start":
+      case "web":
         s.next = target(g, n.id, "next");
         break;
       case "message":
@@ -122,12 +127,12 @@ export function graphToSteps(g: FlowGraph): Step[] {
         ];
         break;
       case "episode":
-        Object.assign(s, { ar: d.caption.ar, en: d.caption.en, episode: d.episode });
+        Object.assign(s, { ar: d.caption.ar, en: d.caption.en, episode: d.episode, skip: d.skipIfWatched });
         s.buttons = d.buttons.map((b) => ({ ar: b.title.ar, en: b.title.en, goto: target(g, n.id, b.id) }));
         if (!d.buttons.length) s.next = target(g, n.id, "next");
         break;
       case "link":
-        Object.assign(s, { ar: d.body.ar, en: d.body.en, episode: d.episode === "resume" ? 0 : d.episode, media: mediaKey(d.media), next: target(g, n.id, "next") });
+        Object.assign(s, { ar: d.body.ar, en: d.body.en, episode: d.episode === "resume" ? 0 : d.episode, media: mediaKey(d.media), next: target(g, n.id, "next"), skip: d.resumeIfFurther });
         s.buttons = [{ ar: d.button.ar, en: d.button.en, goto: "" }];
         break;
       case "optin":
@@ -141,7 +146,13 @@ export function graphToSteps(g: FlowGraph): Step[] {
         Object.assign(s, { minutes: d.minutes, next: target(g, n.id, "next") });
         break;
       case "condition":
-        Object.assign(s, { check: d.condition.check, episode: d.condition.check === "reached_episode" ? d.condition.episode : 0, yes: target(g, n.id, "yes"), no: target(g, n.id, "no") });
+        Object.assign(s, {
+          check: d.condition.check,
+          episode: d.condition.check === "reached_episode" ? d.condition.episode : 0,
+          minutes: d.condition.check === "watched_within" ? d.condition.hours * 60 : 0,
+          yes: target(g, n.id, "yes"),
+          no: target(g, n.id, "no"),
+        });
         break;
       case "template":
         Object.assign(s, { template: d.name, next: target(g, n.id, "next") });
@@ -179,11 +190,13 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
   };
   const prevNode = (id: string) => previous?.nodes.find((n) => n.id === id);
   let starts = 0;
+  let webs = 0;
 
   for (const s of steps) {
     const kind = String(s.kind).toLowerCase() as NodeKind;
     if (!KINDS.includes(kind)) continue;
     if (kind === "start" && starts++) continue; // only one start
+    if (kind === "web" && webs++) continue; // and one web entry
     const id = idMap.get(s.id)!;
     if (nodes.some((n) => n.id === id)) continue;
     const bi = { ar: s.ar ?? "", en: s.en ?? "" };
@@ -194,6 +207,7 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
     let data: NodeData;
     switch (kind) {
       case "start":
+      case "web":
         data = { kind };
         link(id, "next", s.next);
         break;
@@ -208,12 +222,19 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
         link(id, "en", buttons[1]?.goto ?? s.next);
         break;
       case "episode":
-        data = { kind, episode: ep, caption: bi, buttons: buttons.map(({ id: bid, title }) => ({ id: bid, title })) };
+        data = { kind, episode: ep, caption: bi, buttons: buttons.map(({ id: bid, title }) => ({ id: bid, title })), skipIfWatched: s.skip !== false };
         if (buttons.length) buttons.forEach((b) => link(id, b.id, b.goto));
         else link(id, "next", s.next);
         break;
       case "link":
-        data = { kind, episode: s.episode > 0 ? ep : "resume", body: bi, button: { ar: buttons[0]?.title.ar || "شاهد الآن", en: buttons[0]?.title.en || "Watch now" }, media: toMedia(s.media, ctx, true) };
+        data = {
+          kind,
+          episode: s.episode > 0 ? ep : "resume",
+          body: bi,
+          button: { ar: buttons[0]?.title.ar || "شاهد الآن", en: buttons[0]?.title.en || "Watch now" },
+          media: toMedia(s.media, ctx, true),
+          resumeIfFurther: s.skip !== false,
+        };
         link(id, "next", s.next);
         break;
       case "optin":
@@ -228,7 +249,13 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
       case "condition": {
         const check = String(s.check).toLowerCase();
         const condition: Condition =
-          check === "reached_episode" ? { check: "reached_episode", episode: ep } : check === "language_en" || check === "paid" ? { check } : { check: "opted_in" };
+          check === "reached_episode"
+            ? { check: "reached_episode", episode: ep }
+            : check === "watched_within"
+              ? { check: "watched_within", hours: Math.max(1, Math.min(720, Math.round((s.minutes || 1440) / 60))) }
+              : check === "language_en" || check === "paid" || check === "started"
+                ? { check }
+                : { check: "opted_in" };
         data = { kind, condition };
         link(id, "yes", s.yes);
         link(id, "no", s.no);
@@ -251,9 +278,9 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
 
 /** Place cards that weren't on the canvas: left to right by distance from Start, stacked within a column. */
 function layoutNew(nodes: FlowNode[], edges: FlowEdge[], kept: Set<string>) {
-  const start = nodes.find((n) => n.data.kind === "start")!;
-  const depth = new Map<string, number>([[start.id, 0]]);
-  const queue = [start.id];
+  const entries = nodes.filter((n) => n.data.kind === "start" || n.data.kind === "web");
+  const depth = new Map<string, number>(entries.map((n) => [n.id, 0]));
+  const queue = entries.map((n) => n.id);
   while (queue.length) {
     const id = queue.shift()!;
     for (const e of edges.filter((x) => x.source === id)) if (!depth.has(e.target)) (depth.set(e.target, depth.get(id)! + 1), queue.push(e.target));
@@ -288,7 +315,9 @@ Step kinds:
 ${kinds}
 
 Rules (the flow is checked against these before it can be published):
-- Exactly one start step. Every step id must be unique; goto/next/yes/no must name existing steps or be empty (ends the chat).
+- Exactly one start step (the viewer sends the code). Optionally one web step: runs when the viewer starts watching on the web, for follow-ups.
+- Viewers can watch ahead on the web: episode steps with skip=true are skipped for episodes already watched, and links with skip=true open where the viewer left off. Use the started condition to treat returning viewers differently, and watched_within to avoid reminding people who are watching right now.
+- Every step id must be unique; goto/next/yes/no must name existing steps or be empty (ends the chat).
 - Reply buttons: at most ${LIMITS.maxButtons} per step, titles at most ${LIMITS.buttonTitle} characters including emoji, all different within a step. Messages at most ${LIMITS.body} characters.
 - Placeholders allowed in texts: {title} series title, {n} episode number, {total} episode count, {next} episode a link opens. Nothing else in curly braces.
 - Arabic is the main language: natural Gulf Arabic, short, suspenseful, a hook in every message. English is for viewers with English subtitles.

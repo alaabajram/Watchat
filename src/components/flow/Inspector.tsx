@@ -200,6 +200,10 @@ export function Inspector(p: Props) {
             </select>
           </label>
           {!p.series.clips[d.episode]?.ar && <div style={{ fontSize: 12, color: "#b45309" }}>Upload this episode&apos;s chat clip on the series page. Until then the caption is sent without video.</div>}
+          <label className="inline" style={{ fontSize: 12 }}>
+            <input type="checkbox" checked={d.skipIfWatched} onChange={(e) => set({ skipIfWatched: e.target.checked })} /> Skip if the viewer already watched it
+            (in the chat or on the web); the flow continues via the first button
+          </label>
           <BiText label="Caption ({n} = episode, {total}, {title})" value={d.caption} onChange={(caption) => set({ caption })} max={1024} rows={2} />
           <Buttons value={d.buttons} onChange={(buttons) => set({ buttons })} />
         </>
@@ -218,6 +222,12 @@ export function Inspector(p: Props) {
               ))}
             </select>
           </label>
+          {d.episode !== "resume" && (
+            <label className="inline" style={{ fontSize: 12 }}>
+              <input type="checkbox" checked={d.resumeIfFurther} onChange={(e) => set({ resumeIfFurther: e.target.checked })} /> Open where the viewer left off if
+              they&apos;re further ahead
+            </label>
+          )}
           <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} imageOnly />
           <BiText label="Message ({next} = episode)" value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
           <BiText label="Button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
@@ -245,15 +255,31 @@ export function Inspector(p: Props) {
               value={d.condition.check}
               onChange={(e) => {
                 const check = e.target.value;
-                set({ condition: check === "reached_episode" ? { check: "reached_episode", episode: 4 } : { check: check as "opted_in" | "language_en" | "paid" } });
+                set({
+                  condition:
+                    check === "reached_episode"
+                      ? { check: "reached_episode", episode: 4 }
+                      : check === "watched_within"
+                        ? { check: "watched_within", hours: 2 }
+                        : { check: check as "opted_in" | "language_en" | "paid" | "started" },
+                });
               }}
             >
               <option value="opted_in">Turned on alerts</option>
               <option value="language_en">Watches with English subtitles</option>
               <option value="paid">Has paid before</option>
               <option value="reached_episode">Reached an episode on the web</option>
+              <option value="started">Already started this series (chat or web)</option>
+              <option value="watched_within">Watched on the web recently</option>
             </select>
           </label>
+          {d.condition.check === "watched_within" && (
+            <label className="inline" style={{ fontSize: 12 }}>
+              In the last
+              <input type="number" min={1} max={720} value={d.condition.hours} onChange={(e) => set({ condition: { check: "watched_within", hours: Math.max(1, Math.min(720, Number(e.target.value) || 1)) } })} style={{ width: 70 }} />
+              hours
+            </label>
+          )}
           {d.condition.check === "reached_episode" && (
             <label style={{ fontSize: 12 }}>
               Episode{" "}
