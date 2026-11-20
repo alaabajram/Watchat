@@ -4,6 +4,7 @@
 // and a live WhatsApp preview that always shows how the chat will look. Autosaves the draft;
 // "Publish" checks the flow and makes it live for new and continuing chats.
 
+import { flowSummary, health, HEALTH_COLOR } from "@/lib/ctr/ctr";
 import "@xyflow/react/dist/style.css";
 import {
   addEdge,
@@ -130,6 +131,11 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     return m.source === "poster" ? props.series.posterUrl : props.series.trailerUrl;
   };
 
+  // CTR of the whole flow (cards with something to tap) and its weakest card, from the live version's sends.
+  const perf = useMemo(() => flowSummary(props.stats, Object.fromEntries(nodes.map((n) => [n.id, n.data.card.kind]))), [props.stats, nodes]);
+  const weakestNode = perf.weakest ? nodes.find((n) => n.id === perf.weakest) : null;
+  const weakestName = weakestNode ? weakestNode.data.name || CARD_LABELS[weakestNode.data.card.kind].split(":")[0] : "";
+
   // Badges, thumbnails and template text on the cards.
   useEffect(() => {
     setNodes((ns) =>
@@ -140,8 +146,9 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
         const e = issues.filter((i) => i.nodeId === n.id && i.level === "error").length;
         const w = issues.filter((i) => i.nodeId === n.id && i.level === "warning").length;
         const templateBody = d.kind === "template" ? (templateBodies[d.name] ?? null) : undefined;
-        if (n.data.thumb === thumb && n.data.errors === e && n.data.warnings === w && n.data.templateBody === templateBody) return n;
-        return { ...n, data: { ...n.data, thumb, errors: e, warnings: w, templateBody } };
+        const stat = props.stats[n.id] ?? null;
+        if (n.data.thumb === thumb && n.data.errors === e && n.data.warnings === w && n.data.templateBody === templateBody && n.data.stat === stat) return n;
+        return { ...n, data: { ...n.data, thumb, errors: e, warnings: w, templateBody, stat } };
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -277,6 +284,17 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
           {saveState.busy ? "Saving…" : saveState.error ? `Save failed: ${saveState.error}` : dirty ? "Unsaved changes" : `Draft saved ${time(saveState.at)}`}
         </span>
         <span style={{ flex: 1 }} />
+        {perf.reached > 0 && (
+          <button
+            type="button"
+            className="secondary"
+            title={`Last 30 days: ${perf.clicked} of ${perf.reached} card views led to a tap or link open.${perf.weakest ? " Click to show the weakest card." : ""}`}
+            onClick={() => perf.weakest && focusCard(perf.weakest)}
+            style={{ color: HEALTH_COLOR[health(perf.clicked, perf.reached, "card")] }}
+          >
+            📊 CTR {Math.round((perf.clicked / perf.reached) * 100)}%{perf.weakest ? ` · weakest: ${weakestName}` : ""}
+          </button>
+        )}
         <button type="button" className="secondary" onClick={() => setShowIssues(!showIssues)} style={{ color: errors.length ? "#b91c1c" : undefined }}>
           {errors.length ? `⛔ ${errors.length}` : "✓"} {warnings.length ? `⚠️ ${warnings.length}` : ""} Checks
         </button>

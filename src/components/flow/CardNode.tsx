@@ -6,9 +6,19 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { formatMinutes } from "@/lib/flows/preview";
 import { CARD_LABELS, portsOf, type NodeData } from "@/lib/flows/types";
+import { CLICKABLE_KINDS, ctr, health, HEALTH_COLOR, HEALTH_LABEL, type CardStat } from "@/lib/ctr/ctr";
 import { CARD_STYLE } from "./cards";
 
-export type CardNodeData = { card: NodeData; name?: string; thumb: string | null; errors: number; warnings: number; templateBody?: string | null };
+export type CardNodeData = {
+  card: NodeData;
+  name?: string;
+  thumb: string | null;
+  errors: number;
+  warnings: number;
+  templateBody?: string | null;
+  /** Last 30 days of the live flow: viewers who got this card and who tapped / opened. */
+  stat?: CardStat | null;
+};
 export type CardFlowNode = Node<CardNodeData, "card">;
 
 const CONDITION_TEXT = {
@@ -102,6 +112,7 @@ export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
           </div>
         </div>
       </div>
+      {data.stat && CLICKABLE_KINDS.has(d.kind) && <CtrStrip stat={data.stat} />}
       {ports.map((p) => (
         <div key={p.id} style={{ position: "relative", borderTop: "1px solid #f1f5f9", padding: "5px 18px 5px 10px", color: "#0369a1", textAlign: "center" }} dir="auto">
           {p.label}
@@ -109,6 +120,23 @@ export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
         </div>
       ))}
       {ports.length === 0 && <div style={{ padding: "4px 10px", color: "#64748b", textAlign: "center", borderTop: "1px solid #f1f5f9" }}>Ends the flow</div>}
+    </div>
+  );
+}
+
+function CtrStrip({ stat }: { stat: CardStat }) {
+  const h = health(stat.clicked, stat.reached, "card");
+  const rate = ctr(stat.clicked, stat.reached);
+  return (
+    <div
+      title={`Last 30 days: ${stat.clicked} of ${stat.reached} viewers tapped or opened · ${HEALTH_LABEL[h]}`}
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderTop: "1px solid #f1f5f9", fontSize: 11, color: "#475569" }}
+    >
+      <span style={{ fontWeight: 700, color: HEALTH_COLOR[h] }}>CTR {rate == null ? "—" : `${Math.round(rate * 100)}%`}</span>
+      <div style={{ flex: 1, height: 4, background: "#e5e7eb", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${Math.round((rate ?? 0) * 100)}%`, height: 4, background: HEALTH_COLOR[h] }} />
+      </div>
+      <span>{stat.reached} viewers</span>
     </div>
   );
 }

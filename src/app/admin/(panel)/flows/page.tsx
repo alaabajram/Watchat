@@ -1,18 +1,23 @@
 // Flow builder home: one flow per series, with its draft / live status.
 
 import Link from "next/link";
+import { CtrMeter } from "@/components/admin/CtrMeter";
 import { requireAdmin } from "@/lib/admin/auth";
+import { flowSummary } from "@/lib/ctr/ctr";
+import { CTR_DAYS, loadFlowCtr } from "@/lib/ctr/store";
+import { CARD_LABELS, type FlowGraph } from "@/lib/flows/types";
 import { db } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 export default async function FlowsPage() {
   const admin = await requireAdmin("bot");
-  const [{ data: series }, { data: flows }, { data: versions }, { data: running }] = await Promise.all([
+  const [{ data: series }, { data: flows }, { data: versions }, { data: running }, ctr] = await Promise.all([
     db().from("series").select("id, code, title_en, title_ar, status").eq("tenant_id", admin.tenantId).order("created_at"),
     db().from("flows").select("series_id, published_version_id, draft_updated_at").eq("tenant_id", admin.tenantId),
-    db().from("flow_versions").select("id, version, published_at").eq("tenant_id", admin.tenantId),
+    db().from("flow_versions").select("id, version, published_at, graph").eq("tenant_id", admin.tenantId),
     db().from("flow_runs").select("series_id, status").eq("tenant_id", admin.tenantId).in("status", ["input", "wait"]),
+    loadFlowCtr(admin.tenantId).catch(() => ({}) as Awaited<ReturnType<typeof loadFlowCtr>>),
   ]);
   const flowBy = new Map((flows ?? []).map((f) => [f.series_id, f]));
   const versionBy = new Map((versions ?? []).map((v) => [v.id, v]));
@@ -43,6 +48,7 @@ export default async function FlowsPage() {
             <th>Status</th>
             <th>Flow</th>
             <th>Viewers in flow</th>
+            <th>CTR ({CTR_DAYS} days)</th>
             <th />
           </tr>
         </thead>
@@ -59,6 +65,24 @@ export default async function FlowsPage() {
                 <td>{s.status}</td>
                 <td>{v ? `Live v${v.version}` : "Standard flow"}</td>
                 <td>{a ? `${a.input} waiting for a tap · ${a.wait} waiting for time` : "—"}</td>
+                <td>
+                  {(() => {
+                    const nodes = ((v?.graph as FlowGraph | undefined)?.nodes ?? []) as FlowGraph["nodes"];
+                    const sum = flowSummary(ctr[s.id] ?? {}, Object.fromEntries(nodes.map((n) => [n.id, n.data.kind])));
+                    if (!sum.reached) return <span className="muted">—</span>;
+                    const weak = nodes.find((n) => n.id === sum.weakest);
+                    return (
+                      <>
+                        <CtrMeter clicks={sum.clicked} base={sum.reached} kind="card" />
+                        {weak && (
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            Weakest card: {weak.name || CARD_LABELS[weak.data.kind].split(":")[0]}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </td>
                 <td>
                   <Link className="btn" href={`/admin/flows/${s.id}`}>
                     Open builder

@@ -1,6 +1,8 @@
 // Loads everything the flow builder page needs, creating the series' draft from the standard
 // scenario the first time it's opened.
 
+import type { CardStat } from "../ctr/ctr";
+import { loadFlowCtr } from "../ctr/store";
 import { getAiSettings } from "../ai/settings";
 import { listTemplates, type TemplateInfo } from "../messaging/template-store";
 import { db } from "../supabase";
@@ -28,6 +30,8 @@ export type BuilderData = {
   templates: TemplateInfo[];
   aiReady: boolean;
   myCards: SavedCard[];
+  /** Last 30 days: per card, viewers who got it and who tapped a button or opened its link. */
+  stats: Record<string, CardStat>;
 };
 
 export async function listMyCards(tenantId: string): Promise<SavedCard[]> {
@@ -62,12 +66,13 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     flow = created;
   }
 
-  const [{ data: versions }, { data: assets }, templates, ai, myCards] = await Promise.all([
+  const [{ data: versions }, { data: assets }, templates, ai, myCards, ctr] = await Promise.all([
     db().from("flow_versions").select("id, version, published_at, note, graph").eq("flow_id", flow!.id).order("version", { ascending: false }).limit(30),
     db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", tenantId).eq("series_id", seriesId).order("created_at", { ascending: false }),
     listTemplates(tenantId),
     getAiSettings(tenantId),
     listMyCards(tenantId),
+    loadFlowCtr(tenantId).catch(() => ({}) as Record<string, Record<string, CardStat>>),
   ]);
 
   const { data: others } = await db().from("series").select("code, title_ar, title_en").eq("tenant_id", tenantId).eq("status", "live").neq("id", seriesId).order("created_at").limit(50);
@@ -97,5 +102,6 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     templates,
     aiReady: ai.connected && ai.enabled,
     myCards,
+    stats: ctr[seriesId] ?? {},
   };
 }

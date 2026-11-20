@@ -8,6 +8,7 @@
 
 import { randomToken, sha256Hex } from "./crypto";
 import { env } from "./env";
+import type { MsgRef } from "./ctr/ctr";
 import { db } from "./supabase";
 
 /** Links stay readable (for the "continue in WhatsApp" page) for this long. */
@@ -29,6 +30,8 @@ export async function mintLink(params: {
   seriesId: string;
   episodeNumber: number;
   purpose?: LinkPurpose;
+  /** The sequence, campaign or flow card the link was sent from (CTR meters). */
+  ref?: MsgRef;
 }): Promise<string> {
   const token = randomToken(24);
   const expiresAt = new Date(Date.now() + LINK_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -40,6 +43,7 @@ export async function mintLink(params: {
     episode_number: params.episodeNumber,
     uses_left: LINK_MAX_USES,
     expires_at: expiresAt.toISOString(),
+    ...refColumns(params.ref),
   });
   if (error) throw new Error(`mintLink failed: ${error.message}`);
   return `${env.appUrl}/w/${token}`;
@@ -59,6 +63,21 @@ export async function mintAccountLink(viewerId: string): Promise<string> {
   });
   if (error) throw new Error(`mintAccountLink failed: ${error.message}`);
   return `${env.appUrl}/w/${token}`;
+}
+
+export const refColumns = (ref?: MsgRef) => (ref ? { ref_type: ref.type, ref_id: ref.id, node_id: ref.node ?? null } : {});
+
+/** Tag a link that was minted before we knew which card sends it (flow link cards). */
+export async function tagLink(url: string, ref: MsgRef): Promise<void> {
+  const token = url.split("/w/")[1]?.split(/[?#]/)[0];
+  if (!token || !TOKEN_RE.test(token)) return;
+  await db().from("link_tokens").update(refColumns(ref)).eq("token_hash", sha256Hex(token)).is("ref_type", null);
+}
+
+/** The link's owner opened it (a click for the CTR meters). Only the first open counts. */
+export async function markLinkOpened(token: string): Promise<void> {
+  if (!TOKEN_RE.test(token)) return;
+  await db().from("link_tokens").update({ opened_at: new Date().toISOString() }).eq("token_hash", sha256Hex(token)).is("opened_at", null);
 }
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;

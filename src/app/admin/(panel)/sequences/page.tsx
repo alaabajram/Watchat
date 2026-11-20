@@ -1,7 +1,10 @@
 // Automated sequences: timed WhatsApp follow-ups to opted-in viewers.
 
 import { Flash } from "@/components/admin/Flash";
+import { CtrMeter } from "@/components/admin/CtrMeter";
 import { requireAdmin } from "@/lib/admin/auth";
+import { health } from "@/lib/ctr/ctr";
+import { CTR_DAYS, loadMessageCtr } from "@/lib/ctr/store";
 import { MARKETING_GAP_HOURS, QUIET_END_HOUR, QUIET_START_HOUR } from "@/lib/messaging/policy";
 import { db } from "@/lib/supabase";
 import { deleteSequenceAction, saveSequenceAction, toggleSequenceAction } from "../../messaging-actions";
@@ -17,19 +20,16 @@ const TRIGGER_LABEL: Record<string, string> = {
 export default async function SequencesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; edit?: string }> }) {
   const admin = await requireAdmin("messaging");
   const sp = await searchParams;
-  const since = new Date(Date.now() - 7 * 86400_000).toISOString();
-  const [{ data: sequences }, { data: templates }, { data: series }, { data: sends }] = await Promise.all([
+  const [{ data: sequences }, { data: templates }, { data: series }, stats] = await Promise.all([
     db().from("sequences").select("*").eq("tenant_id", admin.tenantId).order("created_at"),
-    db().from("wa_templates").select("name, meta_status").eq("tenant_id", admin.tenantId),
+    db().from("wa_templates").select("name, meta_status, button_text, button_type").eq("tenant_id", admin.tenantId),
     db().from("series").select("id, code").eq("tenant_id", admin.tenantId),
-    db().from("sequence_sends").select("sequence_id, status").gte("sent_at", since),
+    loadMessageCtr(admin.tenantId).catch(() => new Map()),
   ]);
+  // Clicks are counted on the template's link button; a template without one can't have a CTR.
+  const hasLink = new Set((templates ?? []).filter((t) => t.button_text && t.button_type !== "quick_reply").map((t) => t.name));
   const templateNames = [...new Set((templates ?? []).map((t) => t.name))];
   const approved = new Set((templates ?? []).filter((t) => t.meta_status === "APPROVED").map((t) => t.name));
-  const sentBy = (sends ?? []).reduce<Record<string, number>>((acc, s) => {
-    if (s.status === "sent") acc[s.sequence_id] = (acc[s.sequence_id] ?? 0) + 1;
-    return acc;
-  }, {});
   const editing = (sequences ?? []).find((s) => s.id === sp.edit);
 
   return (
@@ -41,6 +41,11 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
         {QUIET_END_HOUR}:00 Gulf time, and at most one marketing message per viewer every {MARKETING_GAP_HOURS} hours. Each viewer gets
         each moment once.
       </div>
+      <div className="card muted" style={{ fontSize: 13 }}>
+        <strong style={{ color: "var(--a-text)" }}>CTR meter</strong> (last {CTR_DAYS} days): viewers who opened the message&apos;s link ÷ messages delivered.
+        Working from 15%, fair from 7%; below that the sequence is flagged so you can pause it or change its template or timing. Judged after 30
+        delivered messages. &quot;Watched in 48 h&quot; counts viewers who watched anything within two days of the message.
+      </div>
       <table className="card">
         <thead>
           <tr>
@@ -49,14 +54,19 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
             <th>After</th>
             <th>Template</th>
             <th>Series</th>
-            <th>Sent (7 days)</th>
+            <th>Sent · read ({CTR_DAYS} days)</th>
+            <th>CTR</th>
+            <th>Watched in 48 h</th>
             <th>Status</th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {(sequences ?? []).map((s) => (
-            <tr key={s.id}>
+          {(sequences ?? []).map((s) => {
+            const st = stats.get(`sequence:${s.id}`) ?? { sent: 0, delivered: 0, read: 0, failed: 0, clicked: 0, watched: 0 };
+            const low = s.active && hasLink.has(s.template_name) && health(st.clicked, st.delivered, "message") === "low";
+            return (
+            <tr key={s.id} style={low ? { background: "#fef2f2" } : undefined}>
               <td>{s.name}</td>
               <td>{TRIGGER_LABEL[s.trigger]}</td>
               <td>{s.delay_hours} h</td>
@@ -65,7 +75,17 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
                 {!approved.has(s.template_name) && <div className="muted">⚠ not approved yet</div>}
               </td>
               <td>{(series ?? []).find((x) => x.id === s.series_id)?.code ?? "All"}</td>
-              <td>{sentBy[s.id] ?? 0}</td>
+              <td>
+                {st.sent} · {st.read}
+                {st.failed > 0 && <div className="muted">{st.failed} failed</div>}
+              </td>
+              <td>
+                <CtrMeter clicks={st.clicked} base={st.delivered} kind="message" measurable={hasLink.has(s.template_name)} />
+              </td>
+              <td>
+                {st.watched}
+                {st.sent > 0 && <span className="muted"> ({Math.round((st.watched / st.sent) * 100)}%)</span>}
+              </td>
               <td>
                 <span className={`badge ${s.active ? "on" : "off"}`}>{s.active ? "active" : "paused"}</span>
               </td>
@@ -90,7 +110,8 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
                 </div>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
 

@@ -9,7 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
-import { ACCOUNT_WORD, canSignIn, isFresh, peekLink, redeemLink } from "@/lib/links";
+import { ACCOUNT_WORD, canSignIn, isFresh, markLinkOpened, peekLink, redeemLink } from "@/lib/links";
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { createSession, getSessionViewer, SESSION_COOKIE, SESSION_MAX_AGE_S } from "@/lib/session";
 import { db } from "@/lib/supabase";
@@ -53,7 +53,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   const current = await getSessionViewer();
 
   // The owner, already signed in here: just open the episode.
-  if (current && current.id === link.viewerId) return noStore(NextResponse.redirect(target, 303));
+  if (current && current.id === link.viewerId) {
+    await markLinkOpened(token);
+    return noStore(NextResponse.redirect(target, 303));
+  }
 
   // Someone else's device, a reused link, or an old link: get your own link in WhatsApp.
   if (current || !canSignIn(link)) {
@@ -72,6 +75,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   const redeemed = await redeemLink(token);
   if (!redeemed) return noStore(NextResponse.redirect(continueUrl, 303));
 
+  await markLinkOpened(token);
   const fresh = isFresh(link);
   const sessionToken = await createSession(redeemed.viewerId, { userAgent: req.headers.get("user-agent"), ip, trusted: fresh });
   const { data: viewer } = await db()

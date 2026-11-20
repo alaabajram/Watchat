@@ -1,5 +1,7 @@
 // Campaigns: one-off WhatsApp broadcasts to a filtered group of opted-in viewers, with a cost estimate.
 
+import { CtrMeter } from "@/components/admin/CtrMeter";
+import { loadMessageCtr } from "@/lib/ctr/store";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
@@ -22,11 +24,13 @@ function describe(segment: Record<string, unknown>, codes: Map<string, string>):
 export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("messaging");
   const sp = await searchParams;
-  const [{ data: campaigns }, { data: templates }, { data: series }] = await Promise.all([
+  const [{ data: campaigns }, { data: templates }, { data: series }, stats] = await Promise.all([
     db().from("campaigns").select("*").eq("tenant_id", admin.tenantId).order("created_at", { ascending: false }).limit(50),
-    db().from("wa_templates").select("name, meta_status").eq("tenant_id", admin.tenantId),
+    db().from("wa_templates").select("name, meta_status, button_text, button_type").eq("tenant_id", admin.tenantId),
     db().from("series").select("id, code, title_en").eq("tenant_id", admin.tenantId).order("created_at"),
+    loadMessageCtr(admin.tenantId, 365).catch(() => new Map()),
   ]);
+  const hasLink = new Set((templates ?? []).filter((t) => t.button_text && t.button_type !== "quick_reply").map((t) => t.name));
   const codes = new Map((series ?? []).map((s) => [s.id as string, s.code as string]));
   const names = [...new Set((templates ?? []).map((t) => t.name))];
   const approved = new Set((templates ?? []).filter((t) => t.meta_status === "APPROVED").map((t) => t.name));
@@ -44,6 +48,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
             <th>Est. cost</th>
             <th>Status</th>
             <th>Sent / failed</th>
+            <th>CTR</th>
             <th />
           </tr>
         </thead>
@@ -68,6 +73,21 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
               </td>
               <td>
                 {c.sent_count} / {c.failed_count}
+              </td>
+              <td>
+                {(() => {
+                  const st = stats.get(`campaign:${c.id}`);
+                  return st ? (
+                    <>
+                      <CtrMeter clicks={st.clicked} base={st.delivered} kind="message" measurable={hasLink.has(c.template_name)} />
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {st.watched} watched within 48 h
+                      </div>
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  );
+                })()}
               </td>
               <td>
                 <div className="row">

@@ -6,6 +6,7 @@
 // when none exists) and button taps move through it. Everything else here is shared replies:
 // menu, language, alerts, links, support, device confirmation, data deletion (texts: Shared replies).
 
+import type { MsgRef } from "../ctr/ctr";
 import { answer, startFlow, type FlowEnv, type RunResult, type SeriesProgress } from "../flows/engine";
 import { artUrl, metaVars, type SeriesMeta } from "../flows/meta";
 import type { Condition, FlowGraph, Lang } from "../flows/types";
@@ -60,7 +61,8 @@ export type EventName =
   | "device_confirmed"
   | "flow_started"
   | "flow_blocked"
-  | "growth_picks_opened";
+  | "growth_picks_opened"
+  | "flow_tap";
 
 /** Where a viewer is in one series' flow (a viewer has one per series they've started). */
 export type FlowRun = {
@@ -98,7 +100,8 @@ export interface BotDeps {
   /** The fixed account address everyone keeps (watchat.pro/me). */
   accountUrl(): string;
   markPinHintSent(viewerId: string): Promise<void>;
-  send(to: string, msg: OutMessage): Promise<void>;
+  /** `ref` says which flow card (or other sender) this is, for the CTR meters. */
+  send(to: string, msg: OutMessage, ref?: MsgRef): Promise<void>;
   /** The series' live flow; the standard flow is published automatically if none exists. Null only if the series is gone. */
   getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
   getFlowVersion(versionId: string): Promise<FlowGraph | null>;
@@ -111,7 +114,7 @@ export interface BotDeps {
   /** What the viewer watched of a series on the web. */
   seriesProgress(viewerId: string, seriesId: string): Promise<SeriesProgress>;
   /** Send an approved template (respects opt-in and the marketing frequency cap). */
-  sendFlowTemplate(viewer: Viewer, series: Series, name: string): Promise<"sent" | "skipped" | "failed">;
+  sendFlowTemplate(viewer: Viewer, series: Series, name: string, nodeId?: string): Promise<"sent" | "skipped" | "failed">;
   checkCondition(viewer: Viewer, series: Series, condition: Condition): Promise<boolean>;
   /** Series codes the growth agent picked for this viewer (marks the suggestion as answered). */
   getGrowthPicks(viewerId: string, suggestionId: string): Promise<string[] | null>;
@@ -152,10 +155,10 @@ function withPinHint(viewer: Viewer, deps: BotDeps): BotDeps {
   if (viewer.pinHintSent) return deps;
   return {
     ...deps,
-    async send(to, m) {
-      if (viewer.pinHintSent || m.kind !== "cta_url" || !m.url.includes("/w/")) return deps.send(to, m);
+    async send(to, m, ref) {
+      if (viewer.pinHintSent || m.kind !== "cta_url" || !m.url.includes("/w/")) return deps.send(to, m, ref);
       const { t } = await ctxFor(viewer, null, deps);
-      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${deps.accountUrl()}` });
+      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${deps.accountUrl()}` }, ref);
       viewer.pinHintSent = true;
       await deps.markPinHintSent(viewer.id);
     },
@@ -239,6 +242,7 @@ async function route(
         return null;
       }
       await deps.pauseOtherRuns(viewer.id, series.id);
+      await deps.track(viewer.id, "flow_tap", { seriesId: series.id, props: { node: intent.nodeId, port: intent.port } });
       const run = { chatEpisode: found.run.chatEpisode };
       const result = await answer(found.graph, intent.nodeId, intent.port, flowEnvFor(viewer, series, deps, { canSendFreeform: true, run }));
       await saveRunResult(deps, viewer, series.id, found.run.versionId, result, { entry: found.run.entry, chatEpisode: run.chatEpisode, webTriggeredAt: found.run.webTriggeredAt ?? null });
@@ -385,7 +389,7 @@ export function flowEnvFor(
     lang: viewerLangToFlow(v.language) ?? "ar",
     title: (l) => titleOf(series, l),
     totalEpisodes: series.episodeCount,
-    send: (msg) => deps.send(v.waId, msg),
+    send: (msg, nodeId) => deps.send(v.waId, msg, { type: "flow", id: series.id, node: nodeId }),
     knownLanguage: () => viewerLangToFlow(v.language),
     setLanguage: async (l) => {
       v.language = l === "en" ? "ar_en_subs" : "ar";
@@ -423,7 +427,7 @@ export function flowEnvFor(
       return ref.source === "poster" ? series.posterUrl : series.trailerUrl;
     },
     meta: (l) => metaVars(series.meta, l),
-    template: (name) => deps.sendFlowTemplate(v, series, name),
+    template: (name, nodeId) => deps.sendFlowTemplate(v, series, name, nodeId),
     check: async (cond) => {
       if (cond.check === "started") {
         const p = await progress();

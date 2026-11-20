@@ -7,7 +7,7 @@ import { sendNamedTemplate } from "../messaging/runner";
 import { hmacHex } from "../crypto";
 import { env } from "../env";
 import { trackEvent } from "../events";
-import { mintAccountLink, mintLink } from "../links";
+import { mintAccountLink, mintLink, refColumns, tagLink } from "../links";
 import { marketFromPhone } from "../spend/meter";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
@@ -290,8 +290,10 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       await db().from("viewers").update({ pin_hint_at: new Date().toISOString() }).eq("id", viewerId);
     },
 
-    async send(to, msg): Promise<void> {
+    async send(to, msg, ref): Promise<void> {
       const result = await sendWhatsApp(to, msg);
+      // A link card's link was minted before the send: tag it with the card so its opens count.
+      if (ref && result.ok && msg.kind === "cta_url" && msg.url.includes("/w/")) await tagLink(msg.url, ref);
       await db()
         .from("wa_messages")
         .insert({
@@ -302,6 +304,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
           category: "service",
           source,
           market: marketFromPhone(to),
+          ...refColumns(ref),
           status: result.ok ? "sent" : "failed",
           error: result.ok ? null : result.error,
         });
@@ -361,13 +364,13 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       return seriesProgress(viewerId, seriesId);
     },
 
-    async sendFlowTemplate(viewer, series, name) {
+    async sendFlowTemplate(viewer, series, name, nodeId) {
       const optedIn = (await this.getOptIn(viewer.id)) === "in";
       return sendNamedTemplate(
         { viewerId: viewer.id, phone: `+${viewer.waId}`, language: viewer.language, seriesId: series.id, episode: series.waEpisodeCount + 1 },
         name,
         optedIn,
-        { source: "flow" },
+        { source: "flow", ref: { type: "flow", id: series.id, node: nodeId } },
       );
     },
 

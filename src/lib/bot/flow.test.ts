@@ -8,6 +8,7 @@ import { IDS } from "./intents";
 import type { FlowGraph } from "../flows/types";
 import type { SeriesProgress } from "../flows/engine";
 import type { FlowRun } from "./flow";
+import type { MsgRef } from "../ctr/ctr";
 
 const SERIES: Series = {
   id: "s1",
@@ -24,6 +25,7 @@ const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رما�
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
 function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; progress?: Partial<SeriesProgress>; newViewer?: boolean } = {}) {
   let pinHintSent = !opts.newViewer;
+  const refs: (MsgRef | undefined)[] = [];
   const pinMarks: string[] = [];
   const series: Series = { ...SERIES, ...opts.series };
   const sent: OutMessage[] = [];
@@ -74,8 +76,9 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     },
     resumeEpisode: async () => 4,
     mintLink: async (_v, _s, ep) => `https://watchat.test/w/token-ep${ep}`,
-    send: async (_to, msg) => {
+    send: async (_to, msg, ref) => {
       sent.push(msg);
+      refs.push(ref);
     },
     track: async (_v, name) => {
       events.push(name);
@@ -97,7 +100,7 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     getGrowthPicks: async (_v, id) => (id === "11111111-1111-1111-1111-111111111111" ? ["DESERT02", "SECRETS01", "NOPE99"] : null),
     checkCondition: async (_v, _s, c) => c.check === "opted_in" && optIn === "in",
   };
-  return { deps, sent, events, progress, paused, pinMarks, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
+  return { deps, sent, refs, events, progress, paused, pinMarks, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
 }
 
 let seq = 0;
@@ -384,5 +387,17 @@ describe("my account (no message needed to come back)", () => {
     await handleInbound(text("LINK"), f.deps);
     expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-account" });
     expect(f.sent).toHaveLength(2);
+  });
+});
+
+describe("CTR tracking", () => {
+  it("tags flow messages with their card and records button taps", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("SECRETS01"), f.deps);
+    const ref = f.refs.at(-1);
+    expect(ref).toMatchObject({ type: "flow", id: "s1" });
+    expect(typeof ref?.node).toBe("string");
+    await tapButton(f, 0);
+    expect(f.events).toContain("flow_tap");
   });
 });
