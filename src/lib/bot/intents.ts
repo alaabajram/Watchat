@@ -28,11 +28,13 @@ export type Intent =
   | { type: "change_language" }
   | { type: "toggle_alerts" }
   | { type: "support" }
+  | { type: "delete_data" }
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
 const MENU_WORDS = ["MENU", "HELP", "القائمة", "قائمة", "مساعدة"];
 const LINK_WORDS = ["LINK", "رابط", "الرابط", "رابطي"];
+const DELETE_WORDS = ["DELETEMYDATA", "DELETEDATA", "احذفبياناتي", "حذفبياناتي"];
 
 // Series codes look like SECRETS01: 3+ Latin letters followed by 1–3 digits.
 const SERIES_CODE = /\b([A-Z]{3,}\d{1,3})\b/;
@@ -50,6 +52,7 @@ export function parseIntent(msg: InboundMessage): Intent {
     const upper = text.toUpperCase();
     const word = upper.replace(/[^\p{L}\p{N}]/gu, "");
 
+    if (DELETE_WORDS.includes(word)) return { type: "delete_data" };
     if (STOP_WORDS.includes(word) || STOP_WORDS.includes(text)) return { type: "stop" };
     if (MENU_WORDS.includes(word) || MENU_WORDS.includes(text)) return { type: "menu" };
     if (LINK_WORDS.includes(word) || LINK_WORDS.includes(text)) return { type: "link" };

@@ -39,6 +39,7 @@ type Copy = {
   stopConfirmed: string;
   btnAlertsOn: string;
   supportBody: string;
+  deleteRequested: string;
 };
 
 const ar: Copy = {
@@ -77,6 +78,7 @@ const ar: Copy = {
   stopConfirmed: "تم إيقاف التنبيهات. ما راح نرسل لك رسائل تسويقية.",
   btnAlertsOn: "شغّل التنبيهات",
   supportBody: "اكتب مشكلتك هنا وبيرد عليك فريق الدعم في أقرب وقت.",
+  deleteRequested: "استلمنا طلب حذف بياناتك ✅ أوقفنا التنبيهات، وبنحذف بياناتك خلال 30 يومًا.",
 };
 
 const en: Copy = {
@@ -115,6 +117,7 @@ const en: Copy = {
   stopConfirmed: "Alerts are off. We won't send you marketing messages.",
   btnAlertsOn: "Turn alerts back on",
   supportBody: "Write your question here and our support team will reply soon.",
+  deleteRequested: "We've received your request to delete your data ✅ Alerts are off, and your data will be deleted within 30 days.",
 };
 
 export function copyFor(lang: CopyLang): Copy {

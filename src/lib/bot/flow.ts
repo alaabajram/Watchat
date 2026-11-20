@@ -43,7 +43,8 @@ export type EventName =
   | "wa_dropout"
   | "link_sent"
   | "opt_in_changed"
-  | "language_set";
+  | "language_set"
+  | "data_deletion_requested";
 
 export interface BotDeps {
   upsertViewer(msg: InboundMessage): Promise<Viewer>;
@@ -215,6 +216,14 @@ async function route(
 
     case "support": {
       await deps.send(to, { kind: "text", body: t.supportBody });
+      return null;
+    }
+
+    case "delete_data": {
+      // Logged for the team to action manually (see /data-deletion). Automate before launch.
+      await deps.track(viewer.id, "data_deletion_requested");
+      await deps.setOptIn(viewer.id, "out", "delete_request");
+      await deps.send(to, { kind: "text", body: t.deleteRequested });
       return null;
     }
 

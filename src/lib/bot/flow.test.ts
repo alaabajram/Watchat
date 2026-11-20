@@ -142,6 +142,14 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", buttons: [{ id: IDS.optInYes }] });
   });
 
+  it("logs a data deletion request and turns alerts off", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("Delete my data"), f.deps);
+    expect(f.events).toContain("data_deletion_requested");
+    expect(f.getOptIn()).toBe("out");
+    expect(f.sent.at(-1)).toMatchObject({ kind: "text" });
+  });
+
   it("answers random text with the menu", async () => {
     const f = fakeDeps();
     await handleInbound(text("مرحبا"), f.deps);
