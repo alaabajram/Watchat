@@ -30,6 +30,7 @@ export type Intent =
   | { type: "support" }
   | { type: "delete_data" }
   | { type: "confirm_code"; code: string }
+  | { type: "watch"; code: string; episode: number | null }
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
@@ -55,6 +56,9 @@ export function parseIntent(msg: InboundMessage): Intent {
 
     if (DELETE_WORDS.includes(word)) return { type: "delete_data" };
     // "CONFIRM 123456" / "تأكيد 123456": proves the viewer owns this number before spending on a new device.
+    // "WATCH SECRETS01 4" — sent from the "continue in WhatsApp" page: a personal link for THIS number.
+    const watch = upper.match(/^(?:WATCH|شاهد|مشاهدة)\s+([A-Z]{3,}\d{1,3})(?:\s+(\d{1,3}))?$/u);
+    if (watch) return { type: "watch", code: watch[1], episode: watch[2] ? Number(watch[2]) : null };
     const confirm = upper.match(/^(?:CONFIRM|تأكيد|تاكيد)\s*([0-9]{6})$/u);
     if (confirm) return { type: "confirm_code", code: confirm[1] };
     if (STOP_WORDS.includes(word) || STOP_WORDS.includes(text)) return { type: "stop" };

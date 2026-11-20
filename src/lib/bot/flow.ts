@@ -209,6 +209,28 @@ async function route(
       return null;
     }
 
+    case "watch": {
+      // Someone continuing from a shared or old link: their own account, straight to the web episode.
+      const series = await deps.findSeriesByCode(intent.code);
+      if (!series) {
+        await deps.send(to, { kind: "text", body: t("seriesNotFound") });
+        return null;
+      }
+      const sc = await ctxFor(viewer, series, deps);
+      const resume = await deps.resumeEpisode(viewer.id, series);
+      const ep = Math.min(Math.max(intent.episode ?? resume, 1), Math.max(series.episodeCount, 1));
+      const url = await deps.mintLink(viewer.id, series, ep);
+      await deps.track(viewer.id, "chat_started", { seriesId: series.id, props: { code: series.code, source: "continue_link" } });
+      await deps.send(to, {
+        kind: "cta_url",
+        body: sc.t("linkBody", { title: sc.lang === "en" ? series.titleEn : series.titleAr, n: ep }),
+        buttonText: sc.t("btnOpenPlayer"),
+        url,
+      });
+      await deps.track(viewer.id, "link_sent", { seriesId: series.id, episode: ep, props: { purpose: "continue" } });
+      return { seriesId: series.id, step: "linked", waEpisode: Math.max(state.seriesId === series.id ? state.waEpisode : 0, series.waEpisodeCount) };
+    }
+
     case "confirm_code": {
       const ok = await deps.confirmSpendCode(viewer.id, intent.code);
       if (ok) await deps.track(viewer.id, "device_confirmed");

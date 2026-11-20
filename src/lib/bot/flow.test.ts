@@ -181,6 +181,15 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.events).toContain("device_confirmed");
   });
 
+  it("sends a shared-link receiver their own link, not the sender's", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("WATCH SECRETS01 4"), f.deps);
+    // A personal link minted for THIS number, straight to episode 4, no chat episodes.
+    expect(f.sent).toHaveLength(1);
+    expect(f.sent[0]).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-ep4" });
+    expect(f.getState()).toMatchObject({ seriesId: "s1", step: "linked", waEpisode: 3 });
+  });
+
   it("answers random text with the menu", async () => {
     const f = fakeDeps();
     await handleInbound(text("مرحبا"), f.deps);

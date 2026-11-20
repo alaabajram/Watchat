@@ -34,6 +34,11 @@ describe("parseIntent", () => {
     expect(parseIntent(text("CONFIRM 12"))).toMatchObject({ type: "unknown" });
   });
 
+  it("reads WATCH requests from the continue page", () => {
+    expect(parseIntent(text("WATCH SECRETS01 4"))).toEqual({ type: "watch", code: "SECRETS01", episode: 4 });
+    expect(parseIntent(text("watch SECRETS01"))).toEqual({ type: "watch", code: "SECRETS01", episode: null });
+  });
+
   it("falls back to unknown", () => {
     expect(parseIntent(text("hello"))).toMatchObject({ type: "unknown" });
   });
