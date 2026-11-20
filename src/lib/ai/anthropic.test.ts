@@ -30,7 +30,7 @@ describe("Claude client", () => {
   });
 
   it("shows Anthropic's reason for a 400", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(400, { error: { message: "model: unknown model" } })));
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => json(400, { error: { message: "model: unknown model" } })));
     await expect(callTool(opts)).rejects.toThrow(AiError);
     await expect(callTool(opts)).rejects.toThrow(/unknown model/);
   });
