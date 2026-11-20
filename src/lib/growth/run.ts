@@ -164,7 +164,7 @@ export async function executeSuggestion(tenantId: string, id: string, adminId: s
   const r = await sendNamedTemplateDetailed(
     { viewerId: v.id, phone: v.phone_e164, language: v.language, seriesId: g.series_id, episode: g.episode },
     g.template_name!,
-    g.action === "series_picks" ? { quickReplyPayload: `growth:${id}` } : {},
+    g.action === "series_picks" ? { quickReplyPayload: `growth:${id}`, source: "growth" } : { source: "growth" },
   );
   await finish(r.ok ? "sent" : "failed", r.ok ? null : (r.error ?? "not sent"));
   return r.ok ? { ok: true, message: "Sent." } : { ok: false, message: `Not sent: ${r.error ?? "unknown reason"}.` };

@@ -8,6 +8,7 @@ import { hmacHex } from "../crypto";
 import { env } from "../env";
 import { trackEvent } from "../events";
 import { mintAccountLink, mintLink } from "../links";
+import { marketFromPhone } from "../spend/meter";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import type { InboundMessage } from "../whatsapp/inbound";
@@ -97,7 +98,9 @@ export function primeViewer(viewerId: string, waId: string): void {
   viewerByWaId.set(waId, viewerId);
 }
 
-export function createSupabaseDeps(): BotDeps {
+/** `source` tags what sent each message, for the spend meter: the chat bot, or a flow resumed by the cron / the web. */
+export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotDeps {
+  const source = opts.source ?? "bot";
   return {
     async upsertViewer(msg: InboundMessage): Promise<Viewer> {
       const tenantId = await currentTenantId();
@@ -297,6 +300,8 @@ export function createSupabaseDeps(): BotDeps {
           wa_message_id: result.ok ? result.waMessageId : null,
           kind: msg.kind,
           category: "service",
+          source,
+          market: marketFromPhone(to),
           status: result.ok ? "sent" : "failed",
           error: result.ok ? null : result.error,
         });
@@ -362,6 +367,7 @@ export function createSupabaseDeps(): BotDeps {
         { viewerId: viewer.id, phone: `+${viewer.waId}`, language: viewer.language, seriesId: series.id, episode: series.waEpisodeCount + 1 },
         name,
         optedIn,
+        { source: "flow" },
       );
     },
 

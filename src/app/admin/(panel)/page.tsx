@@ -1,7 +1,9 @@
 // Dashboard: the funnel by series and traffic source, plus revenue and WhatsApp spend.
 
 import { Flash } from "@/components/admin/Flash";
-import { requireAdmin } from "@/lib/admin/auth";
+import { SpendMeter } from "@/components/admin/SpendMeter";
+import { can, requireAdmin } from "@/lib/admin/auth";
+import { loadMonthSpend } from "@/lib/spend/store";
 import { db } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +25,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     db().from("wa_messages").select("category, status").eq("direction", "out").gte("created_at", since),
   ]);
 
+  const meter = can(admin, "spend") ? await loadMonthSpend(admin.tenantId).catch(() => null) : null;
   const stages = (funnel ?? []) as { stage: string; viewers: number }[];
   const top = Math.max(1, Number(stages[0]?.viewers ?? 0));
   const revenue = (paid ?? []).reduce<Record<string, number>>((acc, o) => {
@@ -72,6 +75,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           Apply
         </button>
       </form>
+
+      {meter && <SpendMeter m={meter} compact />}
 
       <div className="kpis">
         <div className="kpi">

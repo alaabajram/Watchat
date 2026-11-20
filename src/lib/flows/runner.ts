@@ -27,7 +27,7 @@ export async function runFlowWaits(now = new Date()): Promise<FlowRunSummary> {
     .order("resume_at")
     .limit(MAX_PER_RUN);
   summary.due = due?.length ?? 0;
-  const deps = createSupabaseDeps();
+  const deps = createSupabaseDeps({ source: "flow" });
 
   for (const run of due ?? []) {
     // Claim it first.

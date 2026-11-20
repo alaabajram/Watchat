@@ -54,7 +54,14 @@ export async function POST(req: NextRequest) {
     for (const s of statuses) {
       await db()
         .from("wa_messages")
-        .update({ status: s.status, category: s.pricingCategory ?? undefined, error: s.errorTitle ?? null })
+        .update({
+          status: s.status,
+          error: s.errorTitle ?? null,
+          // Pricing comes with sent/delivered statuses; later ones (read) leave it as it is.
+          ...(s.pricingCategory ? { category: s.pricingCategory } : {}),
+          ...(s.billable !== undefined ? { billable: s.billable } : {}),
+          ...(s.pricingType ? { pricing_type: s.pricingType } : {}),
+        })
         .eq("wa_message_id", s.waMessageId);
     }
   });

@@ -4,6 +4,8 @@
 // (sequence|campaign, viewer, moment) written BEFORE sending so overlapping runs can never double-send.
 
 import { mintLink } from "../links";
+import { marketFromPhone } from "../spend/meter";
+import { marketingBudgetReached } from "../spend/store";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import { placeholderCount } from "../whatsapp/templates";
@@ -70,27 +72,38 @@ async function recentlyMarketed(viewerId: string): Promise<boolean> {
 }
 
 /** Send a template by name from a flow's Template card. Marketing templates need the viewer's opt-in. */
-export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boolean, opts: { quickReplyPayload?: string } = {}): Promise<"sent" | "skipped" | "failed"> {
+type SendOpts = { quickReplyPayload?: string; source?: SendSource };
+/** What sent a template, for the spend meter. */
+export type SendSource = "flow" | "sequence" | "campaign" | "growth" | "admin";
+
+export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boolean, opts: SendOpts = {}): Promise<"sent" | "skipped" | "failed"> {
   const tenantId = await currentTenantId();
   const templates = await loadTemplates(tenantId, name);
   const t = templates.get(templateLangFor(r.language)) ?? templates.get("ar");
   if (t?.category === "marketing" && !optedIn) return "skipped";
-  const result = await sendTemplate(r, templates, opts.quickReplyPayload);
+  const result = await sendTemplate(r, templates, { quickReplyPayload: opts.quickReplyPayload, source: opts.source ?? "flow" });
   return result.ok ? "sent" : result.skipped ? "skipped" : "failed";
 }
 
 /** Like sendNamedTemplate, with the reason when it isn't sent (for the growth agent's queue). */
-export async function sendNamedTemplateDetailed(r: Recipient, name: string, opts: { quickReplyPayload?: string } = {}) {
+export async function sendNamedTemplateDetailed(r: Recipient, name: string, opts: SendOpts = {}) {
   const tenantId = await currentTenantId();
-  return sendTemplate(r, await loadTemplates(tenantId, name), opts.quickReplyPayload);
+  return sendTemplate(r, await loadTemplates(tenantId, name), { quickReplyPayload: opts.quickReplyPayload, source: opts.source ?? "growth" });
 }
 
 /** Send one template to one viewer. Returns the Meta message id or an error. */
-async function sendTemplate(r: Recipient, templates: Map<string, Template>, quickReplyPayload?: string): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
+async function sendTemplate(
+  r: Recipient,
+  templates: Map<string, Template>,
+  { quickReplyPayload, source }: { quickReplyPayload?: string; source: SendSource },
+): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
   const lang = templateLangFor(r.language);
   const template = templates.get(lang) ?? templates.get("ar");
   if (!template || template.meta_status !== "APPROVED") return { ok: false, skipped: true, error: "template not approved" };
   if (template.category === "marketing" && (await recentlyMarketed(r.viewerId))) return { ok: false, skipped: true, error: "frequency cap" };
+  if (template.category === "marketing" && (await marketingBudgetReached(await currentTenantId()))) {
+    return { ok: false, skipped: true, error: "monthly WhatsApp budget reached" };
+  }
 
   const series = await getSeries(r.seriesId);
   const title = series ? (template.lang === "en" ? series.title_en : series.title_ar) : "Watchat";
@@ -122,6 +135,8 @@ async function sendTemplate(r: Recipient, templates: Map<string, Template>, quic
       kind: "template",
       template_name: template.name,
       category: template.category,
+      source,
+      market: marketFromPhone(r.phone),
       status: result.ok ? "sent" : "failed",
       error: result.ok ? null : result.error,
     });
@@ -171,6 +186,7 @@ export async function runMessaging(now = new Date()): Promise<RunSummary> {
       const r = await sendTemplate(
         { viewerId: c.viewer_id, phone: c.phone_e164, language: c.language, seriesId: c.series_id, episode: c.episode_number },
         templates,
+        { source: "sequence" },
       );
       await db()
         .from("sequence_sends")
@@ -218,6 +234,7 @@ export async function runMessaging(now = new Date()): Promise<RunSummary> {
       const r = await sendTemplate(
         { viewerId: a.viewer_id, phone: a.phone_e164, language: a.language, seriesId: camp.series_id, episode: null },
         templates,
+        { source: "campaign" },
       );
       await db()
         .from("campaign_sends")

@@ -19,7 +19,7 @@ export async function onWebWatch(viewerId: string, seriesId: string, now = new D
 
   const tenantId = await currentTenantId();
   const cutoff = new Date(now.getTime() - WEB_TRIGGER_HOURS * 3600_000).toISOString();
-  const deps = createSupabaseDeps();
+  const deps = createSupabaseDeps({ source: "flow" });
   const existing = await deps.getFlowRun(viewerId, seriesId);
   if (existing?.webTriggeredAt && existing.webTriggeredAt > cutoff) return "skipped";
 

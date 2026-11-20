@@ -1,5 +1,6 @@
 "use server";
 
+import { marketFromPhone } from "@/lib/spend/meter";
 import { randomBytes } from "node:crypto";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, num, opt, str, uuid } from "@/lib/admin/forms";
@@ -67,6 +68,19 @@ export async function resendLinkAction(fd: FormData) {
     buttonText: "افتح المشغّل",
     url,
   });
+  await db()
+    .from("wa_messages")
+    .insert({
+      viewer_id: id,
+      direction: "out",
+      wa_message_id: result.ok ? result.waMessageId : null,
+      kind: "cta_url",
+      category: "service",
+      source: "admin",
+      market: marketFromPhone(v.phone_e164),
+      status: result.ok ? "sent" : "failed",
+      error: result.ok ? null : result.error,
+    });
   await audit(admin, "viewer.link_resent", "viewer", id, { ok: result.ok });
   if (!result.ok) {
     done(`/admin/viewers/${id}`, `WhatsApp refused (${result.error}). If it's been over 24 h since their last message, ask them to send LINK.`, "err");

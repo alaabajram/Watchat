@@ -68,7 +68,15 @@ describe("webhook", () => {
                     interactive: { type: "button_reply", button_reply: { id: "ep:next", title: "Next" } },
                   },
                 ],
-                statuses: [{ id: "wamid.out", status: "delivered", recipient_id: "971500000000" }],
+                statuses: [
+                  { id: "wamid.out", status: "delivered", recipient_id: "971500000000" },
+                  {
+                    id: "wamid.ad",
+                    status: "sent",
+                    recipient_id: "966500000000",
+                    pricing: { billable: false, pricing_model: "PMP", category: "service", type: "free_entry_point" },
+                  },
+                ],
               },
             },
           ],
@@ -79,6 +87,8 @@ describe("webhook", () => {
     expect(messages[0]).toMatchObject({ kind: "text", text: "SECRETS01", profileName: "Sara", referral: { sourceId: "ad-42" } });
     expect(messages[1]).toMatchObject({ kind: "reply", replyId: "ep:next" });
     expect(statuses[0]).toMatchObject({ waMessageId: "wamid.out", status: "delivered" });
+    expect(statuses[0].billable).toBeUndefined();
+    expect(statuses[1]).toMatchObject({ billable: false, pricingType: "free_entry_point", pricingCategory: "service" });
   });
 });
 

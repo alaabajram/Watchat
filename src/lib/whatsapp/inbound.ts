@@ -17,6 +17,9 @@ export type StatusUpdate = {
   recipient: string;
   errorTitle?: string;
   pricingCategory?: string;
+  /** Meta's verdict on the charge: billable, and why not (free_entry_point, free_customer_service). */
+  billable?: boolean;
+  pricingType?: string;
 };
 
 type Json = Record<string, unknown>;
@@ -86,6 +89,8 @@ export function parseWebhook(body: unknown): { messages: InboundMessage[]; statu
           recipient: asStr(s.recipient_id) ?? "",
           errorTitle: asStr(asObj(asArray(s.errors)[0]).title),
           pricingCategory: asStr(asObj(s.pricing).category),
+          billable: typeof asObj(s.pricing).billable === "boolean" ? (asObj(s.pricing).billable as boolean) : undefined,
+          pricingType: asStr(asObj(s.pricing).type),
         });
       }
     }

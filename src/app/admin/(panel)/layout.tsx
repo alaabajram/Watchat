@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const NAV: { href: string; label: string; area: Area }[] = [
   { href: "/admin", label: "Dashboard", area: "dashboard" },
+  { href: "/admin/spend", label: "Spend", area: "spend" },
   { href: "/admin/series", label: "CMS", area: "content" },
   { href: "/admin/flows", label: "Flow builder", area: "bot" },
   { href: "/admin/bot", label: "Shared replies", area: "bot" },

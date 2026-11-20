@@ -24,6 +24,7 @@ export type Admin = {
 /** Which roles may use each area of the admin. Owners can do everything. */
 export const PERMISSIONS = {
   dashboard: ["owner", "content", "marketing", "support", "finance"],
+  spend: ["owner", "finance", "marketing"],
   content: ["owner", "content"],
   bot: ["owner", "content", "marketing"],
   messaging: ["owner", "marketing"],
