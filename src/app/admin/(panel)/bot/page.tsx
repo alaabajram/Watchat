@@ -6,8 +6,7 @@ import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
 import { db } from "@/lib/supabase";
-import { env } from "@/lib/env";
-import { getBusinessProfile } from "@/lib/whatsapp/profile";
+import { getBusinessProfile, type BusinessProfile } from "@/lib/whatsapp/profile";
 import { saveBotMessagesAction, setAccountLinkOnProfileAction } from "../../bot-actions";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +16,14 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const { data: rows } = await db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId).is("series_id", null);
   const current = new Map((rows ?? []).map((r) => [`${r.key}.${r.lang}`, r.body as string]));
-  const accountUrl = `${env.appUrl}/me`;
-  const profile = await getBusinessProfile().catch((e: unknown) => (e instanceof Error ? e.message : "Couldn't read the WhatsApp profile"));
+  const accountUrl = `${process.env.APP_URL?.replace(/\/$/, "") || "https://www.watchat.pro"}/me`;
+  // The profile box is a nice-to-have: whatever Meta does, the replies below must still load.
+  let profile: BusinessProfile | string;
+  try {
+    profile = await getBusinessProfile();
+  } catch (e) {
+    profile = e instanceof Error && e.name !== "TimeoutError" ? e.message : "WhatsApp didn't answer in time. Reload to try again.";
+  }
   const onProfile = typeof profile !== "string" && profile.websites.some((w) => w.replace(/\/+$/, "") === accountUrl);
 
   return (

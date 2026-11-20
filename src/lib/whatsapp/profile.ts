@@ -12,11 +12,13 @@ export type BusinessProfile = { websites: string[]; about: string | null; descri
 export const MAX_PROFILE_WEBSITES = 2;
 
 export async function getBusinessProfile(): Promise<BusinessProfile> {
-  const res = await fetch(`${base()}?fields=websites,about,description`, { headers: auth(), cache: "no-store" });
+  // Never let a slow Meta response hold up the admin page.
+  const res = await fetch(`${base()}?fields=websites,about,description`, { headers: auth(), cache: "no-store", signal: AbortSignal.timeout(5000) });
   const json = (await res.json().catch(() => null)) as { data?: { websites?: string[]; about?: string; description?: string }[]; error?: { message?: string } } | null;
   if (!res.ok) throw new Error(json?.error?.message ?? `Meta returned ${res.status}`);
   const p = json?.data?.[0] ?? {};
-  return { websites: p.websites ?? [], about: p.about ?? null, description: p.description ?? null };
+  const websites = Array.isArray(p.websites) ? p.websites.filter((w): w is string => typeof w === "string") : [];
+  return { websites, about: typeof p.about === "string" ? p.about : null, description: typeof p.description === "string" ? p.description : null };
 }
 
 /** Put the account link first, keeping one other existing website if there's room. */
