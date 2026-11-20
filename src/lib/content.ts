@@ -137,3 +137,55 @@ export async function getSeriesProgress(viewerId: string, seriesId: string): Pro
   const latest = rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
   return { completed, lastStarted: latest ? latest.episodes.number : null };
 }
+
+export type LibraryItem = {
+  code: string;
+  titleAr: string;
+  titleEn: string;
+  posterUrl: string | null;
+  bannerWideUrl: string | null;
+  total: number;
+  resume: number | null; // episode to continue from; null = finished
+  lastWatchedAt: string;
+};
+
+/** "My account": the viewer's series, most recently watched first, plus the rest of the live catalogue. */
+export async function getLibrary(viewerId: string): Promise<{ watching: LibraryItem[]; more: Omit<LibraryItem, "resume" | "lastWatchedAt">[] }> {
+  const tenantId = await currentTenantId();
+  const now = new Date().toISOString();
+  const [{ data: catalog }, { data: rows }] = await Promise.all([
+    db()
+      .from("series")
+      .select("id, code, title_ar, title_en, poster_url, banner_wide_url, created_at, episodes(number, status, release_at)")
+      .eq("tenant_id", tenantId)
+      .eq("status", "live")
+      .order("created_at", { ascending: false }),
+    db().from("progress").select("completed_at, updated_at, episodes!inner(number, series_id)").eq("viewer_id", viewerId),
+  ]);
+  type Row = { completed_at: string | null; updated_at: string; episodes: { number: number; series_id: string } };
+  const bySeries = new Map<string, Row[]>();
+  for (const r of (rows ?? []) as unknown as Row[]) {
+    const list = bySeries.get(r.episodes.series_id) ?? [];
+    list.push(r);
+    bySeries.set(r.episodes.series_id, list);
+  }
+  const watching: LibraryItem[] = [];
+  const more: Omit<LibraryItem, "resume" | "lastWatchedAt">[] = [];
+  for (const s of catalog ?? []) {
+    const eps = ((s.episodes ?? []) as { number: number; status: string; release_at: string | null }[]).filter(
+      (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
+    );
+    const base = { code: s.code, titleAr: s.title_ar, titleEn: s.title_en, posterUrl: s.poster_url, bannerWideUrl: s.banner_wide_url, total: eps.length };
+    const mine = bySeries.get(s.id);
+    if (!mine?.length) {
+      more.push(base);
+      continue;
+    }
+    const latest = [...mine].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+    const n = latest.episodes.number;
+    const next = latest.completed_at ? n + 1 : n;
+    watching.push({ ...base, resume: next <= eps.length ? next : null, lastWatchedAt: latest.updated_at });
+  }
+  watching.sort((a, b) => b.lastWatchedAt.localeCompare(a.lastWatchedAt));
+  return { watching, more };
+}

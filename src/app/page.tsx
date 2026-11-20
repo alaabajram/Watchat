@@ -1,9 +1,13 @@
+import { redirect } from "next/navigation";
 import { env } from "@/lib/env";
+import { getSessionViewer } from "@/lib/session";
 import { webCopy } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default async function Home() {
+  // Signed-in viewers land on their account (continue watching, wallet).
+  if (await getSessionViewer()) redirect("/me");
   const ar = webCopy("ar");
   const en = webCopy("en");
   const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=MENU` : null;

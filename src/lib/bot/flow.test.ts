@@ -22,7 +22,9 @@ const SERIES: Series = {
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
-function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; progress?: Partial<SeriesProgress> } = {}) {
+function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; progress?: Partial<SeriesProgress>; newViewer?: boolean } = {}) {
+  let pinHintSent = !opts.newViewer;
+  const pinMarks: string[] = [];
   const series: Series = { ...SERIES, ...opts.series };
   const sent: OutMessage[] = [];
   const events: string[] = [];
@@ -40,7 +42,13 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
   const flows: Record<string, FlowGraph> = { s1: opts.flow ?? standard(series), s2: standard(OTHER) };
 
   const deps: BotDeps = {
-    upsertViewer: async (m) => ({ id: "v1", waId: m.from, language }),
+    upsertViewer: async (m) => ({ id: "v1", waId: m.from, language, pinHintSent }),
+    mintAccountLink: async () => "https://watchat.test/w/token-account",
+    accountUrl: () => "https://watchat.test/me",
+    markPinHintSent: async (id) => {
+      pinHintSent = true;
+      pinMarks.push(id);
+    },
     getChatState: async () => state,
     saveChatState: async (_id, s) => {
       state = s;
@@ -89,7 +97,7 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     getGrowthPicks: async (_v, id) => (id === "11111111-1111-1111-1111-111111111111" ? ["DESERT02", "SECRETS01", "NOPE99"] : null),
     checkCondition: async (_v, _s, c) => c.check === "opted_in" && optIn === "in",
   };
-  return { deps, sent, events, progress, paused, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
+  return { deps, sent, events, progress, paused, pinMarks, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
 }
 
 let seq = 0;
@@ -349,5 +357,32 @@ describe("bot flow: series code to cliffhanger link", () => {
     const f = fakeDeps();
     await handleInbound(text("مرحبا"), f.deps);
     expect(f.sent.map((m) => m.kind)).toEqual(["text", "list"]);
+  });
+});
+
+describe("my account (no message needed to come back)", () => {
+  it("the first personal link invites the viewer to pin it and shows the account address, once", async () => {
+    const f = fakeDeps({ newViewer: true });
+    await handleInbound(text("SECRETS01"), f.deps);
+    await handleInbound(text("رابط"), f.deps);
+    const first = f.sent.at(-1) as Extract<OutMessage, { kind: "cta_url" }>;
+    expect(first.kind).toBe("cta_url");
+    expect(first.body).toContain(COPY.pinHint.ar);
+    expect(first.body).toContain("https://watchat.test/me");
+    expect(f.pinMarks).toEqual(["v1"]);
+
+    await handleInbound(text("رابط"), f.deps);
+    const second = f.sent.at(-1) as Extract<OutMessage, { kind: "cta_url" }>;
+    expect(second.body).not.toContain("watchat.test/me");
+    expect(f.pinMarks).toHaveLength(1);
+  });
+
+  it("sends a sign-in link to My account for حسابي, and for a link request before any series", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("حسابي"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-account", buttonText: COPY.btnMyAccount.ar });
+    await handleInbound(text("LINK"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-account" });
+    expect(f.sent).toHaveLength(2);
   });
 });

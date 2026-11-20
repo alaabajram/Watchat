@@ -8,8 +8,8 @@ import { cookies } from "next/headers";
 import { randomToken, sha256Hex } from "./crypto";
 import { db } from "./supabase";
 
-export const SESSION_COOKIE = "wc_session";
-export const SESSION_MAX_AGE_S = 90 * 24 * 60 * 60;
+import { SESSION_COOKIE, SESSION_MAX_AGE_S } from "./session-cookie";
+export { SESSION_COOKIE, SESSION_MAX_AGE_S };
 export const MAX_DEVICES = 3;
 const TOUCH_EVERY_MS = 10 * 60 * 1000;
 

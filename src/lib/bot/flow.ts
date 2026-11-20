@@ -16,7 +16,13 @@ import { IDS, parseIntent, type Intent } from "./intents";
 
 export type ViewerLang = "ar" | "ar_en_subs";
 
-export type Viewer = { id: string; waId: string; language: ViewerLang | null };
+export type Viewer = {
+  id: string;
+  waId: string;
+  language: ViewerLang | null;
+  /** The one-time "pin this message · your account: watchat.pro/me" tip was already added to a link. */
+  pinHintSent?: boolean;
+};
 
 export type Series = {
   id: string;
@@ -87,6 +93,11 @@ export interface BotDeps {
   resumeEpisode(viewerId: string, series: Series): Promise<number>;
   /** Create a personal signed link and return its full URL. */
   mintLink(viewerId: string, series: Series, episodeNumber: number): Promise<string>;
+  /** A personal sign-in link that opens "My account" (/me). */
+  mintAccountLink(viewerId: string): Promise<string>;
+  /** The fixed account address everyone keeps (watchat.pro/me). */
+  accountUrl(): string;
+  markPinHintSent(viewerId: string): Promise<void>;
   send(to: string, msg: OutMessage): Promise<void>;
   /** The series' live flow; the standard flow is published automatically if none exists. Null only if the series is gone. */
   getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
@@ -124,12 +135,31 @@ async function ctxFor(viewer: Viewer, series: Series | null, deps: BotDeps): Pro
 }
 
 /** Handle one inbound WhatsApp message end to end. */
-export async function handleInbound(msg: InboundMessage, deps: BotDeps): Promise<void> {
-  const viewer = await deps.upsertViewer(msg);
+export async function handleInbound(msg: InboundMessage, baseDeps: BotDeps): Promise<void> {
+  const viewer = await baseDeps.upsertViewer(msg);
+  const deps = withPinHint(viewer, baseDeps);
   const state = await deps.getChatState(viewer.id);
   const intent = parseIntent(msg);
   const next = await route(intent, viewer, state, msg, deps);
   if (next) await deps.saveChatState(viewer.id, next);
+}
+
+/**
+ * The first personal link a viewer gets also invites them to pin it and shows the fixed account
+ * address (watchat.pro/me), so they can come back on their own without a message from us.
+ */
+function withPinHint(viewer: Viewer, deps: BotDeps): BotDeps {
+  if (viewer.pinHintSent) return deps;
+  return {
+    ...deps,
+    async send(to, m) {
+      if (viewer.pinHintSent || m.kind !== "cta_url" || !m.url.includes("/w/")) return deps.send(to, m);
+      const { t } = await ctxFor(viewer, null, deps);
+      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${deps.accountUrl()}` });
+      viewer.pinHintSent = true;
+      await deps.markPinHintSent(viewer.id);
+    },
+  };
 }
 
 async function route(
@@ -242,10 +272,15 @@ async function route(
 
     case "link": {
       if (!current) {
-        await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
+        await sendAccountLink(c);
         return null;
       }
       await sendPlayerLink(c, current);
+      return null;
+    }
+
+    case "account": {
+      await sendAccountLink(c);
       return null;
     }
 
@@ -494,6 +529,13 @@ async function sendPlayerLink({ viewer, deps, lang, t }: Ctx, series: Series) {
     url,
   });
   await deps.track(viewer.id, "link_sent", { seriesId: series.id, episode: ep, props: { purpose: "menu" } });
+}
+
+/** "My account": a personal sign-in link that opens watchat.pro/me on this phone. */
+async function sendAccountLink({ viewer, deps, t }: Ctx) {
+  const url = await deps.mintAccountLink(viewer.id);
+  await deps.send(viewer.waId, { kind: "cta_url", body: t("accountBody"), buttonText: t("btnMyAccount"), url });
+  await deps.track(viewer.id, "link_sent", { props: { purpose: "account" } });
 }
 
 /** W6 — alerts opt-in. */

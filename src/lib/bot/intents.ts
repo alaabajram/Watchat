@@ -26,6 +26,7 @@ export type Intent =
   | { type: "stop" }
   | { type: "menu" }
   | { type: "link" }
+  | { type: "account" }
   | { type: "change_language" }
   | { type: "toggle_alerts" }
   | { type: "support" }
@@ -39,6 +40,8 @@ export type Intent =
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
 const MENU_WORDS = ["MENU", "HELP", "القائمة", "قائمة", "مساعدة"];
 const LINK_WORDS = ["LINK", "رابط", "الرابط", "رابطي"];
+// "My account" — sent from watchat.pro/me when the browser isn't signed in.
+const ACCOUNT_WORDS = ["ACCOUNT", "MYACCOUNT", "LOGIN", "SIGNIN", "حسابي", "الحساب", "حساب", "دخول", "تسجيلدخول", "تسجيلالدخول"];
 const DELETE_WORDS = ["DELETEMYDATA", "DELETEDATA", "احذفبياناتي", "حذفبياناتي"];
 
 // Series codes look like SECRETS01: 3+ Latin letters followed by 1–3 digits.
@@ -67,6 +70,7 @@ export function parseIntent(msg: InboundMessage): Intent {
     if (STOP_WORDS.includes(word) || STOP_WORDS.includes(text)) return { type: "stop" };
     if (MENU_WORDS.includes(word) || MENU_WORDS.includes(text)) return { type: "menu" };
     if (LINK_WORDS.includes(word) || LINK_WORDS.includes(text)) return { type: "link" };
+    if (ACCOUNT_WORDS.includes(word)) return { type: "account" };
 
     const code = upper.match(SERIES_CODE);
     if (code) return { type: "series_code", code: code[1] };

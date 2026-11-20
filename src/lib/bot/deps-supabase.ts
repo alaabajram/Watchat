@@ -7,7 +7,7 @@ import { sendNamedTemplate } from "../messaging/runner";
 import { hmacHex } from "../crypto";
 import { env } from "../env";
 import { trackEvent } from "../events";
-import { mintLink } from "../links";
+import { mintAccountLink, mintLink } from "../links";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import type { InboundMessage } from "../whatsapp/inbound";
@@ -104,7 +104,7 @@ export function createSupabaseDeps(): BotDeps {
       const hmac = phoneHmac(msg.from);
       const { data: existing } = await db()
         .from("viewers")
-        .select("id, language")
+        .select("id, language, pin_hint_at")
         .eq("tenant_id", tenantId)
         .eq("phone_hmac", hmac)
         .maybeSingle();
@@ -116,7 +116,7 @@ export function createSupabaseDeps(): BotDeps {
           .eq("id", existing.id);
         hmacByViewer.set(existing.id, hmac);
         viewerByWaId.set(msg.from, existing.id);
-        return { id: existing.id, waId: msg.from, language: existing.language as ViewerLang | null };
+        return { id: existing.id, waId: msg.from, language: existing.language as ViewerLang | null, pinHintSent: Boolean(existing.pin_hint_at) };
       }
 
       // First contact: remember where the viewer came from (Click-to-WhatsApp ad or organic).
@@ -275,6 +275,16 @@ export function createSupabaseDeps(): BotDeps {
 
     async mintLink(viewerId: string, series: Series, episodeNumber: number): Promise<string> {
       return mintLink({ viewerId, seriesId: series.id, episodeNumber });
+    },
+
+    async mintAccountLink(viewerId: string): Promise<string> {
+      return mintAccountLink(viewerId);
+    },
+
+    accountUrl: () => `${env.appUrl}/me`,
+
+    async markPinHintSent(viewerId: string): Promise<void> {
+      await db().from("viewers").update({ pin_hint_at: new Date().toISOString() }).eq("id", viewerId);
     },
 
     async send(to, msg): Promise<void> {

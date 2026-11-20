@@ -12,7 +12,7 @@ export function TopBar({ locale, balance, backHref, backLabel }: { locale: Local
           {backLabel ?? "←"}
         </Link>
       ) : (
-        <Link className="chip" href="/">
+        <Link className="chip" href="/me">
           Watchat
         </Link>
       )}

@@ -9,7 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
-import { canSignIn, isFresh, peekLink, redeemLink } from "@/lib/links";
+import { ACCOUNT_WORD, canSignIn, isFresh, peekLink, redeemLink } from "@/lib/links";
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { createSession, getSessionViewer, SESSION_COOKIE, SESSION_MAX_AGE_S } from "@/lib/session";
 import { db } from "@/lib/supabase";
@@ -38,11 +38,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     ? await db().from("series").select("code").eq("id", link.seriesId).maybeSingle()
     : { data: null as { code: string } | null };
   const episode = link.episodeNumber ?? 1;
-  const target = series?.code ? `${base}/watch/${series.code}/${episode}` : `${base}/`;
+  // A link without a series is an account link: it opens "My account".
+  const target = series?.code ? `${base}/watch/${series.code}/${episode}` : `${base}/me`;
   // Hand-off for anyone this link can't sign in: open the Watchat chat with "شاهد CODE EP" ready to send.
   // One tap on Send proves their own number; the bot replies with a link to their own account.
   const continueUrl = !series?.code
-    ? `${base}/link-expired`
+    ? env.waDisplayNumber
+      ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}`
+      : `${base}/me`
     : env.waDisplayNumber
       ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(`شاهد ${series.code} ${episode}`)}`
       : `${base}/continue?s=${series.code}&e=${episode}`;

@@ -19,6 +19,9 @@ export const SIGN_IN_WINDOW_HOURS = 24;
 /** A link opened within this many minutes of being sent starts a trusted session (can top up without a code). */
 export const FRESH_LINK_MINUTES = 30;
 
+/** Sent from the "Sign in with WhatsApp" button; the bot replies with a sign-in link to /me. */
+export const ACCOUNT_WORD = "حسابي";
+
 export type LinkPurpose = "ep_link" | "resume" | "pay" | "menu";
 
 export async function mintLink(params: {
@@ -39,6 +42,22 @@ export async function mintLink(params: {
     expires_at: expiresAt.toISOString(),
   });
   if (error) throw new Error(`mintLink failed: ${error.message}`);
+  return `${env.appUrl}/w/${token}`;
+}
+
+/** Sign-in link with no series: opens "My account" (/me). */
+export async function mintAccountLink(viewerId: string): Promise<string> {
+  const token = randomToken(24);
+  const { error } = await db().from("link_tokens").insert({
+    token_hash: sha256Hex(token),
+    viewer_id: viewerId,
+    purpose: "menu",
+    series_id: null,
+    episode_number: null,
+    uses_left: LINK_MAX_USES,
+    expires_at: new Date(Date.now() + LINK_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) throw new Error(`mintAccountLink failed: ${error.message}`);
   return `${env.appUrl}/w/${token}`;
 }
 

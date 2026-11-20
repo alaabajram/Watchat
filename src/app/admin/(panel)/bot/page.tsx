@@ -6,7 +6,9 @@ import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
 import { db } from "@/lib/supabase";
-import { saveBotMessagesAction } from "../../bot-actions";
+import { env } from "@/lib/env";
+import { getBusinessProfile } from "@/lib/whatsapp/profile";
+import { saveBotMessagesAction, setAccountLinkOnProfileAction } from "../../bot-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,9 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
   const sp = await searchParams;
   const { data: rows } = await db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId).is("series_id", null);
   const current = new Map((rows ?? []).map((r) => [`${r.key}.${r.lang}`, r.body as string]));
+  const accountUrl = `${env.appUrl}/me`;
+  const profile = await getBusinessProfile().catch((e: unknown) => (e instanceof Error ? e.message : "Couldn't read the WhatsApp profile"));
+  const onProfile = typeof profile !== "string" && profile.websites.some((w) => w.replace(/\/+$/, "") === accountUrl);
 
   return (
     <>
@@ -29,6 +34,29 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
           The chat for each series (welcome, trailer, episodes, cliffhanger link, alerts question) is edited on its cards in the{" "}
           <Link href="/admin/flows">Flow builder</Link>. Leave a field empty to use the default (shown in grey). Placeholders: <code>{"{title}"}</code> series
           title · <code>{"{n}"}</code> episode. Buttons are limited to 20 characters.
+        </p>
+      </div>
+
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>“My account” link on the WhatsApp profile</h2>
+        <p style={{ marginTop: 0 }}>
+          Viewers who tap <strong>Watchat</strong> at the top of the chat see the business profile. Putting <code>{accountUrl}</code> there gives every
+          viewer a permanent way back to their series and coins, with no message from us (each bot reply is now charged by Meta). The page opens the
+          viewer&apos;s own account on their phone; on a new phone it asks them to sign in through WhatsApp once.
+        </p>
+        {typeof profile === "string" ? (
+          <p className="muted">Couldn&apos;t read the profile: {profile}</p>
+        ) : (
+          <p className="muted">
+            Websites on the profile now: {profile.websites.length ? profile.websites.join(" · ") : "none"}
+            {onProfile ? " ✓ the account link is there." : ""}
+          </p>
+        )}
+        <form action={setAccountLinkOnProfileAction}>
+          <button type="submit">{onProfile ? "Set it again" : "Add the account link to the profile"}</button>
+        </form>
+        <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
+          The first link each viewer gets also carries a one-time tip: “📌 Pin this message” plus the account address (edit it below: “Pin tip”).
         </p>
       </div>
 

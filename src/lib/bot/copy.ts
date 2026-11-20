@@ -97,6 +97,19 @@ export const COPY = {
     ar: "«{title}» — كمّل من الحلقة {n}.",
     en: "“{title}” — continue from episode {n}.",
   },
+  accountBody: {
+    label: "My account link message",
+    kind: "text",
+    ar: "حسابك في واتشات: كل مسلسلاتك، من وين وقفت، ورصيدك. افتحه من هنا 👇",
+    en: "Your Watchat account: all your series, where you left off, and your coins. Open it here 👇",
+  },
+  btnMyAccount: { label: "My account button", kind: "button", ar: "حسابي", en: "My account" },
+  pinHint: {
+    label: "Pin tip (added once, to the first link)",
+    kind: "text",
+    ar: "📌 ثبّت هذه الرسالة (اضغط عليها مطوّلاً ← تثبيت). وحسابك دايماً هنا:",
+    en: "📌 Pin this message (press and hold → Pin). Your account is always here:",
+  },
   btnOpenPlayer: { label: "W12 · Open player button", kind: "button", ar: "افتح المشغّل", en: "Open my player" },
   needSeriesFirst: {
     label: "No series yet",
