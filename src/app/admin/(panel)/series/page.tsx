@@ -17,7 +17,7 @@ export default async function SeriesList({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <h1>Series & episodes</h1>
+      <h1>CMS</h1>
       <Flash ok={sp.ok} err={sp.err} />
       <table className="card">
         <thead>

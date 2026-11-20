@@ -73,7 +73,7 @@ export function MediaLibrary(p: Props) {
               </div>
             ))}
           </div>
-          <span className="muted" style={{ fontSize: 11 }}>Edit these on the series page (Series & episodes).</span>
+          <span className="muted" style={{ fontSize: 11 }}>Edit these on the series page (CMS).</span>
           <strong style={{ fontSize: 13, marginTop: 4 }}>Media library</strong>
         </>
       )}
