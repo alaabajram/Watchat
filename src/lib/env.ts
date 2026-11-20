@@ -16,8 +16,16 @@ function requiredAny(...names: string[]): string {
 }
 
 export const env = {
+  /**
+   * The site's public address. APP_URL if set; otherwise the production domain Vercel provides
+   * (VERCEL_PROJECT_PRODUCTION_URL), so links keep working if APP_URL was never added.
+   */
   get appUrl() {
-    return required("APP_URL").replace(/\/$/, "");
+    const explicit = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+    if (explicit) return explicit.replace(/\/$/, "");
+    const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+    return required("APP_URL");
   },
   get tenantSlug() {
     return process.env.TENANT_SLUG || "watchat";
