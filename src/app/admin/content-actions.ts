@@ -3,10 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done, int, num, opt, str, uuid } from "@/lib/admin/forms";
+import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
+
+/** The series must belong to this admin's label (one platform, many labels). */
+async function ownSeries(tenantId: string, seriesId: string | null): Promise<boolean> {
+  if (!seriesId) return false;
+  const { data } = await db().from("series").select("id").eq("id", seriesId).eq("tenant_id", tenantId).maybeSingle();
+  return Boolean(data);
+}
+
+
+const list = (fd: FormData, key: string, max = 20) =>
+  [...new Set(fd.getAll(key).flatMap((v) => String(v).split(",")).map((v) => v.trim().toLowerCase().slice(0, 40)).filter(Boolean))].slice(0, max);
+
+/** "2026-11-25T20:00" typed in Gulf time → ISO, or null. */
+function gulfTime(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}:00+04:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 export async function createSeriesAction(fd: FormData) {
   const admin = await requireAdmin("content");
@@ -59,8 +78,6 @@ export async function updateSeriesAction(fd: FormData) {
     title_en: str(fd, "title_en", 120),
     synopsis_ar: opt(fd, "synopsis_ar", 1000),
     synopsis_en: opt(fd, "synopsis_en", 1000),
-    poster_url: opt(fd, "poster_url", 500),
-    trailer_video_url: opt(fd, "trailer_video_url", 500),
     dialect: str(fd, "dialect", 30) || "gulf",
     wa_episode_count: waEpisodes,
     free_web_until_ep: freeUntil,
@@ -68,6 +85,16 @@ export async function updateSeriesAction(fd: FormData) {
     coins_per_episode: coins,
     season_pass_price_aed: num(fd, "season_pass_price_aed"),
     season_pass_price_sar: num(fd, "season_pass_price_sar"),
+    tagline_ar: opt(fd, "tagline_ar", 140),
+    tagline_en: opt(fd, "tagline_en", 140),
+    genres: list(fd, "genres").filter((g) => (GENRES as readonly string[]).includes(g)),
+    tags: list(fd, "tags", 30),
+    age_rating: (AGE_RATINGS as readonly string[]).includes(str(fd, "age_rating", 10)) ? str(fd, "age_rating", 10) : null,
+    cast_members: Array.from({ length: 12 }, (_, i) => ({
+      name_ar: str(fd, `cast_${i}_ar`, 80),
+      name_en: str(fd, `cast_${i}_en`, 80),
+      role: str(fd, `cast_${i}_role`, 80),
+    })).filter((c) => c.name_ar || c.name_en),
   };
   const { error } = await db().from("series").update(patch).eq("id", id).eq("tenant_id", admin.tenantId);
   if (error) done(back, `Save failed: ${error.message}`, "err");
@@ -137,8 +164,10 @@ export async function updateEpisodeAction(fd: FormData) {
   const admin = await requireAdmin("content");
   const id = uuid(fd, "id");
   const seriesId = uuid(fd, "series_id");
-  if (!id || !seriesId) done("/admin/series", "Bad request.", "err");
+  if (!id || !seriesId || !(await ownSeries(admin.tenantId, seriesId))) done("/admin/series", "Bad request.", "err");
   const price = num(fd, "coin_price_override");
+  const { data: series } = await db().from("series").select("status").eq("id", seriesId).maybeSingle();
+  const ready = str(fd, "ready", 10) === "ready";
   const patch = {
     title_ar: opt(fd, "title_ar", 200),
     title_en: opt(fd, "title_en", 200),
@@ -147,6 +176,9 @@ export async function updateEpisodeAction(fd: FormData) {
     wa_video_url_en: opt(fd, "wa_video_url_en", 500),
     duration_s: num(fd, "duration_s"),
     coin_price_override: price && price > 0 ? Math.round(price) : null,
+    // Draft = hidden from viewers. Ready = live once the series is live (in review until then).
+    status: ready ? (series?.status === "live" ? "live" : "in_review") : "draft",
+    release_at: gulfTime(str(fd, "release_at", 20)),
   };
   await db().from("episodes").update(patch).eq("id", id).eq("series_id", seriesId);
   await audit(admin, "episode.updated", "episode", id, patch);
@@ -156,7 +188,7 @@ export async function updateEpisodeAction(fd: FormData) {
 export async function addEpisodesAction(fd: FormData) {
   const admin = await requireAdmin("content");
   const seriesId = uuid(fd, "series_id");
-  if (!seriesId) done("/admin/series", "Bad request.", "err");
+  if (!seriesId || !(await ownSeries(admin.tenantId, seriesId))) done("/admin/series", "Bad request.", "err");
   const count = Math.min(Math.max(int(fd, "count", 1), 1), 50);
   const { data: last } = await db().from("episodes").select("number").eq("series_id", seriesId).order("number", { ascending: false }).limit(1).maybeSingle();
   const start = (last?.number ?? 0) + 1;
@@ -171,7 +203,24 @@ export async function addEpisodesAction(fd: FormData) {
 // Uploads (called from the browser upload components)
 // ---------------------------------------------------------------------------
 
-const MEDIA_KINDS = { poster: ["jpg", "png", "webp"], clip: ["mp4"], subtitle: ["vtt"] } as const;
+const MEDIA_KINDS = { poster: ["jpg", "png", "webp"], artwork: ["jpg", "png", "webp"], clip: ["mp4"], subtitle: ["vtt"] } as const;
+
+/** Bulk upload: make sure episodes with these numbers exist (as drafts); returns number → id. */
+export async function ensureEpisodes(seriesId: string, numbers: number[]): Promise<Record<number, string>> {
+  const admin = await requireAdmin("content");
+  if (!(await ownSeries(admin.tenantId, seriesId))) throw new Error("Series not found.");
+  const wanted = [...new Set(numbers.filter((n) => Number.isInteger(n) && n >= 1 && n <= 999))];
+  const { data: have } = await db().from("episodes").select("id, number").eq("series_id", seriesId).in("number", wanted);
+  const missing = wanted.filter((n) => !(have ?? []).some((e) => e.number === n));
+  if (missing.length) {
+    await db()
+      .from("episodes")
+      .insert(missing.map((n) => ({ series_id: seriesId, number: n, title_ar: `الحلقة ${n}`, title_en: `Episode ${n}`, status: "draft" })));
+    await audit(admin, "episodes.added", "series", seriesId, { numbers: missing, via: "bulk_upload" });
+  }
+  const { data: all } = await db().from("episodes").select("id, number").eq("series_id", seriesId).in("number", wanted);
+  return Object.fromEntries((all ?? []).map((e) => [e.number, e.id]));
+}
 
 /** Signed URL to upload one file straight from the browser to the public "media" bucket. */
 export async function createMediaUpload(kind: keyof typeof MEDIA_KINDS, seriesCode: string, ext: string) {
@@ -204,9 +253,16 @@ export async function createStreamUpload(name: string) {
 /** Save an uploaded file's URL / Stream id on an episode or series. */
 export async function setMediaField(target: "episode" | "series", id: string, field: string, value: string) {
   const admin = await requireAdmin("content");
-  const allowed = target === "episode" ? ["stream_uid", "wa_video_url_ar", "wa_video_url_en"] : ["poster_url", "trailer_video_url"];
+  const allowed =
+    target === "episode"
+      ? ["stream_uid", "wa_video_url_ar", "wa_video_url_en", "thumb_url", "wa_size_bytes"]
+      : ["poster_url", "trailer_video_url", "banner_wide_url", "banner_wa_url", "square_url"];
   if (!allowed.includes(field) || !/^[0-9a-f-]{36}$/.test(id)) throw new Error("Bad request.");
-  await db().from(target === "episode" ? "episodes" : "series").update({ [field]: value.slice(0, 500) }).eq("id", id);
+  // Only this label's series and episodes.
+  const seriesId = target === "series" ? id : (await db().from("episodes").select("series_id").eq("id", id).maybeSingle()).data?.series_id;
+  if (!(await ownSeries(admin.tenantId, seriesId ?? null))) throw new Error("Not found.");
+  const v = field === "wa_size_bytes" ? Math.max(0, Math.round(Number(value) || 0)) : value.slice(0, 500);
+  await db().from(target === "episode" ? "episodes" : "series").update({ [field]: v }).eq("id", id);
   await audit(admin, "media.set", target, id, { field });
   revalidatePath("/admin/series");
 }

@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { deleteAsset, renameAsset } from "@/app/admin/flow-actions";
 import type { Asset } from "@/lib/flows/store";
-import type { FlowGraph } from "@/lib/flows/types";
+import type { FlowGraph, MediaRef } from "@/lib/flows/types";
 import { ACCEPT, formatSize, uploadAsset } from "./upload";
 
 type Props = {
@@ -18,6 +18,11 @@ type Props = {
   canAttach: boolean;
   onAttach: (a: Asset) => void;
   onShowCard: (nodeId: string) => void;
+  /** Series page: grid layout, no "used on card" (that's shown in the Flow builder). */
+  compact?: boolean;
+  /** Flow builder: artwork, trailer and episode clips from the series CMS (nothing to upload twice). */
+  cms?: { key: string; label: string; url: string; type: "image" | "video"; ref: MediaRef }[];
+  onAttachRef?: (ref: MediaRef) => void;
 };
 
 function uses(g: FlowGraph | null, assetId: string): string[] {
@@ -47,6 +52,31 @@ export function MediaLibrary(p: Props) {
   const list = p.assets.filter((a) => filter === "all" || a.kind === filter);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {p.cms && p.cms.length > 0 && (
+        <>
+          <strong style={{ fontSize: 13 }}>From the series (CMS)</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {p.cms.map((c) => (
+              <div key={c.key} style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", background: "#fff", fontSize: 11 }}>
+                {c.type === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.url} alt="" style={{ width: "100%", height: 70, objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ height: 70, background: "#111", color: "#fff", display: "grid", placeItems: "center" }}>▶</div>
+                )}
+                <div style={{ padding: 4 }}>{c.label}</div>
+                {p.canAttach && p.onAttachRef && (
+                  <button type="button" style={{ width: "100%", padding: 2, fontSize: 11, borderRadius: 0 }} onClick={() => p.onAttachRef!(c.ref)}>
+                    Use on card
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <span className="muted" style={{ fontSize: 11 }}>Edit these on the series page (Series & episodes).</span>
+          <strong style={{ fontSize: 13, marginTop: 4 }}>Media library</strong>
+        </>
+      )}
       <label
         style={{ border: "2px dashed #cbd5e1", borderRadius: 8, padding: 12, textAlign: "center", cursor: "pointer", background: "#f8fafc" }}
         onDragOver={(e) => e.preventDefault()}
@@ -70,6 +100,7 @@ export function MediaLibrary(p: Props) {
         ))}
       </div>
       {list.length === 0 && <p className="muted" style={{ fontSize: 12 }}>No files yet for this series.</p>}
+      <div style={p.compact ? { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 } : { display: "contents" }}>
       {list.map((a) => {
         const draftUses = uses(p.graph, a.id);
         const live = uses(p.publishedGraph, a.id).length > 0;
@@ -95,7 +126,7 @@ export function MediaLibrary(p: Props) {
               <span className="muted">
                 {a.kind === "image" ? "Image" : "Video"} · {formatSize(a.sizeBytes)}
               </span>
-              <span>
+              {!p.compact && <span>
                 {draftUses.length ? (
                   <>
                     Used on{" "}
@@ -110,7 +141,7 @@ export function MediaLibrary(p: Props) {
                   <span className="muted">Not used yet</span>
                 )}
                 {live && " · live"}
-              </span>
+              </span>}
               <div style={{ display: "flex", gap: 4 }}>
                 {p.canAttach && (
                   <button type="button" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => p.onAttach(a)}>
@@ -134,6 +165,7 @@ export function MediaLibrary(p: Props) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

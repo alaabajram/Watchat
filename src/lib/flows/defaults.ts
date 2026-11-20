@@ -44,7 +44,7 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
   const notForMe: { id: string; port: string }[] = [];
 
   if (s.askLanguage) {
-    const id = add({ kind: "language", body: t.welcomeAskLanguage, btnAr: t.btnArabic.ar, btnEn: t.btnEnglishSubs.ar, skipIfKnown: true, media: { source: "poster", type: "image" } });
+    const id = add({ kind: "language", body: t.welcomeAskLanguage, btnAr: t.btnArabic.ar, btnEn: t.btnEnglishSubs.ar, skipIfKnown: true, media: { source: "series", slot: "banner_wa", type: "image" } });
     connect(id, "ar", "en"); // both answers continue to the same next card
   }
 
@@ -58,7 +58,7 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
       id: resumeLink,
       position: { x: PER_ROW * 330 + 40, y: 520 },
       name: "Returning viewer",
-      data: { kind: "link", episode: "resume", body: t.linkBody, button: t.btnOpenPlayer, media: { source: "poster", type: "image" }, resumeIfFurther: true },
+      data: { kind: "link", episode: "resume", body: t.linkBody, button: t.btnOpenPlayer, media: { source: "series", slot: "banner_wa", type: "image" }, resumeIfFurther: true },
     });
     link(cond, "yes", resumeLink);
   }
@@ -96,7 +96,7 @@ export function defaultFlow(s: DefaultFlowInput): FlowGraph {
     if (!last) notForMe.push({ id, port: "nfm" });
   }
 
-  const linkId = add({ kind: "link", episode: Math.min(chatEps + 1, Math.max(s.episodeCount, 1)), body: t.cliffhangerBody, button: t.btnWatchEp, media: { source: "poster", type: "image" }, resumeIfFurther: true });
+  const linkId = add({ kind: "link", episode: Math.min(chatEps + 1, Math.max(s.episodeCount, 1)), body: t.cliffhangerBody, button: t.btnWatchEp, media: { source: "series", slot: "banner_wa", type: "image" }, resumeIfFurther: true });
   connect(linkId, "next");
 
   if (s.askOptIn) {

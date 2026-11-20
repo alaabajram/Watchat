@@ -10,6 +10,7 @@ export type WebSeries = {
   synopsisAr: string | null;
   synopsisEn: string | null;
   posterUrl: string | null;
+  bannerWideUrl: string | null;
   freeWebUntilEp: number;
   paywallEp: number;
   coinsPerEpisode: number;
@@ -31,7 +32,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
@@ -46,6 +47,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
     synopsisAr: data.synopsis_ar,
     synopsisEn: data.synopsis_en,
     posterUrl: data.poster_url,
+    bannerWideUrl: data.banner_wide_url,
     freeWebUntilEp: data.free_web_until_ep,
     paywallEp: data.paywall_ep,
     coinsPerEpisode: data.coins_per_episode,
@@ -60,6 +62,7 @@ export async function getEpisodes(seriesId: string): Promise<WebEpisode[]> {
     .select("id, number, title_ar, title_en, stream_uid, coin_price_override")
     .eq("series_id", seriesId)
     .eq("status", "live")
+    .or(`release_at.is.null,release_at.lte.${new Date().toISOString()}`) // scheduled episodes appear at their release time
     .order("number");
   return (data ?? []).map((e) => ({
     id: e.id,
@@ -72,6 +75,20 @@ export async function getEpisodes(seriesId: string): Promise<WebEpisode[]> {
 }
 
 /** Episode numbers this viewer has unlocked (null in the set = whole series via season pass). */
+/** Next scheduled episode (for "new episode on …" on the series page). */
+export async function getNextRelease(seriesId: string): Promise<{ number: number; releaseAt: string } | null> {
+  const { data } = await db()
+    .from("episodes")
+    .select("number, release_at")
+    .eq("series_id", seriesId)
+    .eq("status", "live")
+    .gt("release_at", new Date().toISOString())
+    .order("release_at")
+    .limit(1)
+    .maybeSingle();
+  return data ? { number: data.number, releaseAt: data.release_at } : null;
+}
+
 export async function getUnlocked(viewerId: string, seriesId: string): Promise<{ all: boolean; episodes: Set<number> }> {
   const { data } = await db()
     .from("entitlements")

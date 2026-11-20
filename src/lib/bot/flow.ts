@@ -7,6 +7,7 @@
 // menu, language, alerts, links, support, device confirmation, data deletion (texts: Shared replies).
 
 import { answer, startFlow, type FlowEnv, type RunResult, type SeriesProgress } from "../flows/engine";
+import { artUrl, metaVars, type SeriesMeta } from "../flows/meta";
 import type { Condition, FlowGraph, Lang } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
@@ -26,6 +27,8 @@ export type Series = {
   trailerUrl: string | null;
   episodeCount: number;
   waEpisodeCount: number; // episodes the standard flow sends inside the chat (default 3)
+  art?: { bannerWa: string | null; bannerWide: string | null; square: string | null };
+  meta?: SeriesMeta;
 };
 
 export type Clip = {
@@ -375,7 +378,16 @@ export function flowEnvFor(
       const clip = await deps.getClip(series.id, n);
       return { url: (l === "en" ? (clip?.videoUrlEn ?? clip?.videoUrlAr) : clip?.videoUrlAr) ?? null, title: (l === "en" ? clip?.titleEn : clip?.titleAr) ?? null };
     },
-    mediaUrl: (ref) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
+    mediaUrl: async (ref) => {
+      if ("assetId" in ref) return ref.url;
+      if (ref.source === "episode") {
+        const clip = await deps.getClip(series.id, ref.episode);
+        return (env.lang === "en" ? (clip?.videoUrlEn ?? clip?.videoUrlAr) : clip?.videoUrlAr) ?? null;
+      }
+      if (ref.source === "series") return artUrl({ poster: series.posterUrl, bannerWa: series.art?.bannerWa ?? null, bannerWide: series.art?.bannerWide ?? null, square: series.art?.square ?? null }, ref.slot);
+      return ref.source === "poster" ? series.posterUrl : series.trailerUrl;
+    },
+    meta: (l) => metaVars(series.meta, l),
     template: (name) => deps.sendFlowTemplate(v, series, name),
     check: async (cond) => {
       if (cond.check === "started") {

@@ -12,3 +12,4 @@
 - `wallet_ledger` is append-only: never update or delete rows.
 - Schema changes: add a new file in `supabase/migrations/`, never edit an applied migration.
 - Before committing: `npm test`, `npm run typecheck`, `npm run build`.
+- Content CMS: series details (tagline, genres, tags, cast, age rating) and artwork slots (`src/lib/content-meta.ts`) live on the series page; flows reference them with `{source:"series", slot}` / `{source:"episode", episode}` media and `{tagline}` `{genre}` `{cast}` placeholders, so nothing is uploaded twice. Missing artwork falls back to the poster (`artUrl`). WhatsApp versions of free episodes are compressed in the browser with ffmpeg.wasm (served from `/ffmpeg`, copied by the postinstall script).

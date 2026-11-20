@@ -9,7 +9,7 @@ export type ValidateCtx = { episodeCount: number; templates: { name: string; app
 
 export const LONG_WAIT_MINUTES = 23 * 60;
 export const MAX_WAIT_MINUTES = 30 * 24 * 60;
-const PLACEHOLDERS = new Set(["title", "n", "total", "next"]);
+const PLACEHOLDERS = new Set(["title", "n", "total", "next", "tagline", "genre", "cast"]);
 const len = (s: string) => Array.from(s.trim()).length;
 
 export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
@@ -30,7 +30,7 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
     for (const lang of ["ar", "en"] as Lang[]) {
       const v = pick(b, lang);
       if (len(v) > max) err(`${label} (${lang}) is ${len(v)} characters; WhatsApp allows ${max}.`, n.id);
-      for (const m of v.matchAll(/\{([a-zA-Z]+)\}/g)) if (!PLACEHOLDERS.has(m[1])) err(`${label} uses {${m[1]}}; allowed: {title} {n} {total} {next}.`, n.id);
+      for (const m of v.matchAll(/\{([a-zA-Z]+)\}/g)) if (!PLACEHOLDERS.has(m[1])) err(`${label} uses {${m[1]}}; allowed: {title} {n} {total} {next} {tagline} {genre} {cast}.`, n.id);
     }
   };
   const buttons = (n: FlowNode, list: { title: { ar: string; en: string } }[]) => {

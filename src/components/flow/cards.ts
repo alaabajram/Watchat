@@ -49,7 +49,7 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
         ],
       };
     case "link":
-      return { kind, episode: Math.min(4, Math.max(episodeCount, 1)), body: bi("cliffhangerBody"), button: bi("btnWatchEp"), media: { source: "poster", type: "image" }, resumeIfFurther: true };
+      return { kind, episode: Math.min(4, Math.max(episodeCount, 1)), body: bi("cliffhangerBody"), button: bi("btnWatchEp"), media: { source: "series", slot: "banner_wa", type: "image" }, resumeIfFurther: true };
     case "optin":
       return { kind, body: bi("optInBody"), yes: bi("btnYesNotify"), no: bi("btnNoThanks"), skipIfAnswered: true };
     case "wait":

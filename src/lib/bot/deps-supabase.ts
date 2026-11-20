@@ -16,6 +16,13 @@ import { isCopyKey, type CopyLang, type CopyOverrides } from "./copy";
 import { EMPTY_STATE, type BotDeps, type ChatState, type Clip, type FlowRun, type Series, type Viewer, type ViewerLang } from "./flow";
 
 export type SeriesRow = {
+  banner_wa_url?: string | null;
+  banner_wide_url?: string | null;
+  square_url?: string | null;
+  tagline_ar?: string | null;
+  tagline_en?: string | null;
+  genres?: string[] | null;
+  cast_members?: { name_ar: string; name_en: string; role: string }[] | null;
   id: string;
   code: string;
   title_ar: string;
@@ -27,7 +34,7 @@ export type SeriesRow = {
 };
 
 export const SERIES_SELECT =
-  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, episodes(count)";
+  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, banner_wa_url, banner_wide_url, square_url, tagline_ar, tagline_en, genres, cast_members, episodes(count)";
 
 export function toSeries(row: SeriesRow): Series {
   return {
@@ -39,6 +46,8 @@ export function toSeries(row: SeriesRow): Series {
     trailerUrl: row.trailer_video_url,
     waEpisodeCount: row.wa_episode_count,
     episodeCount: row.episodes?.[0]?.count ?? 0,
+    art: { bannerWa: row.banner_wa_url ?? null, bannerWide: row.banner_wide_url ?? null, square: row.square_url ?? null },
+    meta: { taglineAr: row.tagline_ar ?? null, taglineEn: row.tagline_en ?? null, genres: row.genres ?? [], cast: row.cast_members ?? [] },
   };
 }
 
@@ -194,6 +203,7 @@ export function createSupabaseDeps(): BotDeps {
         .select("number, title_ar, title_en, wa_video_url_ar, wa_video_url_en")
         .eq("series_id", seriesId)
         .eq("number", episodeNumber)
+        .or(`release_at.is.null,release_at.lte.${new Date().toISOString()}`) // not before its release time
         .maybeSingle();
       if (!data) return null;
       return {

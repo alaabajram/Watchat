@@ -23,3 +23,6 @@ supabase/.branches/
 .DS_Store
 *.log
 coverage/
+
+# copied from @ffmpeg/core by scripts/copy-ffmpeg.mjs
+/public/ffmpeg/

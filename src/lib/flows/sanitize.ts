@@ -23,6 +23,8 @@ function media(v: unknown): MediaRef | null {
   const type = m.type === "video" ? "video" : m.type === "image" ? "image" : null;
   if (!type) return null;
   if (m.source === "poster" || m.source === "trailer") return { source: m.source, type: m.source === "poster" ? "image" : "video" };
+  if (m.source === "series" && ["poster", "banner_wa", "banner_wide", "square"].includes(String(m.slot))) return { source: "series", slot: m.slot as "poster", type: "image" };
+  if (m.source === "episode") return { source: "episode", episode: num(m.episode, 1, 999, 1), type: "video" };
   const url = str(m.url, 1000);
   const assetId = str(m.assetId, 40);
   if (!/^https:\/\//.test(url) || !/^[0-9a-f-]{36}$/.test(assetId)) return null;

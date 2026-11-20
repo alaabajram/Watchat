@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
-import { canWatch, getEpisodes, getSeriesByCode, getSeriesProgress, getUnlocked } from "@/lib/content";
+import { canWatch, getEpisodes, getNextRelease, getSeriesByCode, getSeriesProgress, getUnlocked } from "@/lib/content";
 import { getSessionViewer } from "@/lib/session";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
@@ -18,7 +18,7 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
   const viewer = await getSessionViewer();
   const locale = viewer?.uiLocale ?? "ar";
   const t = webCopy(locale);
-  const episodes = await getEpisodes(series.id);
+  const [episodes, nextRelease] = await Promise.all([getEpisodes(series.id), getNextRelease(series.id)]);
   const [unlocked, progress, balance] = viewer
     ? await Promise.all([getUnlocked(viewer.id, series.id), getSeriesProgress(viewer.id, series.id), getBalance(viewer.id)])
     : [{ all: false, episodes: new Set<number>() }, { completed: new Set<number>(), lastStarted: null }, 0];
@@ -30,6 +30,10 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
   return (
     <main dir={dirFor(locale)}>
       {viewer && <TopBar locale={locale} balance={balance} />}
+      {series.bannerWideUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={series.bannerWideUrl} alt="" style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }} />
+      )}
       <div className="page">
         <h1 style={{ marginTop: 0 }}>{locale === "en" ? series.titleEn : series.titleAr}</h1>
         <p className="muted">{locale === "en" ? series.synopsisEn : series.synopsisAr}</p>
@@ -39,6 +43,14 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
           </Link>
         )}
         <h2>{t.episodes}</h2>
+        {nextRelease && (
+          <p className="muted">
+            {t.nextRelease(
+              nextRelease.number,
+              new Date(nextRelease.releaseAt).toLocaleString(locale === "en" ? "en-GB" : "ar-AE", { timeZone: "Asia/Dubai", weekday: "long", hour: "numeric", minute: "2-digit" }),
+            )}
+          </p>
+        )}
         <div className="grid">
           {episodes.map((e) => {
             const open = canWatch(series, e.number, unlocked);

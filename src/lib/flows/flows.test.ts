@@ -5,6 +5,7 @@ import { previewSkipWait, previewStart, previewTap, type PreviewSeries, type Sam
 import { buttonReplyId, parseButtonReplyId, type FlowGraph } from "./types";
 import { validateFlow } from "./validate";
 import { sanitizeBlock, sanitizeGraph } from "./sanitize";
+import { artUrl, metaVars } from "./meta";
 
 const texts = Object.fromEntries(COPY_KEYS.map((k) => [k, { ar: COPY[k].ar, en: COPY[k].en }])) as Record<CopyKey, { ar: string; en: string }>;
 const series: PreviewSeries = {
@@ -186,5 +187,45 @@ describe("flows", () => {
     expect(s.result.status).toBe("input");
     s = await previewStart(std(), series, { ...viewer, language: "ar" }, {}, "SECRETS01");
     expect(lastButtons(s.items)[0].title).toBe(COPY.btnStartEp1.ar); // new viewer still gets the trailer
+  });
+
+  it("series artwork falls back to the poster; details render per language", () => {
+    const art = { poster: "p.jpg", bannerWa: null, bannerWide: "w.jpg", square: null };
+    expect(artUrl(art, "banner_wa")).toBe("p.jpg");
+    expect(artUrl(art, "banner_wide")).toBe("w.jpg");
+    const meta = { taglineAr: "سر يكشف كل شيء", taglineEn: null, genres: ["drama", "romance"], cast: [{ name_ar: "ليلى", name_en: "Layla", role: "" }, { name_ar: "", name_en: "Omar", role: "" }] };
+    const ar = metaVars(meta, "ar");
+    const en = metaVars(meta, "en");
+    expect(ar.tagline).toBe("سر يكشف كل شيء");
+    expect(en.tagline).toBe("سر يكشف كل شيء"); // falls back to Arabic
+    expect(en.cast).toBe("Layla, Omar");
+    expect(ar.cast).toBe("ليلى، Omar");
+    expect(en.genre.length).toBeGreaterThan(0);
+    expect(metaVars(undefined, "ar")).toEqual({ tagline: "", genre: "", cast: "" });
+  });
+
+  it("cards use CMS artwork, episode clips and series details without re-uploading", async () => {
+    const g: FlowGraph = {
+      nodes: [
+        { id: "s", type: "card", position: { x: 0, y: 0 }, data: { kind: "start" } },
+        { id: "m1", type: "card", position: { x: 0, y: 0 }, data: { kind: "message", body: { ar: "{title}: {tagline} · {cast}", en: "{title}" }, buttons: [], media: { source: "series", slot: "banner_wa", type: "image" } } },
+        { id: "m2", type: "card", position: { x: 0, y: 0 }, data: { kind: "message", body: { ar: "مقطع", en: "clip" }, buttons: [], media: { source: "episode", episode: 2, type: "video" } } },
+      ],
+      edges: [
+        { id: "e1", source: "s", sourceHandle: "next", target: "m1" },
+        { id: "e2", source: "m1", sourceHandle: "next", target: "m2" },
+      ],
+    } as unknown as FlowGraph;
+    const withCms: PreviewSeries = {
+      ...series,
+      art: { bannerWa: "https://cdn/wa.jpg", bannerWide: null, square: null },
+      meta: { taglineAr: "حكاية انتقام", taglineEn: null, genres: [], cast: [{ name_ar: "ليلى", name_en: "Layla", role: "" }] },
+    } as PreviewSeries;
+    const s = await previewStart(g, withCms, { ...viewer, language: "ar" }, {}, "SECRETS01");
+    const out = JSON.stringify(s.items);
+    expect(out).toContain("https://cdn/wa.jpg");
+    expect(out).toContain("https://cdn/2.mp4");
+    expect(out).toContain("أسرار: حكاية انتقام · ليلى");
+    expect(sanitizeGraph(g)!.nodes.find((n) => n.id === "m2")?.data).toMatchObject({ media: { source: "episode", episode: 2 } });
   });
 });

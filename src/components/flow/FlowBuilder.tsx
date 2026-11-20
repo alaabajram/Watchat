@@ -23,7 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkFlow, deleteMyCard, loadVersion, publishFlow, renameMyCard, saveFlowDraft, saveMyCards, standardFlow } from "@/app/admin/flow-actions";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData, SavedCard } from "@/lib/flows/store";
-import { CARD_LABELS, portsOf, type FlowGraph, type NodeData, type NodeKind } from "@/lib/flows/types";
+import { artUrl } from "@/lib/flows/meta";
+import { CARD_LABELS, portsOf, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
 import { validateFlow, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
 import { ADDABLE, CARD_STYLE, newCard } from "./cards";
@@ -109,13 +110,33 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   const errors = issues.filter((i) => i.level === "error");
   const warnings = issues.filter((i) => i.level === "warning");
 
+  const cmsItems = useMemo(() => {
+    const art = props.series.art;
+    const items: { key: string; label: string; url: string; type: "image" | "video"; ref: MediaRef }[] = [];
+    const add = (key: string, label: string, url: string | null | undefined, type: "image" | "video", ref: MediaRef) => url && items.push({ key, label, url, type, ref });
+    add("wa", "WhatsApp banner", art?.bannerWa, "image", { source: "series", slot: "banner_wa", type: "image" });
+    add("poster", "Poster", props.series.posterUrl, "image", { source: "series", slot: "poster", type: "image" });
+    add("square", "Square", art?.square, "image", { source: "series", slot: "square", type: "image" });
+    add("wide", "Wide banner", art?.bannerWide, "image", { source: "series", slot: "banner_wide", type: "image" });
+    add("trailer", "Trailer", props.series.trailerUrl, "video", { source: "trailer", type: "video" });
+    for (const [n, c] of Object.entries(props.series.clips)) add(`ep${n}`, `Episode ${n} clip`, c.ar ?? c.en, "video", { source: "episode", episode: Number(n), type: "video" });
+    return items;
+  }, [props.series]);
+
+  const mediaThumb = (m: MediaRef): string | null => {
+    if ("assetId" in m) return m.url;
+    if (m.source === "episode") return props.series.clips[m.episode]?.ar ?? null;
+    if (m.source === "series") return artUrl({ poster: props.series.posterUrl, bannerWa: props.series.art?.bannerWa ?? null, bannerWide: props.series.art?.bannerWide ?? null, square: props.series.art?.square ?? null }, m.slot);
+    return m.source === "poster" ? props.series.posterUrl : props.series.trailerUrl;
+  };
+
   // Badges, thumbnails and template text on the cards.
   useEffect(() => {
     setNodes((ns) =>
       ns.map((n) => {
         const d = n.data.card;
         const media = "media" in d ? d.media : null;
-        const thumb = media ? ("assetId" in media ? media.url : media.source === "poster" ? props.series.posterUrl : props.series.trailerUrl) : d.kind === "episode" ? null : null;
+        const thumb = media ? mediaThumb(media) : null;
         const e = issues.filter((i) => i.nodeId === n.id && i.level === "error").length;
         const w = issues.filter((i) => i.nodeId === n.id && i.level === "warning").length;
         const templateBody = d.kind === "template" ? (templateBodies[d.name] ?? null) : undefined;
@@ -123,7 +144,8 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
         return { ...n, data: { ...n.data, thumb, errors: e, warnings: w, templateBody } };
       }),
     );
-  }, [issues, setNodes, props.series.posterUrl, props.series.trailerUrl, templateBodies]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issues, setNodes, props.series, templateBodies]);
 
   // Autosave the draft 2 s after the last change.
   useEffect(() => {
@@ -400,6 +422,13 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
                 if ("media" in d) updateCard(selectedNode.id, { ...d, media: { assetId: a.id, url: a.url, type: a.kind, name: a.name } } as NodeData);
               }}
               onShowCard={focusCard}
+              cms={cmsItems}
+              onAttachRef={(ref) => {
+                if (!selectedNode) return;
+                const d = selectedNode.data.card;
+                if (d.kind === "link" && ref.type === "video") return setMessage({ kind: "err", text: "Web link cards can only show an image." });
+                if ("media" in d) updateCard(selectedNode.id, { ...d, media: ref } as NodeData);
+              }}
             />
           )}
         </div>

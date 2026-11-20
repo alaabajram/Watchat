@@ -86,7 +86,7 @@ export const FLOW_TOOL: Tool = {
             minutes: { type: "integer", description: "wait: minutes to wait (1440 = 1 day). condition watched_within: the time window in minutes. Otherwise 0." },
             check: { type: "string", enum: CHECKS, description: "condition only; otherwise none." },
             template: str("template only: the template name. Otherwise empty."),
-            media: str("message/language: none, poster, trailer, or a media library id. link: none, poster or an image id. Otherwise none."),
+            media: str("message/language: none, banner_wa, poster, square, banner_wide, trailer, episode:N (that episode's chat clip) or a media library id. link: none, banner_wa, poster, square, banner_wide or an image id. Otherwise none."),
             skip: {
               type: "boolean",
               description:
@@ -104,7 +104,8 @@ export const FLOW_TOOL: Tool = {
 // ---------------------------------------------------------------------------
 
 const target = (g: FlowGraph, id: string, port: string) => g.edges.find((e) => e.source === id && e.sourceHandle === port)?.target ?? "";
-const mediaKey = (m: MediaRef | null) => (!m ? "none" : "assetId" in m ? m.assetId : m.source);
+const mediaKey = (m: MediaRef | null) =>
+  !m ? "none" : "assetId" in m ? m.assetId : m.source === "series" ? m.slot : m.source === "episode" ? `episode:${m.episode}` : m.source;
 
 export function graphToSteps(g: FlowGraph): Step[] {
   return g.nodes.map((n) => {
@@ -170,8 +171,10 @@ export function graphToSteps(g: FlowGraph): Step[] {
 function toMedia(key: string, ctx: AgentContext, imageOnly: boolean): MediaRef | null {
   const k = key.trim().toLowerCase();
   if (!k || k === "none") return null;
-  if (k === "poster") return { source: "poster", type: "image" };
+  if (k === "poster" || k === "banner_wa" || k === "banner_wide" || k === "square") return { source: "series", slot: k, type: "image" };
   if (k === "trailer") return imageOnly ? null : { source: "trailer", type: "video" };
+  const ep = /^episode:(\d+)$/.exec(k);
+  if (ep) return imageOnly ? null : { source: "episode", episode: Number(ep[1]), type: "video" };
   const a = ctx.assets.find((x) => x.id === key.trim());
   if (!a || (imageOnly && a.kind !== "image")) return null;
   return { assetId: a.id, url: a.url, type: a.kind, name: a.name };
@@ -334,7 +337,8 @@ Rules (the flow is checked against these before it can be published):
 - Viewers can watch ahead on the web: episode steps with skip=true are skipped for episodes already watched, and links with skip=true open where the viewer left off. Use the started condition to treat returning viewers differently, and watched_within to avoid reminding people who are watching right now.
 - Every step id must be unique; goto/next/yes/no must name existing steps or be empty (ends the chat).
 - Reply buttons: at most ${LIMITS.maxButtons} per step, titles at most ${LIMITS.buttonTitle} characters including emoji, all different within a step. Messages at most ${LIMITS.body} characters.
-- Placeholders allowed in texts: {title} series title, {n} episode number, {total} episode count, {next} episode a link opens. Nothing else in curly braces.
+- Placeholders allowed in texts: {title} series title, {n} episode number, {total} episode count, {next} episode a link opens, {tagline} series tagline, {genre} genres, {cast} main cast. Nothing else in curly braces.
+- Prefer banner_wa for images on message and link cards (it is sized for WhatsApp).
 - Arabic is the main language: natural Gulf Arabic, short, suspenseful, a hook in every message. English is for viewers with English subtitles.
 - WhatsApp's 24-hour rule: after a wait of 23 hours or more, only template steps (optionally through condition/wait) may follow. Use only approved template names when possible.
 - Marketing templates only reach viewers who turned on alerts, so ask for alerts (optin) before relying on them.

@@ -21,7 +21,9 @@ export interface FlowEnv {
   /** Record that an episode was sent in the chat. */
   noteChatEpisode(episode: number): void;
   clip(episode: number, lang: Lang): Promise<{ url: string | null; title: string | null }>;
-  mediaUrl(ref: MediaRef): string | null;
+  mediaUrl(ref: MediaRef): string | null | Promise<string | null>;
+  /** Series details from the CMS for {tagline} {genre} {cast}. */
+  meta(lang: Lang): { tagline: string; genre: string; cast: string };
   template(name: string, nodeId: string): Promise<"sent" | "skipped" | "failed">;
   check(condition: Condition): Promise<boolean>;
   suggest(): Promise<void>;
@@ -53,8 +55,8 @@ export const findStart = (g: FlowGraph) => g.nodes.find((n) => n.data.kind === "
 const nodeById = (g: FlowGraph, id: string) => g.nodes.find((n) => n.id === id) ?? null;
 export const nextOf = (g: FlowGraph, nodeId: string, port: string) => g.edges.find((e) => e.source === nodeId && e.sourceHandle === port)?.target ?? null;
 
-function header(env: FlowEnv, media: MediaRef | null) {
-  const link = media ? env.mediaUrl(media) : null;
+async function header(env: FlowEnv, media: MediaRef | null) {
+  const link = media ? await env.mediaUrl(media) : null;
   return link && media ? { type: media.type, link } : null;
 }
 
@@ -77,7 +79,7 @@ export async function runFrom(g: FlowGraph, nodeId: string | null, env: FlowEnv)
 async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ next: string | null; stop?: RunResult }> {
   const d = node.data;
   const lang = env.lang;
-  const vars: CopyVars = { title: env.title(lang), total: env.totalEpisodes };
+  const vars: CopyVars = { title: env.title(lang), total: env.totalEpisodes, ...env.meta(lang) };
   const next = (port = "next") => ({ next: nextOf(g, node.id, port) });
   const input = { next: null, stop: { status: "input", nodeId: node.id } as RunResult };
 
@@ -88,7 +90,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
 
     case "message": {
       const body = renderCopy(pick(d.body, lang), vars);
-      const h = header(env, d.media);
+      const h = await header(env, d.media);
       if (d.buttons.length) {
         await env.send(
           { kind: "buttons", body, buttons: d.buttons.map((b) => ({ id: buttonReplyId(node.id, b.id), title: pick(b.title, lang) })), ...(h ? { header: h } : {}) },
@@ -103,7 +105,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
     case "language": {
       const known = env.knownLanguage();
       if (d.skipIfKnown && known) return next(known);
-      const h = header(env, d.media);
+      const h = await header(env, d.media);
       await env.send(
         {
           kind: "buttons",
@@ -145,7 +147,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
 
     case "link": {
       const { url, episode } = await env.link(d.episode, d.resumeIfFurther);
-      const h = header(env, d.media);
+      const h = await header(env, d.media);
       await env.send(
         {
           kind: "cta_url",
@@ -204,7 +206,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
         if (series && id && !buttons.some((b) => b.id === id)) buttons.push({ id, title: pick(o.label, lang) || (lang === "en" ? series.titleEn : series.titleAr) });
       }
       if (!buttons.length) return { next: null, stop: { status: "done" } };
-      const h = header(env, d.media);
+      const h = await header(env, d.media);
       await env.send({ kind: "buttons", body: renderCopy(pick(d.body, lang), vars), buttons, ...(h ? { header: h } : {}) }, node.id);
       return { next: null, stop: { status: "done" } }; // a tap starts the chosen series' own flow
     }

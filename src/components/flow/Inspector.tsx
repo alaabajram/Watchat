@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { newId } from "@/lib/flows/defaults";
 import type { Asset, TemplateInfo } from "@/lib/flows/store";
-import { CARD_LABELS, type Bi, type FlowButton, type MediaRef, type NodeData } from "@/lib/flows/types";
+import { CARD_LABELS, type ArtSlot, type Bi, type FlowButton, type MediaRef, type NodeData } from "@/lib/flows/types";
 import type { PreviewSeries } from "@/lib/flows/preview";
 import { CARD_STYLE } from "./cards";
 import { EmojiField } from "./EmojiField";
@@ -32,7 +32,14 @@ type Props = {
 
 const count = (s: string) => Array.from(s).length;
 
-function Text({ label, value, onChange, max, rows = 3, dir }: { label: string; value: string; onChange: (v: string) => void; max: number; rows?: number; dir: "rtl" | "ltr" }) {
+const META_TOKENS = [
+  { label: "Title", text: "{title}" },
+  { label: "Tagline", text: "{tagline}" },
+  { label: "Genre", text: "{genre}" },
+  { label: "Cast", text: "{cast}" },
+];
+
+function Text({ label, value, onChange, max, rows = 3, dir, tokens }: { label: string; value: string; onChange: (v: string) => void; max: number; rows?: number; dir: "rtl" | "ltr"; tokens?: boolean }) {
   const n = count(value);
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12 }}>
@@ -42,16 +49,17 @@ function Text({ label, value, onChange, max, rows = 3, dir }: { label: string; v
           {n}/{max}
         </span>
       </span>
-      <EmojiField dir={dir} rows={rows} value={value} onChange={onChange} invalid={n > max} />
+      <EmojiField dir={dir} rows={rows} value={value} onChange={onChange} invalid={n > max} tokens={tokens ? META_TOKENS : undefined} />
     </label>
   );
 }
 
 function BiText({ label, value, onChange, max, rows }: { label: string; value: Bi; onChange: (v: Bi) => void; max: number; rows?: number }) {
+  const tokens = max > 40; // series details from the CMS: {title} {tagline} {genre} {cast}
   return (
     <>
-      <Text label={`${label} · Arabic`} value={value.ar} onChange={(ar) => onChange({ ...value, ar })} max={max} rows={rows} dir="rtl" />
-      <Text label={`${label} · English`} value={value.en} onChange={(en) => onChange({ ...value, en })} max={max} rows={rows} dir="ltr" />
+      <Text label={`${label} · Arabic`} value={value.ar} onChange={(ar) => onChange({ ...value, ar })} max={max} rows={rows} dir="rtl" tokens={tokens} />
+      <Text label={`${label} · English`} value={value.en} onChange={(en) => onChange({ ...value, en })} max={max} rows={rows} dir="ltr" tokens={tokens} />
     </>
   );
 }
@@ -79,20 +87,40 @@ function Buttons({ value, onChange }: { value: FlowButton[]; onChange: (b: FlowB
   );
 }
 
+const ART_OPTIONS: { slot: ArtSlot; label: string }[] = [
+  { slot: "banner_wa", label: "WhatsApp banner (1.91:1)" },
+  { slot: "poster", label: "Poster" },
+  { slot: "square", label: "Square" },
+  { slot: "banner_wide", label: "Wide banner (16:9)" },
+];
+
+function mediaKey(m: MediaRef | null): string {
+  if (!m) return "none";
+  if ("assetId" in m) return m.assetId;
+  if (m.source === "series") return `art:${m.slot}`;
+  if (m.source === "episode") return `ep:${m.episode}`;
+  return m.source === "poster" ? "art:poster" : "trailer";
+}
+
 function MediaField({ value, onChange, seriesId, assets, addAsset, series, imageOnly }: { value: MediaRef | null; onChange: (m: MediaRef | null) => void; seriesId: string; assets: Asset[]; addAsset: (a: Asset) => void; series: PreviewSeries; imageOnly?: boolean }) {
   const [status, setStatus] = useState<string | null>(null);
-  const current = !value ? "none" : "assetId" in value ? value.assetId : value.source;
+  const has = (slot: ArtSlot) => ({ poster: series.posterUrl, banner_wa: series.art?.bannerWa, banner_wide: series.art?.bannerWide, square: series.art?.square })[slot];
+  const clips = Object.entries(series.clips)
+    .filter(([, c]) => c.ar || c.en)
+    .map(([n]) => Number(n))
+    .sort((a, b) => a - b);
   const choices = assets.filter((a) => !imageOnly || a.kind === "image");
   return (
     <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
       <legend style={{ fontSize: 12 }}>{imageOnly ? "Image" : "Image or video"} (optional)</legend>
       <select
-        value={current}
+        value={mediaKey(value)}
         onChange={(e) => {
           const v = e.target.value;
           if (v === "none") onChange(null);
-          else if (v === "poster") onChange({ source: "poster", type: "image" });
+          else if (v.startsWith("art:")) onChange({ source: "series", slot: v.slice(4) as ArtSlot, type: "image" });
           else if (v === "trailer") onChange({ source: "trailer", type: "video" });
+          else if (v.startsWith("ep:")) onChange({ source: "episode", episode: Number(v.slice(3)), type: "video" });
           else {
             const a = assets.find((x) => x.id === v);
             if (a) onChange({ assetId: a.id, url: a.url, type: a.kind, name: a.name });
@@ -100,13 +128,33 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
         }}
       >
         <option value="none">No media</option>
-        <option value="poster">Series poster{series.posterUrl ? "" : " (not uploaded)"}</option>
-        {!imageOnly && <option value="trailer">Series trailer{series.trailerUrl ? "" : " (not uploaded)"}</option>}
-        {choices.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.kind === "video" ? "🎬" : "🖼"} {a.name}
-          </option>
-        ))}
+        <optgroup label="Series artwork (from the CMS)">
+          {ART_OPTIONS.map((o) => (
+            <option key={o.slot} value={`art:${o.slot}`}>
+              {o.label}
+              {has(o.slot) ? "" : o.slot === "poster" ? " (not uploaded)" : " (not uploaded: uses poster)"}
+            </option>
+          ))}
+        </optgroup>
+        {!imageOnly && (
+          <optgroup label="Videos (from the CMS)">
+            <option value="trailer">Trailer{series.trailerUrl ? "" : " (not uploaded)"}</option>
+            {clips.map((n) => (
+              <option key={n} value={`ep:${n}`}>
+                Episode {n} WhatsApp clip
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {choices.length > 0 && (
+          <optgroup label="Media library">
+            {choices.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.kind === "video" ? "🎬" : "🖼"} {a.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
       <label style={{ fontSize: 12, cursor: "pointer", color: "#2563eb" }}>
         ⬆ Upload new {imageOnly ? "image" : "image or video"} to this card
@@ -123,7 +171,7 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
               const a = await uploadAsset(seriesId, f);
               addAsset(a);
               onChange({ assetId: a.id, url: a.url, type: a.kind, name: a.name });
-              setStatus("Added to the card and the series library ✓");
+              setStatus("Added to the card and the series media library ✓");
             } catch (err) {
               setStatus(err instanceof Error ? err.message : "Upload failed");
             }

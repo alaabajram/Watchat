@@ -6,7 +6,14 @@
 export type Lang = "ar" | "en";
 export type Bi = { ar: string; en: string };
 
-export type MediaRef = { assetId: string; url: string; type: "image" | "video"; name?: string } | { source: "poster" | "trailer"; type: "image" | "video" };
+/** Artwork sizes kept on the series in the CMS (the WhatsApp banner falls back to the poster). */
+export type ArtSlot = "poster" | "banner_wa" | "banner_wide" | "square";
+
+export type MediaRef =
+  | { assetId: string; url: string; type: "image" | "video"; name?: string } // media library upload
+  | { source: "poster" | "trailer"; type: "image" | "video" } // series poster / trailer
+  | { source: "series"; slot: ArtSlot; type: "image" } // series artwork from the CMS
+  | { source: "episode"; episode: number; type: "video" }; // an episode's WhatsApp clip from the CMS
 
 export type FlowButton = { id: string; title: Bi };
 

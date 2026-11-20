@@ -42,7 +42,9 @@ export { standardGraph as standardFlowFor };
 export async function loadBuilder(tenantId: string, seriesId: string, adminId: string): Promise<BuilderData | null> {
   const { data: s } = await db()
     .from("series")
-    .select("id, code, status, title_ar, title_en, poster_url, trailer_video_url, episodes(number, wa_video_url_ar, wa_video_url_en)")
+    .select(
+      "id, code, status, title_ar, title_en, poster_url, trailer_video_url, banner_wa_url, banner_wide_url, square_url, tagline_ar, tagline_en, genres, cast_members, episodes(number, wa_video_url_ar, wa_video_url_en)",
+    )
     .eq("tenant_id", tenantId)
     .eq("id", seriesId)
     .maybeSingle();
@@ -84,6 +86,8 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
       trailerUrl: s.trailer_video_url,
       clips: Object.fromEntries(eps.map((e) => [e.number, { ar: e.wa_video_url_ar, en: e.wa_video_url_en }])),
       others: (others ?? []).map((o) => ({ code: o.code, titleAr: o.title_ar, titleEn: o.title_en })),
+      art: { bannerWa: s.banner_wa_url, bannerWide: s.banner_wide_url, square: s.square_url },
+      meta: { taglineAr: s.tagline_ar, taglineEn: s.tagline_en, genres: s.genres ?? [], cast: s.cast_members ?? [] },
     },
     draft: sanitizeGraph(flow!.draft) ?? { v: 1, nodes: [], edges: [] },
     draftUpdatedAt: flow!.draft_updated_at,

@@ -145,7 +145,7 @@ export const COPY = {
 
 export type CopyKey = keyof typeof COPY;
 export type CopyOverrides = Partial<Record<CopyKey, string>>;
-export type CopyVars = Partial<Record<"title" | "n" | "total" | "next" | "code", string | number>>;
+export type CopyVars = Partial<Record<"title" | "n" | "total" | "next" | "code" | "tagline" | "genre" | "cast", string | number>>;
 
 export const COPY_KEYS = Object.keys(COPY) as CopyKey[];
 /** Replies used outside series flows (menu, alerts, support, links…), edited in Admin → Shared replies. */
@@ -156,7 +156,7 @@ export function isCopyKey(key: string): key is CopyKey {
 }
 
 export function renderCopy(template: string, vars: CopyVars = {}): string {
-  return template.replace(/\{(title|n|total|next|code)\}/g, (_, k: keyof CopyVars) => String(vars[k] ?? ""));
+  return template.replace(/\{(title|n|total|next|code|tagline|genre|cast)\}/g, (_, k: keyof CopyVars) => String(vars[k] ?? ""));
 }
 
 /** A translator for one language, with admin overrides applied on top of the defaults. */

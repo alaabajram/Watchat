@@ -2,19 +2,23 @@
   "name": "watchat",
   "version": "0.1.0",
   "private": true,
-  "description": "Watchat — Arabic micro-dramas that start in WhatsApp and continue on a no-download web player.",
+  "description": "Watchat \u2014 Arabic micro-dramas that start in WhatsApp and continue on a no-download web player.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/copy-ffmpeg.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@supabase/supabase-js": "^2.119.2",
     "@xyflow/react": "^12.12.1",
     "hls.js": "^1.7.4",

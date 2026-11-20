@@ -2,6 +2,7 @@
 
 import type { OutMessage } from "../whatsapp/messages";
 import { answer, resumeAfterWait, startFlow, type FlowEnv, type RunResult } from "./engine";
+import { artUrl, metaVars, type SeriesMeta } from "./meta";
 import type { Condition, FlowGraph, Lang, MediaRef } from "./types";
 
 export type PreviewItem =
@@ -16,6 +17,8 @@ export type PreviewSeries = {
   posterUrl: string | null;
   trailerUrl: string | null;
   clips: Record<number, { ar: string | null; en: string | null }>;
+  art?: { bannerWa: string | null; bannerWide: string | null; square: string | null };
+  meta?: SeriesMeta;
   /** Other live series, for Series choice cards. */
   others?: { code: string; titleAr: string; titleEn: string }[];
 };
@@ -68,7 +71,13 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
       chatEpisode = Math.max(chatEpisode, n);
     },
     clip: async (n, l) => ({ url: series.clips[n]?.[l] ?? series.clips[n]?.ar ?? null, title: null }),
-    mediaUrl: (ref: MediaRef) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
+    mediaUrl: (ref: MediaRef) => {
+      if ("assetId" in ref) return ref.url;
+      if (ref.source === "episode") return series.clips[ref.episode]?.[env.lang] ?? series.clips[ref.episode]?.ar ?? null;
+      if (ref.source === "series") return artUrl({ poster: series.posterUrl, bannerWa: series.art?.bannerWa ?? null, bannerWide: series.art?.bannerWide ?? null, square: series.art?.square ?? null }, ref.slot);
+      return ref.source === "poster" ? series.posterUrl : series.trailerUrl;
+    },
+    meta: (l) => metaVars(series.meta, l),
     template: async (name, nodeId) => {
       const t = templates[name];
       const lang = env.lang;

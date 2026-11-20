@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
+import { ArtworkSlots } from "@/components/admin/ArtworkSlots";
+import { BulkEpisodes } from "@/components/admin/BulkEpisodes";
 import { MediaUpload } from "@/components/admin/MediaUpload";
+import { WhatsAppVersion } from "@/components/admin/WhatsAppVersion";
+import { SeriesMediaLibrary } from "@/components/flow/SeriesMediaLibrary";
+import { AGE_RATINGS, GENRES, GENRE_LABELS, type CastMember } from "@/lib/content-meta";
 import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
 import {
@@ -23,15 +28,20 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
 
-  const [{ data: s }, { data: episodes }, { data: licences }, { data: reviews }] = await Promise.all([
+  const [{ data: s }, { data: episodes }, { data: licences }, { data: reviews }, { data: assets }] = await Promise.all([
     db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("episodes").select("*").eq("series_id", id).order("number"),
     db().from("licences").select("*").eq("series_id", id).order("created_at", { ascending: false }),
     db().from("content_reviews").select("*").eq("series_id", id).order("created_at", { ascending: false }).limit(5),
+    db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", admin.tenantId).eq("series_id", id).order("created_at", { ascending: false }),
   ]);
   if (!s) notFound();
   const eps = episodes ?? [];
   const lastReview = reviews?.[0];
+  const cast = (s?.cast_members ?? []) as CastMember[];
+  const castRows = Array.from({ length: Math.min(12, Math.max(3, cast.length + 2)) }, (_, i) => cast[i] ?? { name_ar: "", name_en: "", role: "" });
+  const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
+  const gulfInput = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 16) : "");
 
   return (
     <>
@@ -106,12 +116,27 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
             <textarea name="synopsis_en" defaultValue={s.synopsis_en ?? ""} />
           </label>
           <label>
-            Poster URL
-            <input name="poster_url" defaultValue={s.poster_url ?? ""} />
+            Tagline (Arabic)
+            <input name="tagline_ar" dir="rtl" maxLength={140} defaultValue={s.tagline_ar ?? ""} placeholder="سطر واحد يشد المشاهد" />
           </label>
           <label>
-            Trailer for WhatsApp (MP4 under 16 MB)
-            <input name="trailer_video_url" defaultValue={s.trailer_video_url ?? ""} />
+            Tagline (English)
+            <input name="tagline_en" maxLength={140} defaultValue={s.tagline_en ?? ""} placeholder="One line that hooks the viewer" />
+          </label>
+          <label>
+            Age rating
+            <select name="age_rating" defaultValue={s.age_rating ?? ""}>
+              <option value="">Not set</option>
+              {AGE_RATINGS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Tags (comma separated)
+            <input name="tags" defaultValue={(s.tags ?? []).join(", ")} placeholder="ramadan, gulf, betrayal" />
           </label>
           <label>
             Dialect
@@ -123,10 +148,25 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
             </select>
           </label>
         </div>
-        <div className="row" style={{ marginTop: 8 }}>
-          <MediaUpload kind="poster" seriesCode={s.code} target="series" id={s.id} field="poster_url" label="Upload poster" />
-          <MediaUpload kind="clip" seriesCode={s.code} target="series" id={s.id} field="trailer_video_url" label="Upload trailer clip" />
+        <h2>Genres</h2>
+        <div className="row">
+          {GENRES.map((g) => (
+            <label key={g} className="inline">
+              <input type="checkbox" name="genres" value={g} defaultChecked={(s.genres ?? []).includes(g)} /> {GENRE_LABELS[g].en} · {GENRE_LABELS[g].ar}
+            </label>
+          ))}
         </div>
+        <h2>Cast</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+          {castRows.map((c, i) => (
+            <div key={i} style={{ display: "contents" }}>
+              <input name={`cast_${i}_ar`} dir="rtl" defaultValue={c.name_ar} placeholder="الاسم" />
+              <input name={`cast_${i}_en`} defaultValue={c.name_en} placeholder="Name" />
+              <input name={`cast_${i}_role`} defaultValue={c.role} placeholder="Role, e.g. Noura" />
+            </div>
+          ))}
+        </div>
+        <p className="muted" style={{ marginBottom: 0 }}>Save to add more rows (up to 12).</p>
 
         <h2>Chat in WhatsApp</h2>
         <p className="muted" style={{ marginTop: 0 }}>
@@ -168,13 +208,37 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
         </p>
       </form>
 
+      {/* Artwork and trailer */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Artwork & trailer</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Used across the web player, WhatsApp messages and templates, and offered in the Flow builder&apos;s media picker.</p>
+        <ArtworkSlots
+          seriesId={s.id}
+          seriesCode={s.code}
+          current={{ poster_url: s.poster_url, banner_wide_url: s.banner_wide_url, banner_wa_url: s.banner_wa_url, square_url: s.square_url }}
+        />
+        <div className="row" style={{ marginTop: 12 }}>
+          <strong>Trailer (WhatsApp, under 16 MB):</strong>
+          {s.trailer_video_url ? (
+            <a href={s.trailer_video_url} target="_blank" rel="noreferrer">
+              current trailer
+            </a>
+          ) : (
+            <span className="muted">none yet</span>
+          )}
+          <MediaUpload kind="clip" seriesCode={s.code} target="series" id={s.id} field="trailer_video_url" label="Upload ready MP4" />
+        </div>
+      </div>
+
       {/* Episodes */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Episodes ({eps.length})</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Episodes 1–{s.wa_episode_count} need WhatsApp clips (Arabic, and English with burned-in subtitles). Every episode needs the full
-          video on Cloudflare Stream for the web.
+          Every episode needs the full video on Cloudflare Stream for the web. Free episodes (1–{s.free_web_until_ep}) can also be sent in WhatsApp: make
+          their WhatsApp version here (under 16 MB, made in your browser). English WhatsApp versions need subtitles burned in, so upload those ready-made.
+          Drafts are hidden from viewers; a release time keeps a ready episode hidden until then (Gulf time).
         </p>
+        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} />
         <table>
           <thead>
             <tr>
@@ -202,23 +266,39 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                     <input name="title_ar" dir="rtl" defaultValue={e.title_ar ?? ""} placeholder="العنوان" />
                     <input name="title_en" defaultValue={e.title_en ?? ""} placeholder="Title" />
                     <input name="stream_uid" defaultValue={e.stream_uid ?? ""} placeholder="Stream video id" />
-                    {e.number <= s.wa_episode_count && (
+                    {e.number <= s.free_web_until_ep && (
                       <>
                         <input name="wa_video_url_ar" defaultValue={e.wa_video_url_ar ?? ""} placeholder="WhatsApp clip URL (Arabic)" />
                         <input name="wa_video_url_en" defaultValue={e.wa_video_url_en ?? ""} placeholder="WhatsApp clip URL (English subs)" />
                       </>
                     )}
                     <input name="coin_price_override" type="number" min={1} defaultValue={e.coin_price_override ?? ""} placeholder={`Coins (default ${s.coins_per_episode})`} />
+                    <select name="ready" defaultValue={e.status === "draft" ? "draft" : "ready"} title="Draft = hidden from viewers">
+                      <option value="draft">Draft (hidden)</option>
+                      <option value="ready">Ready</option>
+                    </select>
+                    <label className="inline" style={{ fontWeight: 400 }}>
+                      Release
+                      <input name="release_at" type="datetime-local" defaultValue={gulfInput(e.release_at)} title="Gulf time; empty = as soon as it's live" />
+                    </label>
                     <div className="row">
                       <button type="submit" className="secondary">
                         Save
                       </button>
                       <MediaUpload kind="stream" seriesCode={s.code} target="episode" id={e.id} field="stream_uid" label="Web video" />
-                      {e.number <= s.wa_episode_count && (
+                      {e.number <= s.free_web_until_ep && (
                         <>
-                          <MediaUpload kind="clip" seriesCode={s.code} target="episode" id={e.id} field="wa_video_url_ar" label="Clip AR" />
-                          <MediaUpload kind="clip" seriesCode={s.code} target="episode" id={e.id} field="wa_video_url_en" label="Clip EN" />
+                          <WhatsAppVersion episodeId={e.id} seriesCode={s.code} />
+                          <MediaUpload kind="clip" seriesCode={s.code} target="episode" id={e.id} field="wa_video_url_en" label="Clip EN (ready MP4)" />
+                          {e.wa_video_url_ar && (
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              WA {e.wa_size_bytes ? `${(e.wa_size_bytes / 1048576).toFixed(1)} MB ${e.wa_size_bytes <= 16 * 1048576 ? "✓" : "⚠ over 16 MB"}` : "✓"}
+                            </span>
+                          )}
                         </>
+                      )}
+                      {e.release_at && Date.parse(e.release_at) > Date.now() && (
+                        <span className="badge scheduled">releases {new Date(e.release_at).toLocaleString("en-GB", { timeZone: "Asia/Dubai", dateStyle: "medium", timeStyle: "short" })}</span>
                       )}
                     </div>
                   </form>
@@ -234,6 +314,15 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
             Add episodes
           </button>
         </form>
+      </div>
+
+      {/* Media library shared with the Flow builder */}
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Media library</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Extra images and video cuts for messages (teasers, character cards). The Flow builder uses this same library, so upload once.
+        </p>
+        <SeriesMediaLibrary seriesId={s.id} initial={(assets ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at }))} />
       </div>
 
       {/* Licences */}

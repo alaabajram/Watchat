@@ -20,7 +20,7 @@ type Template = {
   meta_status: string;
 };
 
-type SeriesInfo = { id: string; code: string; title_ar: string; title_en: string; poster_url: string | null; wa_episode_count: number };
+type SeriesInfo = { id: string; code: string; title_ar: string; title_en: string; poster_url: string | null; banner_wa_url: string | null; wa_episode_count: number };
 
 export type Recipient = {
   viewerId: string;
@@ -49,7 +49,7 @@ async function getSeries(id: string | null): Promise<SeriesInfo | null> {
   if (!seriesCache.has(id)) {
     const { data } = await db()
       .from("series")
-      .select("id, code, title_ar, title_en, poster_url, wa_episode_count")
+      .select("id, code, title_ar, title_en, poster_url, banner_wa_url, wa_episode_count")
       .eq("id", id)
       .maybeSingle();
     seriesCache.set(id, (data as SeriesInfo) ?? null);
@@ -107,7 +107,7 @@ async function sendTemplate(r: Recipient, templates: Map<string, Template>, quic
     kind: "template",
     name: template.name,
     language: template.lang,
-    ...(template.header_type === "image" && series?.poster_url ? { headerImage: series.poster_url } : {}),
+    ...(template.header_type === "image" && (series?.banner_wa_url || series?.poster_url) ? { headerImage: series.banner_wa_url || series.poster_url! } : {}),
     bodyParams: params,
     ...(urlParam ? { urlButtonParam: urlParam } : {}),
     ...(template.button_type === "quick_reply" && template.button_text && quickReplyPayload ? { quickReplyPayload } : {}),
