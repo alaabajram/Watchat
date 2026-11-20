@@ -11,7 +11,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="admin-auth">
       <form action={loginAction} className="card">
-        <h1>Watchat Admin</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/wordmark-en-dark.png" alt="Watchat" style={{ height: 32, width: "auto", alignSelf: "flex-start" }} />
+        <h1 style={{ margin: "4px 0 0", fontSize: 22 }}>Sign in to the admin</h1>
         <Flash ok={sp.ok} err={sp.err} />
         <label>
           Email
