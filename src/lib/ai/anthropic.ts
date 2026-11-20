@@ -1,4 +1,6 @@
-// Minimal Claude Messages API client: one forced tool call, so the model can only answer in our format.
+// Minimal Claude Messages API client. The answer must come back through one strict tool, so it always
+// matches our format. Newer models (Sonnet 5.5, Opus 5.5) reject forced tool_choice with a 400, so we use
+// tool_choice "auto" + strict: true + an instruction, and ask once more if the model answers in prose.
 // Server-only; the label's key never reaches the browser.
 
 export const AI_MODELS = [
@@ -27,18 +29,19 @@ function friendly(status: number, detail: string): string {
   if (status === 404) return "This model isn't available on your AI account. Pick another in Admin → AI account.";
   if (status === 429) return "Your AI account hit its rate limit. Try again in a minute.";
   if (status === 400 && /credit|billing/i.test(detail)) return "Your AI account has no credit left. Top it up in the Anthropic console.";
+  if (status === 400) return `The AI service rejected the request: ${detail.slice(0, 200) || "no reason given"}`;
   if (status === 529 || status >= 500) return "The AI service is busy. Try again in a minute.";
   return `AI request failed (${status}).`;
 }
 
-export async function callTool(opts: {
+async function request(opts: {
   apiKey: string;
   model: string;
   system: string;
   turns: ChatTurn[];
   tool: Tool;
-  maxTokens?: number;
-}): Promise<ToolResult> {
+  maxTokens: number;
+}) {
   let res: Response;
   try {
     res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -46,11 +49,11 @@ export async function callTool(opts: {
       headers: { "content-type": "application/json", "x-api-key": opts.apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: opts.model,
-        max_tokens: opts.maxTokens ?? 8000,
-        system: opts.system,
+        max_tokens: opts.maxTokens,
+        system: `${opts.system}\n\nAlways answer by calling the ${opts.tool.name} tool exactly once. Do not reply in plain text.`,
         messages: opts.turns,
-        tools: [opts.tool],
-        tool_choice: { type: "tool", name: opts.tool.name },
+        tools: [{ ...opts.tool, strict: true }],
+        tool_choice: { type: "auto" },
       }),
       signal: AbortSignal.timeout(110_000),
     });
@@ -63,7 +66,33 @@ export async function callTool(opts: {
     error?: { message?: string };
   };
   if (!res.ok) throw new AiError(friendly(res.status, body.error?.message ?? ""), res.status);
-  const block = body.content?.find((c) => c.type === "tool_use" && c.name === opts.tool.name);
-  if (!block) throw new AiError("The AI didn't return a draft. Try again.");
-  return { input: block.input, inputTokens: body.usage?.input_tokens ?? 0, outputTokens: body.usage?.output_tokens ?? 0 };
+  return {
+    block: body.content?.find((c) => c.type === "tool_use" && c.name === opts.tool.name),
+    inputTokens: body.usage?.input_tokens ?? 0,
+    outputTokens: body.usage?.output_tokens ?? 0,
+  };
+}
+
+export async function callTool(opts: {
+  apiKey: string;
+  model: string;
+  system: string;
+  turns: ChatTurn[];
+  tool: Tool;
+  maxTokens?: number;
+}): Promise<ToolResult> {
+  const base = { ...opts, maxTokens: opts.maxTokens ?? 16000 };
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const turns =
+      attempt === 0
+        ? opts.turns
+        : [...opts.turns.slice(0, -1), { role: "user" as const, content: `${opts.turns.at(-1)!.content}\n\nReply only by calling the ${opts.tool.name} tool.` }];
+    const r = await request({ ...base, turns });
+    inputTokens += r.inputTokens;
+    outputTokens += r.outputTokens;
+    if (r.block) return { input: r.block.input, inputTokens, outputTokens };
+  }
+  throw new AiError("The AI didn't return a draft. Try again.");
 }

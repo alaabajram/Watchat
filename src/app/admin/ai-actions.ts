@@ -60,8 +60,12 @@ export async function testAiAction() {
       model: account.model,
       system: "Reply through the tool.",
       turns: [{ role: "user", content: "Say ok." }],
-      tool: { name: "reply", description: "Reply", input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
-      maxTokens: 50,
+      tool: {
+        name: "reply",
+        description: "Reply",
+        input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false },
+      },
+      maxTokens: 2000,
     });
     await logAiUsage({ tenantId: admin.tenantId, adminId: admin.id, purpose: "test", model: account.model, inputTokens: r.inputTokens, outputTokens: r.outputTokens, ok: true });
   } catch (e) {

@@ -46,7 +46,7 @@ export const SCENARIO_TOOL: Tool = {
           askLanguage: { type: "boolean", description: "Ask Arabic vs English subtitles before anything else (W1)." },
           sendTrailer: { type: "boolean", description: "Send the trailer with a Start button before episode 1 (W2)." },
           askOptIn: { type: "boolean", description: "After the web link, ask whether to get new-episode alerts (W6)." },
-          waEpisodeCount: { type: "integer", minimum: 0, maximum: MAX_CHAT_EPISODES, description: "Episodes sent inside WhatsApp before the web link." },
+          waEpisodeCount: { type: "integer", description: `Episodes sent inside WhatsApp before the web link, 0 to ${MAX_CHAT_EPISODES}.` },
         },
         additionalProperties: false,
       },
