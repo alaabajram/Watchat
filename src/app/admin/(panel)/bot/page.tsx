@@ -25,7 +25,12 @@ export default async function BotPage({ searchParams }: { searchParams: Promise<
 
   return (
     <>
-      <h1>Bot messages & scenarios</h1>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h1>Bot messages & scenarios</h1>
+        <Link className="btn" href={`/admin/bot/ai${seriesId ? `?series=${seriesId}` : ""}`}>
+          ✨ Build with AI
+        </Link>
+      </div>
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>

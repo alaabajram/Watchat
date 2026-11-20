@@ -11,7 +11,7 @@ import { countryFromPhone } from "../phone";
 import { isCopyKey, type CopyLang, type CopyOverrides } from "./copy";
 import { EMPTY_STATE, type BotDeps, type ChatState, type Clip, type Series, type Viewer, type ViewerLang } from "./flow";
 
-type SeriesRow = {
+export type SeriesRow = {
   id: string;
   code: string;
   title_ar: string;
@@ -25,10 +25,10 @@ type SeriesRow = {
   episodes: { count: number }[] | null;
 };
 
-const SERIES_SELECT =
+export const SERIES_SELECT =
   "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, ask_language, send_trailer, ask_opt_in, episodes(count)";
 
-function toSeries(row: SeriesRow): Series {
+export function toSeries(row: SeriesRow): Series {
   return {
     id: row.id,
     code: row.code,

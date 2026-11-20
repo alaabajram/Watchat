@@ -51,6 +51,10 @@ export const env = {
   get phoneHashSecret() {
     return required("PHONE_HASH_SECRET");
   },
+  /** Encrypts per-label secrets such as AI API keys (32+ random characters). */
+  get settingsEncryptionKey() {
+    return required("SETTINGS_ENCRYPTION_KEY");
+  },
   get streamCustomerCode() {
     return process.env.CLOUDFLARE_STREAM_CUSTOMER_CODE || "";
   },

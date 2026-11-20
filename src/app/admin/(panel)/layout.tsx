@@ -17,6 +17,7 @@ const NAV: { href: string; label: string; area: Area }[] = [
   { href: "/admin/orders", label: "Orders & payments", area: "orders" },
   { href: "/admin/pricing", label: "Pricing", area: "pricing" },
   { href: "/admin/team", label: "Team", area: "team" },
+  { href: "/admin/ai", label: "AI account", area: "aiAccount" },
   { href: "/admin/audit", label: "Audit log", area: "audit" },
 ];
 
