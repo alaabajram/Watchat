@@ -38,7 +38,8 @@ export type Intent =
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
-const MENU_WORDS = ["MENU", "HELP", "القائمة", "قائمة", "مساعدة"];
+// "ابدأ" / "START" is pre-filled by the watchat.pro splash button, so a new visitor lands on the menu.
+const MENU_WORDS = ["MENU", "HELP", "START", "القائمة", "قائمة", "مساعدة", "ابدأ", "ابدا"];
 const LINK_WORDS = ["LINK", "رابط", "الرابط", "رابطي"];
 // "My account" — sent from watchat.pro/me when the browser isn't signed in.
 const ACCOUNT_WORDS = ["ACCOUNT", "MYACCOUNT", "LOGIN", "SIGNIN", "حسابي", "الحساب", "حساب", "دخول", "تسجيلدخول", "تسجيلالدخول"];
