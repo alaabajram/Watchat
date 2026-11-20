@@ -255,25 +255,25 @@ a {
   color: var(--a-text);
   color-scheme: light;
   font-family: "Readex Pro", system-ui, "Segoe UI", "Noto Sans Arabic", Tahoma, sans-serif;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15.5px;
+  line-height: 1.6;
 }
 .admin a { color: var(--a-brand-text); }
 .admin :focus-visible { outline: 3px solid rgba(49, 229, 160, 0.55); outline-offset: 2px; }
 
 /* Shell + sidebar */
-.admin-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100dvh; }
-.admin-nav { background: var(--a-night); color: #cfc9d6; padding: 20px 14px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
-.admin-nav a { color: #cfc9d6; text-decoration: none; padding: 9px 12px; border-radius: 12px; display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.admin-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100dvh; }
+.admin-nav { background: var(--a-night); color: #e4dfea; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
+.admin-nav a { color: #e4dfea; text-decoration: none; padding: 12px 14px; min-height: 48px; border-radius: 14px; display: flex; align-items: center; gap: 14px; font-size: 16.5px; font-weight: 500; }
 .admin-nav a:hover { background: #241f2e; color: #fff; }
 .admin-nav a[aria-current="page"] { background: rgba(49, 229, 160, 0.14); color: var(--a-brand); font-weight: 600; }
 .admin-nav a svg { flex-shrink: 0; opacity: 0.9; }
 .admin-nav a.brand { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 4px 10px 20px; }
 .admin-nav a.brand:hover { background: none; }
-.admin-nav a.brand img { height: 26px; width: auto; display: block; }
-.admin-nav a.brand span { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #8f889a; }
-.admin-nav .section { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #8f889a; padding: 16px 12px 6px; }
-.admin-nav .who { margin-top: auto; font-size: 12px; color: #b5afbe; padding: 14px 12px 4px; border-top: 1px solid #2a2533; }
+.admin-nav a.brand img { height: 32px; width: auto; display: block; }
+.admin-nav a.brand span { font-size: 12.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #a8a1b3; }
+.admin-nav .section { font-size: 12.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #a8a1b3; padding: 20px 14px 8px; }
+.admin-nav .who { margin-top: auto; font-size: 14px; color: #c9c3d2; padding: 16px 14px 4px; border-top: 1px solid #2a2533; }
 .admin-nav .who a { color: #b5afbe; padding: 0; display: inline; }
 .admin-nav .who a:hover { background: none; color: #fff; }
 .admin-nav .who button { background: #241f2e; color: #fff; border-color: #3a3446; }

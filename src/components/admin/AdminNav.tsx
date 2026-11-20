@@ -34,10 +34,10 @@ function Icon({ name }: { name: IconName }) {
   const img = IMAGES[name];
   if (img) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={img} alt="" width={24} height={24} aria-hidden="true" style={{ margin: "-3px", flexShrink: 0 }} />;
+    return <img src={img} alt="" width={32} height={32} aria-hidden="true" style={{ margin: "-4px", flexShrink: 0 }} />;
   }
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d={PATHS[name]} />
     </svg>
   );
