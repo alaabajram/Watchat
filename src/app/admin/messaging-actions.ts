@@ -1,5 +1,7 @@
 "use server";
 
+import { createTemplate, inActiveUse, templateUsage, updateTemplate } from "@/lib/messaging/template-store";
+import type { TemplateDraft } from "@/lib/whatsapp/template-rules";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, opt, str, uuid } from "@/lib/admin/forms";
 import { estimateCost } from "@/lib/messaging/policy";
@@ -16,38 +18,6 @@ export async function addStarterTemplatesAction() {
   const problems = await addStarterTemplates(admin.tenantId);
   await audit(admin, "templates.starters_added", "wa_templates");
   done("/admin/templates", problems.length ? problems.join(" ") : "Starter templates added and sent to Meta for approval.", problems.length ? "err" : "ok");
-}
-
-export async function saveTemplateAction(fd: FormData) {
-  const admin = await requireAdmin("messaging");
-  const name = str(fd, "name", 100).toLowerCase();
-  const lang = str(fd, "lang", 2);
-  const category = str(fd, "category", 20);
-  const body = str(fd, "body", 1024);
-  if (!/^[a-z0-9_]{1,100}$/.test(name)) done("/admin/templates", "Name: lowercase letters, numbers and _ only.", "err");
-  if (lang !== "ar" && lang !== "en") done("/admin/templates", "Pick a language.", "err");
-  if (category !== "marketing" && category !== "utility") done("/admin/templates", "Pick a category.", "err");
-  if (!body) done("/admin/templates", "Body is required.", "err");
-  const buttonText = opt(fd, "button_text", 25);
-  const { error } = await db()
-    .from("wa_templates")
-    .upsert(
-      {
-        tenant_id: admin.tenantId,
-        name,
-        lang,
-        category,
-        header_type: str(fd, "header_type", 10) === "image" ? "image" : "none",
-        body,
-        button_text: buttonText,
-        meta_status: "draft",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "tenant_id,name,lang" },
-    );
-  if (error) done("/admin/templates", `Save failed: ${error.message}`, "err");
-  await audit(admin, "template.saved", "wa_template", `${name}:${lang}`);
-  done("/admin/templates", `Template ${name} (${lang}) saved as draft.`);
 }
 
 export async function submitTemplateAction(fd: FormData) {
@@ -78,10 +48,34 @@ export async function syncTemplatesAction() {
   done("/admin/templates", `Synced ${updated} templates from Meta.`);
 }
 
+/** New or edited template from the shared editor on the WhatsApp templates page (Arabic + English together). */
+export async function saveTemplateFromPage(draft: TemplateDraft, editing: string | null): Promise<{ ok: boolean; message: string; name?: string }> {
+  const admin = await requireAdmin("messaging");
+  const d: TemplateDraft = {
+    title: String(draft?.title ?? "").slice(0, 80),
+    category: draft?.category === "utility" ? "utility" : "marketing",
+    ar: { body: String(draft?.ar?.body ?? "").slice(0, 1100), button: String(draft?.ar?.button ?? "").slice(0, 40) },
+    en: draft?.en?.body?.trim() ? { body: String(draft.en.body).slice(0, 1100), button: String(draft.en.button ?? "").slice(0, 40) } : null,
+  };
+  if (editing) {
+    const r = await updateTemplate(admin.tenantId, String(editing).slice(0, 100), d);
+    if (!r.ok) return { ok: false, message: r.errors.join(" ") };
+    await audit(admin, "template.edited", "wa_template", editing, { from: "templates_page" });
+    return { ok: !r.problems.length, name: editing, message: r.problems.length ? r.problems.join(" ") : `"${editing}" updated and sent to Meta for review.` };
+  }
+  const r = await createTemplate(admin.tenantId, d);
+  if (!r.ok) return { ok: false, message: r.errors.join(" ") };
+  await audit(admin, "template.created", "wa_template", r.name, { from: "templates_page", category: d.category });
+  return { ok: !r.problems.length, name: r.name, message: r.problems.length ? r.problems.join(" ") : `"${r.name}" saved and sent to Meta for approval.` };
+}
+
 export async function deleteTemplateAction(fd: FormData) {
   const admin = await requireAdmin("messaging");
   const id = uuid(fd, "id");
   if (!id) done("/admin/templates", "Bad request.", "err");
+  const { data: row } = await db().from("wa_templates").select("name").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle();
+  const busy = row ? inActiveUse((await templateUsage(admin.tenantId)).get(row.name)) : [];
+  if (busy.length) done("/admin/templates", `"${row!.name}" is in use (${busy.map((u) => u.label).join(", ")}). Switch those to another template first.`, "err");
   await db().from("wa_templates").delete().eq("id", id).eq("tenant_id", admin.tenantId);
   await audit(admin, "template.deleted", "wa_template", id);
   done("/admin/templates", "Template removed here (it stays in WhatsApp Manager).");

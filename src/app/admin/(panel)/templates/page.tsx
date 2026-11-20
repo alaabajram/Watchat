@@ -2,23 +2,33 @@
 // Draft here → submit to Meta → sync status. Sequences and campaigns use APPROVED templates only.
 
 import { Flash } from "@/components/admin/Flash";
+import { UsageList } from "@/components/admin/TemplateEditor";
+import { TemplatesEditorCard } from "@/components/admin/TemplatesEditorCard";
+import { getTemplateForEdit, templateUsage } from "@/lib/messaging/template-store";
 import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
 import { wabaConfigured } from "@/lib/whatsapp/templates";
 import {
   addStarterTemplatesAction,
   deleteTemplateAction,
-  saveTemplateAction,
   submitTemplateAction,
   syncTemplatesAction,
 } from "../../messaging-actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function TemplatesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
+export default async function TemplatesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; edit?: string }> }) {
   const admin = await requireAdmin("messaging");
   const sp = await searchParams;
-  const { data: templates } = await db().from("wa_templates").select("*").eq("tenant_id", admin.tenantId).order("name").order("lang");
+  const [{ data: templates }, usage, editing] = await Promise.all([
+    db().from("wa_templates").select("*").eq("tenant_id", admin.tenantId).order("name").order("lang"),
+    templateUsage(admin.tenantId),
+    sp.edit ? getTemplateForEdit(admin.tenantId, sp.edit.slice(0, 100)) : Promise.resolve(null),
+  ]);
+  // One row per template name (Arabic + English together), like the editor.
+  const byName = new Map<string, NonNullable<typeof templates>>();
+  for (const t of templates ?? []) byName.set(t.name, [...(byName.get(t.name) ?? []), t]);
+  const groups = [...byName.entries()];
 
   return (
     <>
@@ -26,7 +36,9 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>
-          Reminders and campaigns must use a template Meta has approved. In the body, <code>{"{{1}}"}</code> is the series title and{" "}
+          One library for the whole label: templates made or edited in the flow builder&apos;s Template card are the same ones listed here, and
+          &quot;Used in&quot; shows every flow, sequence, campaign and growth-agent message that sends each one. Reminders and campaigns must use a
+          template Meta has approved. In the body, <code>{"{{1}}"}</code> is the series title and{" "}
           <code>{"{{2}}"}</code> the episode number. A button opens the viewer&apos;s personal player link.
         </p>
         {!wabaConfigured() && (
@@ -51,45 +63,62 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
       <table className="card">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Lang</th>
-            <th>Category</th>
-            <th>Body</th>
-            <th>Button</th>
+            <th>Template</th>
+            <th>Message</th>
             <th>Meta status</th>
+            <th>Used in</th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {(templates ?? []).map((t) => (
-            <tr key={t.id}>
+          {groups.map(([name, rows]) => (
+            <tr key={name} style={sp.edit === name ? { background: "#eef2ff" } : undefined}>
               <td>
-                <code>{t.name}</code>
+                <code>{name}</code>
+                <div className="muted">{rows[0].category}</div>
               </td>
-              <td>{t.lang}</td>
-              <td>{t.category}</td>
-              <td dir={t.lang === "ar" ? "rtl" : "ltr"} style={{ whiteSpace: "pre-wrap", maxWidth: 360 }}>
-                {t.body}
+              <td style={{ maxWidth: 380 }}>
+                {rows.map((t) => (
+                  <div key={t.id} dir={t.lang === "ar" ? "rtl" : "ltr"} style={{ whiteSpace: "pre-wrap", marginBottom: 6 }}>
+                    <span className="muted">{t.lang.toUpperCase()} · </span>
+                    {t.body}
+                    {t.button_text && <div className="muted">🔗 {t.button_text}</div>}
+                  </div>
+                ))}
               </td>
-              <td>{t.button_text ?? "—"}</td>
               <td>
-                <span className={`badge ${t.meta_status}`}>{t.meta_status}</span>
-                {t.meta_reason && <div className="muted">{t.meta_reason}</div>}
+                {rows.map((t) => (
+                  <div key={t.id} style={{ marginBottom: 4 }}>
+                    <span className="muted">{t.lang.toUpperCase()} </span>
+                    <span className={`badge ${t.meta_status}`}>{t.meta_status}</span>
+                    {t.meta_reason && <div className="muted">{t.meta_reason}</div>}
+                  </div>
+                ))}
+              </td>
+              <td>
+                <UsageList uses={usage.get(name) ?? []} />
               </td>
               <td>
                 <div className="row">
-                  {(t.meta_status === "draft" || t.meta_status === "REJECTED") && (
-                    <form action={submitTemplateAction}>
+                  <a className="abtn secondary" href={`/admin/templates?edit=${encodeURIComponent(name)}#editor`}>
+                    Edit
+                  </a>
+                  {rows
+                    .filter((t) => t.meta_status === "draft")
+                    .map((t) => (
+                      <form key={t.id} action={submitTemplateAction}>
+                        <input type="hidden" name="id" value={t.id} />
+                        <button type="submit">Submit {t.lang.toUpperCase()}</button>
+                      </form>
+                    ))}
+                  {rows.map((t) => (
+                    <form key={t.id} action={deleteTemplateAction}>
                       <input type="hidden" name="id" value={t.id} />
-                      <button type="submit">Submit to Meta</button>
+                      <button type="submit" className="secondary">
+                        Remove {t.lang.toUpperCase()}
+                      </button>
                     </form>
-                  )}
-                  <form action={deleteTemplateAction}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <button type="submit" className="secondary">
-                      Remove
-                    </button>
-                  </form>
+                  ))}
                 </div>
               </td>
             </tr>
@@ -97,50 +126,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
         </tbody>
       </table>
 
-      <form action={saveTemplateAction} className="card">
-        <h2 style={{ marginTop: 0 }}>New or edit template</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Same name + language overwrites the draft. Approved templates can&apos;t be edited on Meta: create a new name instead.
-        </p>
-        <div className="grid3">
-          <label>
-            Name
-            <input name="name" placeholder="resume_reminder" pattern="[a-z0-9_]+" required />
-          </label>
-          <label>
-            Language
-            <select name="lang">
-              <option value="ar">Arabic</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <label>
-            Category
-            <select name="category">
-              <option value="marketing">Marketing (reminders, offers, new series)</option>
-              <option value="utility">Utility (account / purchase updates)</option>
-            </select>
-          </label>
-          <label>
-            Header
-            <select name="header_type">
-              <option value="none">None</option>
-              <option value="image">Series poster (create in WhatsApp Manager)</option>
-            </select>
-          </label>
-          <label>
-            Button text (opens personal link)
-            <input name="button_text" maxLength={25} placeholder="Continue watching" />
-          </label>
-        </div>
-        <label style={{ marginTop: 12 }}>
-          Body
-          <textarea name="body" maxLength={1024} required placeholder="You stopped at episode {{2}} of “{{1}}”…" />
-        </label>
-        <p>
-          <button type="submit">Save draft</button>
-        </p>
-      </form>
+      <TemplatesEditorCard editing={editing} uses={editing ? (usage.get(editing.name) ?? []) : []} />
     </>
   );
 }

@@ -4,7 +4,7 @@
 
 import { agentContext, draftFlowWithAi, type FlowDraftResult } from "@/lib/ai/flow-agent";
 import { audit, can, requireAdmin } from "@/lib/admin/auth";
-import { addStarterTemplates, createTemplate, listTemplates, syncTemplateStatuses, type TemplateInfo } from "@/lib/messaging/template-store";
+import { addStarterTemplates, createTemplate, listTemplates, syncTemplateStatuses, type TemplateInfo, getTemplateForEdit, templateUsage, updateTemplate, type TemplateForEdit, type TemplateUse } from "@/lib/messaging/template-store";
 import type { TemplateDraft } from "@/lib/whatsapp/template-rules";
 import { wabaConfigured } from "@/lib/whatsapp/templates";
 import { randomToken } from "@/lib/crypto";
@@ -158,6 +158,33 @@ export async function createTemplateFromBuilder(draft: TemplateDraft): Promise<T
   await audit(admin, "template.created", "wa_template", r.name, { from: "flow_builder", category: d.category });
   const where = wabaConfigured() ? "sent to Meta for approval (usually minutes, sometimes a few hours)" : "saved as a draft (set WHATSAPP_WABA_ID in Vercel to submit to Meta)";
   return { ok: true, templates, name: r.name, message: r.problems.length ? r.problems.join(" ") : `Template "${r.name}" ${where}.` };
+}
+
+function cleanDraft(draft: TemplateDraft): TemplateDraft {
+  return {
+    title: String(draft?.title ?? "").slice(0, 80),
+    category: draft?.category === "utility" ? "utility" : "marketing",
+    ar: { body: String(draft?.ar?.body ?? "").slice(0, 1100), button: String(draft?.ar?.button ?? "").slice(0, 40) },
+    en: draft?.en ? { body: String(draft.en.body ?? "").slice(0, 1100), button: String(draft.en.button ?? "").slice(0, 40) } : null,
+  };
+}
+
+/** A template to edit on the Template card, with where else it's used. */
+export async function templateForEditFromBuilder(name: string): Promise<{ template: TemplateForEdit | null; uses: TemplateUse[] }> {
+  const admin = await requireAdmin("bot");
+  const [template, usage] = await Promise.all([getTemplateForEdit(admin.tenantId, String(name).slice(0, 100)), templateUsage(admin.tenantId)]);
+  return { template, uses: usage.get(name) ?? [] };
+}
+
+/** Edit from the Template card: the same template the WhatsApp templates page shows. */
+export async function updateTemplateFromBuilder(name: string, draft: TemplateDraft): Promise<TemplatesResult> {
+  const admin = await requireAdmin("bot");
+  if (!can(admin, "messaging")) return { ok: false, templates: await listTemplates(admin.tenantId), message: NO_MESSAGING };
+  const r = await updateTemplate(admin.tenantId, String(name).slice(0, 100), cleanDraft(draft));
+  const templates = await listTemplates(admin.tenantId);
+  if (!r.ok) return { ok: false, templates, message: r.errors.join(" ") };
+  await audit(admin, "template.edited", "wa_template", name, { from: "flow_builder" });
+  return { ok: !r.problems.length, templates, name, message: r.problems.length ? r.problems.join(" ") : `"${name}" updated and sent to Meta for review.` };
 }
 
 export async function addStarterTemplatesFromBuilder(): Promise<TemplatesResult> {

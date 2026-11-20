@@ -38,6 +38,17 @@ export async function submitTemplate(t: TemplateRow): Promise<{ ok: true; metaId
   if (t.header_type !== "none") {
     return { ok: false, error: "Templates with an image header must be created in WhatsApp Manager, then synced." };
   }
+  const res = await fetch(graph(`${wabaId}/message_templates`), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.waAccessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: t.name, language: t.lang, category: t.category.toUpperCase(), components: templateComponents(t) }),
+  });
+  const json = (await res.json().catch(() => ({}))) as { id?: string; status?: string; error?: { message?: string; error_user_msg?: string } };
+  if (!res.ok || !json.id) return { ok: false, error: json.error?.error_user_msg ?? json.error?.message ?? `HTTP ${res.status}` };
+  return { ok: true, metaId: json.id, status: json.status ?? "PENDING" };
+}
+
+function templateComponents(t: Omit<TemplateRow, "id">): Record<string, unknown>[] {
   const n = placeholderCount(t.body);
   const components: Record<string, unknown>[] = [
     { type: "BODY", text: t.body, ...(n ? { example: { body_text: [EXAMPLE_PARAMS.slice(0, n)] } } : {}) },
@@ -50,14 +61,22 @@ export async function submitTemplate(t: TemplateRow): Promise<{ ok: true; metaId
       buttons: [{ type: "URL", text: t.button_text, url: `${env.appUrl}/w/{{1}}`, example: [`${env.appUrl}/w/Xk3exampleToken`] }],
     });
   }
-  const res = await fetch(graph(`${wabaId}/message_templates`), {
+  return components;
+}
+
+/**
+ * Edit a template Meta already has (approved, rejected or paused). All components are replaced and it
+ * goes back to review. Meta allows an approved template one edit a day, ten a month, and no category change.
+ */
+export async function editTemplateOnMeta(metaId: string, t: Omit<TemplateRow, "id">, opts: { category?: boolean } = {}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(graph(metaId), {
     method: "POST",
     headers: { Authorization: `Bearer ${env.waAccessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: t.name, language: t.lang, category: t.category.toUpperCase(), components }),
+    body: JSON.stringify({ components: templateComponents(t), ...(opts.category ? { category: t.category.toUpperCase() } : {}) }),
   });
-  const json = (await res.json().catch(() => ({}))) as { id?: string; status?: string; error?: { message?: string; error_user_msg?: string } };
-  if (!res.ok || !json.id) return { ok: false, error: json.error?.error_user_msg ?? json.error?.message ?? `HTTP ${res.status}` };
-  return { ok: true, metaId: json.id, status: json.status ?? "PENDING" };
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: { message?: string; error_user_msg?: string } };
+  if (!res.ok || !json.success) return { ok: false, error: json.error?.error_user_msg ?? json.error?.message ?? `HTTP ${res.status}` };
+  return { ok: true };
 }
 
 export type MetaTemplate = {
