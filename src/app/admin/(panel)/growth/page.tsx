@@ -82,7 +82,11 @@ export default async function GrowthPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <h1>Growth agent</h1>
+      <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/growth-agent-256.png" alt="" width={56} height={56} />
+        Growth agent
+      </h1>
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>

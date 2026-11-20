@@ -27,7 +27,15 @@ const PATHS: Record<IconName, string> = {
   audit: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7zM9 12l2 2 4-4",
 };
 
+// Pictures instead of line icons for a few tabs (the growth agent's robot mascot).
+const IMAGES: Partial<Record<IconName, string>> = { growth: "/brand/growth-agent-96.png" };
+
 function Icon({ name }: { name: IconName }) {
+  const img = IMAGES[name];
+  if (img) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={img} alt="" width={24} height={24} aria-hidden="true" style={{ margin: "-3px", flexShrink: 0 }} />;
+  }
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d={PATHS[name]} />
