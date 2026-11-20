@@ -1,6 +1,7 @@
 // P9 Coin store — packs priced in the viewer's currency (AED or SAR), VAT included.
 
 import { BuyButton } from "@/components/BuyButton";
+import { BottomNav } from "@/components/home/BottomNav";
 import { TopBar } from "@/components/TopBar";
 import { env } from "@/lib/env";
 import { currencyFor } from "@/lib/phone";
@@ -40,17 +41,20 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   }, null)?.id;
 
   return (
-    <main dir={dirFor(locale)}>
+    <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
       <TopBar locale={locale} balance={balance} backHref={returnTo} />
-      <div className="page" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <h1 style={{ margin: 0 }}>{t.storeTitle}</h1>
+      <div className="page" style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+        <h1 style={{ margin: "0 0 4px", fontSize: 26, fontWeight: 700 }}>{t.storeTitle}</h1>
         {list.map((p) => {
           const price = Number(currency === "SAR" ? p.price_sar : p.price_aed);
           const total = p.coins + p.bonus_coins;
           return (
             <div key={p.id} className="pack">
-              <div>
-                <strong style={{ fontSize: 20 }}>🪙 {total}</strong>{" "}
+              <span aria-hidden="true" style={{ width: 48, height: 48, flexShrink: 0, borderRadius: "50%", background: "#fff4dc", border: "1px solid #fbe3a8", display: "grid", placeItems: "center" }}>
+                <span style={{ width: 28, height: 28, borderRadius: "50%", background: "#f5b323", boxShadow: "inset 0 0 0 3px #ffd877" }} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <strong style={{ fontSize: 20 }}>{t.coins(total)}</strong>{" "}
                 {p.bonus_coins > 0 && <span className="tag">{t.bonus(p.bonus_coins)}</span>}{" "}
                 {p.id === bestId && list.length > 1 && <span className="tag">{t.bestValue}</span>}
                 <div className="muted">{t.approxEpisodes(Math.floor(total / 30))}</div>
@@ -63,6 +67,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           {paymentMode() === "cash" ? t.storeNoteCash : t.storeNote}
         </p>
       </div>
-    </main>
+      <BottomNav locale={locale} current="coins" />
+    </div>
   );
 }

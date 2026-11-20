@@ -72,7 +72,7 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre, logo =
           {catalogue.length === 0 ? (
             <p className="wc-card" style={{ margin: "0 16px", padding: 24, textAlign: "center" }}>{t.emptyCatalogue}</p>
           ) : (
-            <BannerCarousel slides={slides} label={t.featured} slideLabel={t.slide} />
+            <BannerCarousel slides={slides} label={t.featured} slideLabels={slides.map((_, i) => t.slide(i + 1, slides.length))} />
           )}
 
           {continueList.length > 0 && (

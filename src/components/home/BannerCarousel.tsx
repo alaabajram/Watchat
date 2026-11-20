@@ -9,7 +9,8 @@ import { PlayIcon } from "@/components/brand/icons";
 
 export type Slide = { key: string; href: string; title: string; tagline: string | null; badge: string | null; imageUrl: string | null; cta: string };
 
-export function BannerCarousel({ slides, label, slideLabel }: { slides: Slide[]; label: string; slideLabel: (n: number, total: number) => string }) {
+// slideLabels: one accessible label per slide ("Slide 1 of 5"), built on the server — functions can't be passed to client components.
+export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]; label: string; slideLabels: string[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -45,7 +46,7 @@ export function BannerCarousel({ slides, label, slideLabel }: { slides: Slide[];
             key={s.key}
             role="group"
             aria-roledescription="slide"
-            aria-label={slideLabel(i + 1, slides.length)}
+            aria-label={slideLabels[i] ?? ""}
             style={{ flex: "0 0 calc(100% - 32px)", maxWidth: 560, aspectRatio: "16 / 11", borderRadius: 28, background: "var(--wc-night)", position: "relative", overflow: "hidden", color: "#fff" }}
           >
             {s.imageUrl && <img src={s.imageUrl} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
@@ -70,7 +71,7 @@ export function BannerCarousel({ slides, label, slideLabel }: { slides: Slide[];
             <button
               key={s.key}
               type="button"
-              aria-label={slideLabel(i + 1, slides.length)}
+              aria-label={slideLabels[i] ?? ""}
               aria-current={i === active}
               onClick={() => {
                 setPaused(true);
