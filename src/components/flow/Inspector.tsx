@@ -8,6 +8,7 @@ import type { Asset, TemplateInfo } from "@/lib/flows/store";
 import { CARD_LABELS, type Bi, type FlowButton, type MediaRef, type NodeData } from "@/lib/flows/types";
 import type { PreviewSeries } from "@/lib/flows/preview";
 import { CARD_STYLE } from "./cards";
+import { EmojiField } from "./EmojiField";
 import { ACCEPT, uploadAsset } from "./upload";
 
 type Props = {
@@ -36,11 +37,7 @@ function Text({ label, value, onChange, max, rows = 3, dir }: { label: string; v
           {n}/{max}
         </span>
       </span>
-      {rows > 1 ? (
-        <textarea dir={dir} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", fontSize: 13 }} />
-      ) : (
-        <input dir={dir} value={value} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", fontSize: 13 }} />
-      )}
+      <EmojiField dir={dir} rows={rows} value={value} onChange={onChange} invalid={n > max} />
     </label>
   );
 }
@@ -60,8 +57,8 @@ function Buttons({ value, onChange }: { value: FlowButton[]; onChange: (b: FlowB
       <legend style={{ fontSize: 12 }}>Buttons ({value.length}/3) · each one can lead to a different card</legend>
       {value.map((b, i) => (
         <div key={b.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto", gap: 4, marginBottom: 4 }}>
-          <input dir="rtl" placeholder="عربي" maxLength={40} value={b.title.ar} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, ar: e.target.value } } : x)))} style={{ fontSize: 13, borderColor: count(b.title.ar) > 20 ? "#dc2626" : undefined }} />
-          <input placeholder="English" maxLength={40} value={b.title.en} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, en: e.target.value } } : x)))} style={{ fontSize: 13, borderColor: count(b.title.en) > 20 ? "#dc2626" : undefined }} />
+          <EmojiField compact dir="rtl" placeholder="عربي" maxLength={40} value={b.title.ar} invalid={count(b.title.ar) > 20} onChange={(v) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, ar: v } } : x)))} />
+          <EmojiField compact placeholder="English" maxLength={40} value={b.title.en} invalid={count(b.title.en) > 20} onChange={(v) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, en: v } } : x)))} />
           <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => onChange(value.filter((_, j) => j !== i))} title="Remove button">
             ✕
           </button>
