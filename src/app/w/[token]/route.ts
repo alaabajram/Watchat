@@ -39,7 +39,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     : { data: null as { code: string } | null };
   const episode = link.episodeNumber ?? 1;
   const target = series?.code ? `${base}/watch/${series.code}/${episode}` : `${base}/`;
-  const continueUrl = series?.code ? `${base}/continue?s=${series.code}&e=${episode}` : `${base}/link-expired`;
+  // Hand-off for anyone this link can't sign in: open the Watchat chat with "شاهد CODE EP" ready to send.
+  // One tap on Send proves their own number; the bot replies with a link to their own account.
+  const continueUrl = !series?.code
+    ? `${base}/link-expired`
+    : env.waDisplayNumber
+      ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(`شاهد ${series.code} ${episode}`)}`
+      : `${base}/continue?s=${series.code}&e=${episode}`;
 
   const current = await getSessionViewer();
 

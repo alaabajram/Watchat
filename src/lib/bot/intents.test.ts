@@ -37,6 +37,7 @@ describe("parseIntent", () => {
   it("reads WATCH requests from the continue page", () => {
     expect(parseIntent(text("WATCH SECRETS01 4"))).toEqual({ type: "watch", code: "SECRETS01", episode: 4 });
     expect(parseIntent(text("watch SECRETS01"))).toEqual({ type: "watch", code: "SECRETS01", episode: null });
+    expect(parseIntent(text("شاهد SECRETS01 4"))).toEqual({ type: "watch", code: "SECRETS01", episode: 4 });
   });
 
   it("falls back to unknown", () => {

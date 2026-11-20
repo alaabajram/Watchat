@@ -10,7 +10,7 @@ export default async function ContinuePage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const code = /^[A-Z]{3,}\d{1,3}$/.test(sp.s ?? "") ? sp.s! : null;
   const ep = /^\d{1,3}$/.test(sp.e ?? "") ? sp.e! : null;
-  const message = code ? `WATCH ${code}${ep ? ` ${ep}` : ""}` : "LINK";
+  const message = code ? `شاهد ${code}${ep ? ` ${ep}` : ""}` : "LINK";
   const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(message)}` : null;
   const ar = webCopy("ar");
   const en = webCopy("en");
