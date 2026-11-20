@@ -86,6 +86,7 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     },
     seriesProgress: async (_v, sid) => (sid === "s1" ? progress : { maxStarted: 0, maxCompleted: 0, lastWatchedAt: null }),
     sendFlowTemplate: async () => "sent",
+    getGrowthPicks: async (_v, id) => (id === "11111111-1111-1111-1111-111111111111" ? ["DESERT02", "SECRETS01", "NOPE99"] : null),
     checkCondition: async (_v, _s, c) => c.check === "opted_in" && optIn === "in",
   };
   return { deps, sent, events, progress, paused, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: (sid = "s1") => runs.get(sid) ?? null };
@@ -297,6 +298,51 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.sent.at(-1)).toMatchObject({ header: { link: "https://cdn.example/ep1-ar.mp4" } });
     expect(f.paused.at(-1)).toBe("s1");
     expect(f.getRun("s1")?.chatEpisode).toBe(1);
+  });
+
+  it("offers 3 series in a choice card and a tap starts the picked series", async () => {
+    const flow: FlowGraph = {
+      v: 1,
+      nodes: [
+        { id: "s", position: { x: 0, y: 0 }, data: { kind: "start" } },
+        {
+          id: "pick",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "choice",
+            body: { ar: "اختر مسلسلك", en: "Pick a series" },
+            options: [
+              { code: "DESERT02", label: { ar: "رمال 🏜️", en: "" } },
+              { code: "AUTO", label: { ar: "", en: "" } },
+              { code: "NOPE99", label: { ar: "", en: "" } },
+            ],
+            media: null,
+          },
+        },
+      ],
+      edges: [{ id: "1", source: "s", sourceHandle: "next", target: "pick" }],
+    };
+    const f = fakeDeps({ flow });
+    await handleInbound(text("SECRETS01"), f.deps);
+    const msg = f.sent.at(-1) as Extract<OutMessage, { kind: "buttons" }>;
+    // DESERT02 with its custom label; AUTO finds nothing new (DESERT02 already used); unknown code dropped
+    expect(msg.buttons).toEqual([{ id: "series:DESERT02", title: "رمال 🏜️" }]);
+    await handleInbound(tap(msg.buttons[0].id), f.deps);
+    expect(f.getRun("s2")).toMatchObject({ seriesId: "s2" });
+    expect(f.paused.at(-1)).toBe("s2");
+  });
+
+  it("answers 'See my picks' with the series the growth agent chose", async () => {
+    const f = fakeDeps();
+    await handleInbound(tap("growth:11111111-1111-1111-1111-111111111111"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({
+      kind: "buttons",
+      buttons: [
+        { id: "series:DESERT02", title: "رمال" },
+        { id: "series:SECRETS01", title: "أسرار البيت" },
+      ],
+    });
+    expect(f.events).toContain("growth_picks_opened");
   });
 
   it("answers random text with the menu", async () => {

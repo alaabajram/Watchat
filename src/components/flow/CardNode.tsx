@@ -52,6 +52,8 @@ function summary(d: NodeData, templateBody?: string | null): { text: string; dir
       return { text: d.name ? `${d.name}${templateBody ? ` · ${templateBody}` : ""}` : "(pick a template)", dir: d.name && templateBody ? "rtl" : "ltr" };
     case "suggest":
       return { text: "Other series list", dir: "ltr" };
+    case "choice":
+      return { text: `${d.body.ar}\n${d.options.map((o) => `▢ ${o.label.ar || (o.code === "AUTO" ? "Recommended" : o.code)}`).join("\n")}`, dir: "rtl" };
   }
 }
 

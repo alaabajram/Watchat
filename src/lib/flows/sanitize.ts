@@ -71,6 +71,15 @@ function data(v: unknown): NodeData | null {
       return { kind: "template", name: /^[a-z0-9_]{0,512}$/.test(str(d.name, 512)) ? str(d.name, 512) : "" };
     case "suggest":
       return { kind: "suggest" };
+    case "choice": {
+      const options = (Array.isArray(d.options) ? d.options : [])
+        .slice(0, 3)
+        .map((o) => {
+          const code = str(obj(o).code, 20).toUpperCase();
+          return { code: /^(AUTO|[A-Z]{3,}\d{1,3})$/.test(code) ? code : "AUTO", label: bi(obj(o).label, 40) };
+        });
+      return { kind: "choice", body: bi(d.body), options: options.length ? options : [{ code: "AUTO", label: { ar: "", en: "" } }], media: media(d.media) };
+    }
     default:
       return null;
   }

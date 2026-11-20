@@ -123,6 +123,12 @@ export const COPY = {
     ar: "استلمنا طلب حذف بياناتك ✅ أوقفنا التنبيهات، وبنحذف بياناتك خلال 30 يومًا.",
     en: "We've received your request to delete your data ✅ Alerts are off, and your data will be deleted within 30 days.",
   },
+  picksBody: {
+    label: "Growth agent · Your picks (after 'See my picks')",
+    kind: "text",
+    ar: "اخترنا لك هالمسلسلات 🍿 اختر واحد ونكمل معك:",
+    en: "Here are your picks 🍿 Choose one and we'll take it from there:",
+  },
   confirmOk: {
     label: "W13 · Device confirmed",
     kind: "text",

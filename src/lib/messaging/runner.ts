@@ -16,12 +16,13 @@ type Template = {
   header_type: "none" | "image";
   body: string;
   button_text: string | null;
+  button_type: "url" | "quick_reply";
   meta_status: string;
 };
 
 type SeriesInfo = { id: string; code: string; title_ar: string; title_en: string; poster_url: string | null; wa_episode_count: number };
 
-type Recipient = {
+export type Recipient = {
   viewerId: string;
   phone: string; // E.164
   language: string | null;
@@ -36,7 +37,7 @@ const MAX_SENDS_PER_RUN = 400;
 async function loadTemplates(tenantId: string, name: string): Promise<Map<string, Template>> {
   const { data } = await db()
     .from("wa_templates")
-    .select("name, lang, category, header_type, body, button_text, meta_status")
+    .select("name, lang, category, header_type, body, button_text, button_type, meta_status")
     .eq("tenant_id", tenantId)
     .eq("name", name);
   return new Map((data ?? []).map((t) => [t.lang as string, t as Template]));
@@ -69,17 +70,23 @@ async function recentlyMarketed(viewerId: string): Promise<boolean> {
 }
 
 /** Send a template by name from a flow's Template card. Marketing templates need the viewer's opt-in. */
-export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boolean): Promise<"sent" | "skipped" | "failed"> {
+export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boolean, opts: { quickReplyPayload?: string } = {}): Promise<"sent" | "skipped" | "failed"> {
   const tenantId = await currentTenantId();
   const templates = await loadTemplates(tenantId, name);
   const t = templates.get(templateLangFor(r.language)) ?? templates.get("ar");
   if (t?.category === "marketing" && !optedIn) return "skipped";
-  const result = await sendTemplate(r, templates);
+  const result = await sendTemplate(r, templates, opts.quickReplyPayload);
   return result.ok ? "sent" : result.skipped ? "skipped" : "failed";
 }
 
+/** Like sendNamedTemplate, with the reason when it isn't sent (for the growth agent's queue). */
+export async function sendNamedTemplateDetailed(r: Recipient, name: string, opts: { quickReplyPayload?: string } = {}) {
+  const tenantId = await currentTenantId();
+  return sendTemplate(r, await loadTemplates(tenantId, name), opts.quickReplyPayload);
+}
+
 /** Send one template to one viewer. Returns the Meta message id or an error. */
-async function sendTemplate(r: Recipient, templates: Map<string, Template>): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
+async function sendTemplate(r: Recipient, templates: Map<string, Template>, quickReplyPayload?: string): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
   const lang = templateLangFor(r.language);
   const template = templates.get(lang) ?? templates.get("ar");
   if (!template || template.meta_status !== "APPROVED") return { ok: false, skipped: true, error: "template not approved" };
@@ -90,7 +97,7 @@ async function sendTemplate(r: Recipient, templates: Map<string, Template>): Pro
   const params = [title, String(r.episode ?? "")].slice(0, placeholderCount(template.body));
 
   let urlParam: string | undefined;
-  if (template.button_text && series) {
+  if (template.button_text && template.button_type !== "quick_reply" && series) {
     const episode = Math.max(r.episode ?? 0, series.wa_episode_count + 1);
     const url = await mintLink({ viewerId: r.viewerId, seriesId: series.id, episodeNumber: episode, purpose: "resume" });
     urlParam = url.split("/w/")[1];
@@ -103,6 +110,7 @@ async function sendTemplate(r: Recipient, templates: Map<string, Template>): Pro
     ...(template.header_type === "image" && series?.poster_url ? { headerImage: series.poster_url } : {}),
     bodyParams: params,
     ...(urlParam ? { urlButtonParam: urlParam } : {}),
+    ...(template.button_type === "quick_reply" && template.button_text && quickReplyPayload ? { quickReplyPayload } : {}),
   });
 
   await db()

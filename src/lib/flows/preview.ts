@@ -16,6 +16,8 @@ export type PreviewSeries = {
   posterUrl: string | null;
   trailerUrl: string | null;
   clips: Record<number, { ar: string | null; en: string | null }>;
+  /** Other live series, for Series choice cards. */
+  others?: { code: string; titleAr: string; titleEn: string }[];
 };
 
 /** A template as the preview shows it ({{1}} = series title, {{2}} = episode). */
@@ -102,6 +104,11 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
     },
     suggest: async () => {
       sink.items.push({ from: "system", text: "Bot sends the list of other series." });
+    },
+    seriesOptions: async (codes) => {
+      const others = series.others ?? [];
+      const fixed = others.filter((o) => codes.includes(o.code));
+      return codes.includes("AUTO") ? [...fixed, ...others.filter((o) => !codes.includes(o.code))] : fixed;
     },
     canSendFreeform: () => state.withinWindow,
     track: async () => {},

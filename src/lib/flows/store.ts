@@ -68,6 +68,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     listMyCards(tenantId),
   ]);
 
+  const { data: others } = await db().from("series").select("code, title_ar, title_en").eq("tenant_id", tenantId).eq("status", "live").neq("id", seriesId).order("created_at").limit(50);
   const pub = (versions ?? []).find((v) => v.id === flow!.published_version_id);
   const eps = (s.episodes ?? []) as { number: number; wa_video_url_ar: string | null; wa_video_url_en: string | null }[];
 
@@ -82,6 +83,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
       posterUrl: s.poster_url,
       trailerUrl: s.trailer_video_url,
       clips: Object.fromEntries(eps.map((e) => [e.number, { ar: e.wa_video_url_ar, en: e.wa_video_url_en }])),
+      others: (others ?? []).map((o) => ({ code: o.code, titleAr: o.title_ar, titleEn: o.title_en })),
     },
     draft: sanitizeGraph(flow!.draft) ?? { v: 1, nodes: [], edges: [] },
     draftUpdatedAt: flow!.draft_updated_at,

@@ -57,7 +57,13 @@ function Bubble({ item, current, selected, onTap, onSelect, lang }: { item: Extr
         </div>
       )}
       {m.kind === "buttons" &&
-        m.buttons.map((b) => (
+        m.buttons.map((b) =>
+          b.id.startsWith("series:") ? (
+            <div key={b.id} style={{ borderTop: "1px solid #eef0f2", padding: 7, textAlign: "center", fontSize: 14, color: "#027eb5" }} title="Tapping starts this series' own flow">
+              {b.title}
+              <div style={{ fontSize: 10, color: "#64748b" }}>→ starts {b.id.slice(7)}</div>
+            </div>
+          ) : (
           <button
             key={b.id}
             type="button"
@@ -70,7 +76,8 @@ function Bubble({ item, current, selected, onTap, onSelect, lang }: { item: Extr
           >
             {b.title}
           </button>
-        ))}
+          ),
+        )}
       {m.kind === "cta_url" && <div style={{ borderTop: "1px solid #eef0f2", padding: 7, color: "#027eb5", textAlign: "center", fontSize: 14 }}>🔗 {m.buttonText}</div>}
       {m.kind === "list" && <div style={{ borderTop: "1px solid #eef0f2", padding: 7, color: "#027eb5", textAlign: "center", fontSize: 14 }}>☰ {m.buttonText}</div>}
     </div>

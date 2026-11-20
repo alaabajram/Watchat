@@ -262,6 +262,8 @@ a {
 .admin .flow-builder textarea { min-height: 0; }
 .admin .flow-builder button { padding: 5px 10px; font-size: 13px; }
 .admin .flow-builder label { font-weight: 500; font-size: 12px; }
+.admin .flow-builder fieldset { min-width: 0; }
+.admin .flow-builder select { min-width: 0; }
 .admin .flow-builder .react-flow__controls button { background: #fff; color: #111; padding: 4px; border: 0; border-bottom: 1px solid #eee; border-radius: 0; }
 .admin .flow-builder .react-flow__controls button svg { fill: #111; }
 .admin h1 { margin: 0 0 16px; font-size: 22px; }

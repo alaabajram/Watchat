@@ -295,6 +295,49 @@ export function Inspector(p: Props) {
         </>
       )}
 
+      {d.kind === "choice" && (
+        <>
+          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
+          <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
+          <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            <legend style={{ fontSize: 12 }}>Series ({d.options.length}/3) · a tap starts that series&apos; own flow</legend>
+            {d.options.map((o, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4, borderBottom: "1px dashed #e5e7eb", paddingBottom: 6 }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <select
+                    value={o.code}
+                    onChange={(e) => set({ options: d.options.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)) })}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="AUTO">✨ Recommended (a series they haven&apos;t started)</option>
+                    {(p.series.others ?? []).map((x) => (
+                      <option key={x.code} value={x.code}>
+                        {x.code} · {x.titleEn}
+                      </option>
+                    ))}
+                  </select>
+                  {d.options.length > 1 && (
+                    <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => set({ options: d.options.filter((_, j) => j !== i) })} title="Remove">
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 4 }}>
+                  <EmojiField compact dir="rtl" placeholder="Button (default: title)" maxLength={40} value={o.label.ar} invalid={count(o.label.ar) > 20} onChange={(v) => set({ options: d.options.map((x, j) => (j === i ? { ...x, label: { ...x.label, ar: v } } : x)) })} />
+                  <EmojiField compact placeholder="English button" maxLength={40} value={o.label.en} invalid={count(o.label.en) > 20} onChange={(v) => set({ options: d.options.map((x, j) => (j === i ? { ...x, label: { ...x.label, en: v } } : x)) })} />
+                </div>
+              </div>
+            ))}
+            {d.options.length < 3 && (
+              <button type="button" className="secondary" style={{ padding: "2px 8px", fontSize: 12, alignSelf: "flex-start" }} onClick={() => set({ options: [...d.options, { code: "AUTO", label: { ar: "", en: "" } }] })}>
+                + Add series
+              </button>
+            )}
+            {(p.series.others ?? []).length === 0 && <span className="muted" style={{ fontSize: 12 }}>No other live series yet; the card shows nothing until there are.</span>}
+          </fieldset>
+        </>
+      )}
+
       {d.kind === "template" && (
         <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
       )}

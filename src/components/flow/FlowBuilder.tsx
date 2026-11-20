@@ -97,7 +97,12 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     [templates],
   );
   const issues = useMemo(
-    () => validateFlow(graph, { episodeCount: props.series.episodeCount, templates: templates.map((t) => ({ name: t.name, approved: t.approved })) }),
+    () =>
+      validateFlow(graph, {
+        episodeCount: props.series.episodeCount,
+        templates: templates.map((t) => ({ name: t.name, approved: t.approved })),
+        seriesCodes: (props.series.others ?? []).map((o) => o.code),
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [logicKey, props.series.episodeCount, templates],
   );

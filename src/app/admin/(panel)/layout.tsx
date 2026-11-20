@@ -14,6 +14,7 @@ const NAV: { href: string; label: string; area: Area }[] = [
   { href: "/admin/templates", label: "WhatsApp templates", area: "messaging" },
   { href: "/admin/sequences", label: "Sequences", area: "messaging" },
   { href: "/admin/campaigns", label: "Campaigns", area: "messaging" },
+  { href: "/admin/growth", label: "Growth agent", area: "growth" },
   { href: "/admin/viewers", label: "Viewers", area: "viewers" },
   { href: "/admin/orders", label: "Orders & payments", area: "orders" },
   { href: "/admin/pricing", label: "Pricing", area: "pricing" },

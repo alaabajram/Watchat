@@ -33,6 +33,7 @@ export const PERMISSIONS = {
   pricing: ["owner", "finance"],
   team: ["owner"],
   aiAccount: ["owner"],
+  growth: ["owner", "marketing"],
   audit: ["owner", "finance"],
 } as const satisfies Record<string, readonly AdminRole[]>;
 

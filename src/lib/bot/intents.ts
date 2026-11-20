@@ -33,6 +33,7 @@ export type Intent =
   | { type: "confirm_code"; code: string }
   | { type: "watch"; code: string; episode: number | null }
   | { type: "flow_reply"; nodeId: string; port: string }
+  | { type: "growth_picks"; suggestionId: string }
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
@@ -99,6 +100,8 @@ export function intentFromReplyId(id: string): Intent {
     case IDS.menuSupport:
       return { type: "support" };
   }
+  const picks = id.match(/^growth:([0-9a-f-]{36})$/);
+  if (picks) return { type: "growth_picks", suggestionId: picks[1] };
   const flow = parseButtonReplyId(id);
   if (flow) return { type: "flow_reply", ...flow };
   if (id.startsWith(IDS.seriesPrefix)) return { type: "series_code", code: id.slice(IDS.seriesPrefix.length) };

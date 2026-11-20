@@ -23,6 +23,9 @@ export const STARTER_TEMPLATES: Omit<TemplateRow, "id">[] = [
   { name: "new_series_alert", lang: "en", category: "marketing", header_type: "none", body: "New on Watchat: “{{1}}” 🎬 The first episodes are ready now.\n\nSend STOP to turn off alerts.", button_text: "Watch now" },
   { name: "win_back", lang: "ar", category: "marketing", header_type: "none", body: "اشتقنا لك! «{{1}}» بانتظارك 🍿 ارجع وكمّل القصة.\n\nأرسل STOP لإيقاف التنبيهات.", button_text: "رجوع للمشاهدة" },
   { name: "win_back", lang: "en", category: "marketing", header_type: "none", body: "We missed you! “{{1}}” is waiting 🍿 Come back and finish the story.\n\nSend STOP to turn off alerts.", button_text: "Back to watching" },
+  // Growth agent: a tap reopens the chat and the bot sends the 3 series picked for this viewer.
+  { name: "series_picks", lang: "ar", category: "marketing", header_type: "none", body: "اخترنا لك مسلسلات على ذوقك بعد «{{1}}» 🍿 اضغط وشوف اختياراتك.\n\nأرسل STOP لإيقاف التنبيهات.", button_text: "شوف اختياراتي", button_type: "quick_reply" },
+  { name: "series_picks", lang: "en", category: "marketing", header_type: "none", body: "We picked series for you after “{{1}}” 🍿 Tap to see your picks.\n\nSend STOP to turn off alerts.", button_text: "See my picks", button_type: "quick_reply" },
 ];
 
 export async function listTemplates(tenantId: string): Promise<TemplateInfo[]> {
@@ -66,13 +69,13 @@ export async function createTemplate(tenantId: string, d: TemplateDraft): Promis
   if ((existing ?? []).some((t) => t.meta_status !== "draft" && t.meta_status !== "REJECTED")) {
     return { ok: false, errors: [`A template called "${name}" already exists with Meta. Pick another name.`] };
   }
-  const rows: Omit<TemplateRow, "id">[] = [{ name, lang: "ar", category: d.category, header_type: "none", body: d.ar.body.trim(), button_text: d.ar.button.trim() || null }];
-  if (d.en?.body.trim()) rows.push({ name, lang: "en", category: d.category, header_type: "none", body: d.en.body.trim(), button_text: d.en.button.trim() || null });
+  const rows: Omit<TemplateRow, "id">[] = [{ name, lang: "ar", category: d.category, header_type: "none", body: d.ar.body.trim(), button_text: d.ar.button.trim() || null, button_type: "url" }];
+  if (d.en?.body.trim()) rows.push({ name, lang: "en", category: d.category, header_type: "none", body: d.en.body.trim(), button_text: d.en.button.trim() || null, button_type: "url" });
   const problems = (await Promise.all(rows.map((r) => submitRow(tenantId, r)))).filter(Boolean) as string[];
   return { ok: true, name, problems };
 }
 
-/** Add the three ready-written templates (skipping any that exist) and submit them. */
+/** Add the ready-written templates (skipping any that exist) and submit them. */
 export async function addStarterTemplates(tenantId: string): Promise<string[]> {
   const { data } = await db().from("wa_templates").select("name, lang").eq("tenant_id", tenantId);
   const have = new Set((data ?? []).map((t) => `${t.name}:${t.lang}`));

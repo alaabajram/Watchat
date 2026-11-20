@@ -25,6 +25,7 @@ export type OutMessage =
       headerImage?: string;
       bodyParams?: string[];
       urlButtonParam?: string; // replaces {{1}} in the template's URL button
+      quickReplyPayload?: string; // comes back as the reply id when the viewer taps a quick-reply button
     }
   | {
       kind: "list";
@@ -122,6 +123,9 @@ export function toGraphPayload(to: string, msg: OutMessage): Record<string, unkn
       }
       if (msg.urlButtonParam) {
         components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: msg.urlButtonParam }] });
+      }
+      if (msg.quickReplyPayload) {
+        components.push({ type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: clip(msg.quickReplyPayload, 128) }] });
       }
       return {
         ...base,

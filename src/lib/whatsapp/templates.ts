@@ -13,6 +13,8 @@ export type TemplateRow = {
   header_type: "none" | "image";
   body: string;
   button_text: string | null;
+  /** url: the button opens the viewer's personal link. quick_reply: the tap comes back to the bot. */
+  button_type?: "url" | "quick_reply";
 };
 
 export function placeholderCount(body: string): number {
@@ -40,7 +42,9 @@ export async function submitTemplate(t: TemplateRow): Promise<{ ok: true; metaId
   const components: Record<string, unknown>[] = [
     { type: "BODY", text: t.body, ...(n ? { example: { body_text: [EXAMPLE_PARAMS.slice(0, n)] } } : {}) },
   ];
-  if (t.button_text) {
+  if (t.button_text && t.button_type === "quick_reply") {
+    components.push({ type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: t.button_text }] });
+  } else if (t.button_text) {
     components.push({
       type: "BUTTONS",
       buttons: [{ type: "URL", text: t.button_text, url: `${env.appUrl}/w/{{1}}`, example: [`${env.appUrl}/w/Xk3exampleToken`] }],

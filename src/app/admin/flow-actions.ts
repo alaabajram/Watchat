@@ -25,13 +25,14 @@ async function flowFor(tenantId: string, seriesId: string) {
 }
 
 async function checkCtx(tenantId: string, seriesId: string) {
-  const [{ count }, { data: templates }] = await Promise.all([
+  const [{ count }, { data: templates }, { data: live }] = await Promise.all([
     db().from("episodes").select("id", { count: "exact", head: true }).eq("series_id", seriesId),
     db().from("wa_templates").select("name, meta_status").eq("tenant_id", tenantId),
+    db().from("series").select("code").eq("tenant_id", tenantId).eq("status", "live").neq("id", seriesId),
   ]);
   const names = new Map<string, boolean>();
   for (const t of templates ?? []) names.set(t.name, (names.get(t.name) ?? false) || t.meta_status === "APPROVED");
-  return { episodeCount: count ?? 0, templates: [...names].map(([name, approved]) => ({ name, approved })) };
+  return { episodeCount: count ?? 0, templates: [...names].map(([name, approved]) => ({ name, approved })), seriesCodes: (live ?? []).map((s) => s.code as string) };
 }
 
 export async function saveFlowDraft(seriesId: string, graph: unknown): Promise<{ ok: true; savedAt: string } | { ok: false; error: string }> {
@@ -164,7 +165,7 @@ export async function addStarterTemplatesFromBuilder(): Promise<TemplatesResult>
   if (!can(admin, "messaging")) return { ok: false, templates: await listTemplates(admin.tenantId), message: NO_MESSAGING };
   const problems = await addStarterTemplates(admin.tenantId);
   await audit(admin, "templates.starters_added", "wa_templates", null, { from: "flow_builder" });
-  return { ok: !problems.length, templates: await listTemplates(admin.tenantId), message: problems.length ? problems.join(" ") : "3 starter templates added and sent to Meta for approval." };
+  return { ok: !problems.length, templates: await listTemplates(admin.tenantId), message: problems.length ? problems.join(" ") : "Starter templates added and sent to Meta for approval." };
 }
 
 export async function refreshTemplates(): Promise<TemplatesResult> {

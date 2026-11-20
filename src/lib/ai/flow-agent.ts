@@ -21,6 +21,7 @@ export function agentContext(b: BuilderData): AgentContext {
     hasTrailer: Boolean(b.series.trailerUrl),
     assets: b.assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, url: a.url })),
     templates: b.templates.map((t) => ({ name: t.name, approved: t.approved, bodyAr: t.bodyAr })),
+    otherSeries: b.series.others ?? [],
   };
 }
 

@@ -60,7 +60,7 @@ export async function aiAccount(tenantId: string): Promise<{ ok: true; apiKey: s
 
 export async function logAiUsage(row: {
   tenantId: string;
-  adminId: string;
+  adminId: string | null; // null for scheduled runs
   purpose: string;
   model: string;
   inputTokens?: number;
@@ -70,7 +70,7 @@ export async function logAiUsage(row: {
 }): Promise<void> {
   const { error } = await db().from("ai_usage").insert({
     tenant_id: row.tenantId,
-    admin_id: row.adminId,
+    admin_id: row.adminId || null,
     purpose: row.purpose,
     model: row.model,
     input_tokens: row.inputTokens ?? 0,

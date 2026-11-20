@@ -50,7 +50,8 @@ export type EventName =
   | "data_deletion_requested"
   | "device_confirmed"
   | "flow_started"
-  | "flow_blocked";
+  | "flow_blocked"
+  | "growth_picks_opened";
 
 /** Where a viewer is in one series' flow (a viewer has one per series they've started). */
 export type FlowRun = {
@@ -98,6 +99,8 @@ export interface BotDeps {
   /** Send an approved template (respects opt-in and the marketing frequency cap). */
   sendFlowTemplate(viewer: Viewer, series: Series, name: string): Promise<"sent" | "skipped" | "failed">;
   checkCondition(viewer: Viewer, series: Series, condition: Condition): Promise<boolean>;
+  /** Series codes the growth agent picked for this viewer (marks the suggestion as answered). */
+  getGrowthPicks(viewerId: string, suggestionId: string): Promise<string[] | null>;
   track(
     viewerId: string,
     name: EventName,
@@ -265,6 +268,23 @@ async function route(
       return { seriesId: series.id, step: "linked", waEpisode: Math.max(state.seriesId === series.id ? state.waEpisode : 0, series.waEpisodeCount) };
     }
 
+    case "growth_picks": {
+      // "See my picks" on the growth agent's template: the chat is open again, so send the series choice.
+      const codes = (await deps.getGrowthPicks(viewer.id, intent.suggestionId)) ?? [];
+      const picks: Series[] = [];
+      for (const code of codes.slice(0, 3)) {
+        const s = await deps.findSeriesByCode(code);
+        if (s && !picks.some((p) => p.id === s.id)) picks.push(s);
+      }
+      if (!picks.length) {
+        await sendMenu(c);
+        return null;
+      }
+      await deps.track(viewer.id, "growth_picks_opened", { props: { suggestion: intent.suggestionId, picks: picks.map((p) => p.code) } });
+      await deps.send(to, { kind: "buttons", body: t("picksBody"), buttons: picks.map((p) => ({ id: `${IDS.seriesPrefix}${p.code}`, title: titleOf(p, c.lang) })) });
+      return null;
+    }
+
     case "confirm_code": {
       const ok = await deps.confirmSpendCode(viewer.id, intent.code);
       if (ok) await deps.track(viewer.id, "device_confirmed");
@@ -372,6 +392,20 @@ export function flowEnvFor(
       await deps.track(v.id, "wa_dropout", { seriesId: series.id });
       const lang = viewerLangToFlow(v.language) ?? "ar";
       await sendSuggestions({ viewer: v, deps, lang, t: makeT(lang, await deps.getCopyOverrides(series.id, lang)) }, series);
+    },
+    seriesOptions: async (codes) => {
+      const out: { code: string; titleAr: string; titleEn: string }[] = [];
+      for (const code of codes.filter((c) => c !== "AUTO")) {
+        const found = await deps.findSeriesByCode(code); // live series only
+        if (found && found.id !== series.id) out.push({ code: found.code, titleAr: found.titleAr, titleEn: found.titleEn });
+      }
+      if (codes.includes("AUTO")) {
+        const started = new Set((await deps.listFlowRuns(v.id)).map((r) => r.seriesId)); // chat or web
+        for (const o of await deps.listOtherSeries(series.id)) {
+          if (!started.has(o.id) && !out.some((x) => x.code === o.code)) out.push({ code: o.code, titleAr: o.titleAr, titleEn: o.titleEn });
+        }
+      }
+      return out;
     },
     canSendFreeform: () => opts.canSendFreeform,
     track: (name, data) => deps.track(v.id, name as EventName, { seriesId: series.id, ...data }),

@@ -3,7 +3,7 @@
 
 import { renderCopy, type CopyVars } from "../bot/copy";
 import type { OutMessage } from "../whatsapp/messages";
-import { buttonReplyId, isFreeform, waitsForInput, type Condition, type FlowGraph, type FlowNode, type Lang, type MediaRef } from "./types";
+import { AUTO_SERIES, SERIES_BUTTON_PREFIX, buttonReplyId, isFreeform, waitsForInput, type Condition, type FlowGraph, type FlowNode, type Lang, type MediaRef } from "./types";
 
 export interface FlowEnv {
   lang: Lang;
@@ -25,6 +25,8 @@ export interface FlowEnv {
   template(name: string, nodeId: string): Promise<"sent" | "skipped" | "failed">;
   check(condition: Condition): Promise<boolean>;
   suggest(): Promise<void>;
+  /** Resolve series choice options (AUTO = live series the viewer hasn't started, not this one). Unknown codes are dropped. */
+  seriesOptions(codes: string[]): Promise<{ code: string; titleAr: string; titleEn: string }[]>;
   /** False once 24 h have passed since the viewer's last message: only templates may be sent. */
   canSendFreeform(): boolean;
   track(name: string, data?: { episode?: number; props?: Record<string, unknown> }): Promise<void>;
@@ -190,6 +192,22 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
     case "suggest":
       await env.suggest();
       return { next: null, stop: { status: "done" } };
+
+    case "choice": {
+      const fixed = d.options.map((o) => o.code).filter((c) => c !== AUTO_SERIES);
+      const found = await env.seriesOptions(d.options.map((o) => o.code));
+      const autoPool = found.filter((f) => !fixed.includes(f.code)); // "Recommended" picks, in order
+      const buttons: { id: string; title: string }[] = [];
+      for (const o of d.options) {
+        const series = o.code === AUTO_SERIES ? autoPool.shift() : found.find((f) => f.code === o.code);
+        const id = series ? `${SERIES_BUTTON_PREFIX}${series.code}` : null;
+        if (series && id && !buttons.some((b) => b.id === id)) buttons.push({ id, title: pick(o.label, lang) || (lang === "en" ? series.titleEn : series.titleAr) });
+      }
+      if (!buttons.length) return { next: null, stop: { status: "done" } };
+      const h = header(env, d.media);
+      await env.send({ kind: "buttons", body: renderCopy(pick(d.body, lang), vars), buttons, ...(h ? { header: h } : {}) }, node.id);
+      return { next: null, stop: { status: "done" } }; // a tap starts the chosen series' own flow
+    }
   }
 }
 

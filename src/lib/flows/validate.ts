@@ -5,7 +5,7 @@ import { pick } from "./engine";
 import { CARD_LABELS, isEntry, isFreeform, portsOf, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
 
 export type Issue = { level: "error" | "warning"; nodeId?: string; message: string };
-export type ValidateCtx = { episodeCount: number; templates: { name: string; approved: boolean }[] };
+export type ValidateCtx = { episodeCount: number; templates: { name: string; approved: boolean }[]; seriesCodes?: string[] };
 
 export const LONG_WAIT_MINUTES = 23 * 60;
 export const MAX_WAIT_MINUTES = 30 * 24 * 60;
@@ -80,6 +80,18 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
         if (d.condition.check === "reached_episode") episodeOk(n, d.condition.episode, "Condition");
         if (d.condition.check === "watched_within" && (d.condition.hours < 1 || d.condition.hours > 720)) err("Condition: hours must be 1–720.", n.id);
         break;
+      case "choice": {
+        text(n, "Series choice message", d.body, LIMITS.body);
+        if (!d.options.length || d.options.length > LIMITS.maxButtons) err(`Series choice: 1 to ${LIMITS.maxButtons} series.`, n.id);
+        const fixed = d.options.map((o) => o.code).filter((c) => c !== "AUTO");
+        if (new Set(fixed).size !== fixed.length) err("Series choice: the same series is picked twice.", n.id);
+        if (ctx.seriesCodes) for (const c of fixed) if (!ctx.seriesCodes.includes(c)) err(`Series choice: ${c} isn't a live series.`, n.id);
+        d.options.forEach((o, i) => {
+          for (const lang of ["ar", "en"] as Lang[]) if (len(o.label[lang]) > LIMITS.buttonTitle) err(`Series choice option ${i + 1} (${lang}): max ${LIMITS.buttonTitle} characters.`, n.id);
+        });
+        if (d.options.some((o) => o.code !== "AUTO" && !o.label.ar.trim())) warn("Series choice: long series titles are cut to 20 characters on the button; add a short label if needed.", n.id);
+        break;
+      }
       case "template": {
         const t = ctx.templates.find((x) => x.name === d.name);
         if (!d.name) err("Template card: pick a template.", n.id);

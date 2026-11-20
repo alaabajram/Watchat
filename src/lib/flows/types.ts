@@ -31,7 +31,12 @@ export type NodeData =
   | { kind: "wait"; minutes: number }
   | { kind: "condition"; condition: Condition }
   | { kind: "template"; name: string }
-  | { kind: "suggest" };
+  | { kind: "suggest" }
+  // Up to 3 series as buttons; tapping one starts that series' own flow. "AUTO" = a series the viewer hasn't started.
+  | { kind: "choice"; body: Bi; options: ChoiceOption[]; media: MediaRef | null };
+
+export const AUTO_SERIES = "AUTO";
+export type ChoiceOption = { code: string; label: Bi };
 
 export type NodeKind = NodeData["kind"];
 
@@ -63,6 +68,7 @@ export function portsOf(data: NodeData): { id: string; label: string }[] {
         { id: "no", label: "No" },
       ];
     case "suggest":
+    case "choice":
       return [];
     default:
       return [{ id: "next", label: "Then" }];
@@ -77,7 +83,7 @@ export const waitsForInput = (d: NodeData) =>
   ((d.kind === "message" || d.kind === "episode") && d.buttons.length > 0) || d.kind === "language" || d.kind === "optin";
 
 /** Cards that send a free-form message (only allowed within 24 h of the viewer's last message). */
-export const isFreeform = (d: NodeData) => ["message", "language", "episode", "link", "optin", "suggest"].includes(d.kind);
+export const isFreeform = (d: NodeData) => ["message", "language", "episode", "link", "optin", "suggest", "choice"].includes(d.kind);
 
 export const CARD_LABELS: Record<NodeKind, string> = {
   start: "Start: viewer sends the series code",
@@ -91,9 +97,12 @@ export const CARD_LABELS: Record<NodeKind, string> = {
   condition: "Condition",
   template: "Template (after 24 h)",
   suggest: "Suggest other series",
+  choice: "Series choice (3 titles)",
 };
 
 export const BUTTON_ID_PREFIX = "f:";
+/** Same id the bot already uses for "pick a series" (IDS.seriesPrefix): a tap starts that series. */
+export const SERIES_BUTTON_PREFIX = "series:";
 export const buttonReplyId = (nodeId: string, port: string) => `${BUTTON_ID_PREFIX}${nodeId}:${port}`;
 export function parseButtonReplyId(id: string): { nodeId: string; port: string } | null {
   if (!id.startsWith(BUTTON_ID_PREFIX)) return null;

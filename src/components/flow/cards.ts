@@ -20,9 +20,14 @@ export const CARD_STYLE: Record<NodeKind, { icon: string; color: string; help: s
   condition: { icon: "🔀", color: "#0891b2", help: "Splits the flow by what the viewer has done: Yes / No." },
   template: { icon: "📄", color: "#16a34a", help: "A Meta-approved template: the only message allowed 24 h after the viewer's last message." },
   suggest: { icon: "📚", color: "#9333ea", help: "Sends the list of other series. Ends this flow." },
+  choice: {
+    icon: "🎞️",
+    color: "#be185d",
+    help: "One message with up to 3 series as buttons. Tapping one starts that series' own flow (from where the viewer is in it). 'Recommended' picks a live series the viewer hasn't started.",
+  },
 };
 
-export const ADDABLE: NodeKind[] = ["message", "episode", "link", "language", "optin", "wait", "condition", "template", "suggest", "web"];
+export const ADDABLE: NodeKind[] = ["message", "episode", "link", "language", "optin", "wait", "condition", "template", "choice", "suggest", "web"];
 
 const bi = (k: keyof typeof COPY) => ({ ar: COPY[k].ar, en: COPY[k].en });
 
@@ -55,6 +60,13 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
       return { kind, name: "" };
     case "suggest":
       return { kind };
+    case "choice":
+      return {
+        kind,
+        body: { ar: "شو تحب تشوف بعدها؟ 🍿 اختر مسلسلك:", en: "What do you want to watch next? 🍿 Pick a series:" },
+        options: [0, 1, 2].map(() => ({ code: "AUTO", label: { ar: "", en: "" } })),
+        media: null,
+      };
     case "start":
     case "web":
       return { kind };

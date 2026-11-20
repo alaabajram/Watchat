@@ -3,6 +3,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/crypto";
 import { runFlowWaits } from "@/lib/flows/runner";
+import { maybeRunGrowth } from "@/lib/growth/run";
 import { syncTemplateStatuses } from "@/lib/messaging/template-store";
 import { currentTenantId } from "@/lib/supabase";
 import { wabaConfigured } from "@/lib/whatsapp/templates";
@@ -28,7 +29,14 @@ export async function GET(req: NextRequest) {
     }
   }
   const flows = await runFlowWaits();
+  // Growth agent: once a day at the chosen hour (Suggest mode queues suggestions for the team).
+  let growth: unknown = "not_due";
+  try {
+    growth = await maybeRunGrowth(await currentTenantId());
+  } catch (e) {
+    growth = e instanceof Error ? e.message : "growth run failed";
+  }
   const summary = await runMessaging();
-  console.log("[cron] messaging", JSON.stringify({ templates, flows, ...summary }));
-  return NextResponse.json({ templates, flows, ...summary });
+  console.log("[cron] messaging", JSON.stringify({ templates, flows, growth, ...summary }));
+  return NextResponse.json({ templates, flows, growth, ...summary });
 }

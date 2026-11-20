@@ -110,7 +110,7 @@ export function TemplatePanel(p: Props) {
         </button>
         {p.templates.length === 0 && (
           <button type="button" className="secondary" disabled={busy !== null} onClick={() => run("starters", addStarterTemplatesFromBuilder)}>
-            {busy === "starters" ? "Adding…" : "Add 3 starter templates"}
+            {busy === "starters" ? "Adding…" : "Add starter templates"}
           </button>
         )}
         <button type="button" className="secondary" disabled={busy !== null} onClick={() => run("refresh", refreshTemplates)}>

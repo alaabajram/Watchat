@@ -370,6 +370,19 @@ export function createSupabaseDeps(): BotDeps {
       }
     },
 
+    async getGrowthPicks(viewerId, suggestionId) {
+      const { data } = await db()
+        .from("growth_suggestions")
+        .select("options, returned_at")
+        .eq("id", suggestionId)
+        .eq("viewer_id", viewerId)
+        .eq("action", "series_picks")
+        .maybeSingle();
+      if (!data) return null;
+      if (!data.returned_at) await db().from("growth_suggestions").update({ returned_at: new Date().toISOString() }).eq("id", suggestionId);
+      return Array.isArray(data.options) ? (data.options as string[]) : [];
+    },
+
     async track(viewerId, name, data): Promise<void> {
       await trackEvent({
         viewerHmac: hmacByViewer.get(viewerId) ?? null,

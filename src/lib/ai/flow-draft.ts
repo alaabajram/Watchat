@@ -9,7 +9,7 @@ import { validateFlow, type Issue, type ValidateCtx } from "../flows/validate";
 import { LIMITS } from "../whatsapp/messages";
 import type { Tool } from "./anthropic";
 
-const KINDS: NodeKind[] = ["start", "web", "message", "language", "episode", "link", "optin", "wait", "condition", "template", "suggest"];
+const KINDS: NodeKind[] = ["start", "web", "message", "language", "episode", "link", "optin", "wait", "condition", "template", "suggest", "choice"];
 const CHECKS = ["none", "opted_in", "language_en", "paid", "reached_episode", "started", "watched_within"] as const;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 
@@ -42,6 +42,7 @@ export type AgentContext = {
   hasTrailer: boolean;
   assets: { id: string; name: string; kind: "image" | "video"; url: string }[];
   templates: { name: string; approved: boolean; bodyAr: string | null }[];
+  otherSeries?: { code: string; titleAr: string; titleEn: string }[];
 };
 
 const str = (description: string) => ({ type: "string", description });
@@ -70,7 +71,7 @@ export const FLOW_TOOL: Tool = {
             buttons: {
               type: "array",
               description:
-                "message/episode: up to 3 reply buttons, each with goto. language: exactly 2 [Arabic button, English-subtitles button] with goto. optin: exactly 2 [yes, no] with goto. link: exactly 1 = the link button label (goto empty). Others: empty.",
+                "message/episode: up to 3 reply buttons, each with goto. language: exactly 2 [Arabic button, English-subtitles button] with goto. optin: exactly 2 [yes, no] with goto. link: exactly 1 = the link button label (goto empty). choice: 1–3 series, goto = a series code or AUTO (a series the viewer hasn't started); ar/en = optional short button label (empty = series title). Others: empty.",
               items: {
                 type: "object",
                 additionalProperties: false,
@@ -156,6 +157,10 @@ export function graphToSteps(g: FlowGraph): Step[] {
         break;
       case "template":
         Object.assign(s, { template: d.name, next: target(g, n.id, "next") });
+        break;
+      case "choice":
+        Object.assign(s, { ar: d.body.ar, en: d.body.en, media: mediaKey(d.media) });
+        s.buttons = d.options.map((o) => ({ ar: o.label.ar, en: o.label.en, goto: o.code }));
         break;
     }
     return s;
@@ -265,6 +270,15 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
         data = { kind, name: /^[a-z0-9_]{1,512}$/.test(s.template) ? s.template : "" };
         link(id, "next", s.next);
         break;
+      case "choice": {
+        const known = new Set((ctx.otherSeries ?? []).map((o) => o.code));
+        const options = (s.buttons ?? []).slice(0, 3).map((b) => {
+          const code = String(b.goto ?? "").trim().toUpperCase();
+          return { code: known.has(code) ? code : "AUTO", label: { ar: b.ar ?? "", en: b.en ?? "" } };
+        });
+        data = { kind, body: bi, options: options.length ? options : [{ code: "AUTO", label: { ar: "", en: "" } }], media: toMedia(s.media, ctx, false) };
+        break;
+      }
       default:
         data = { kind: "suggest" };
     }
@@ -309,6 +323,7 @@ gets a few short episodes in the chat with cliffhangers, then a personal link to
 Series: ${ctx.code} · "${ctx.titleAr}" / "${ctx.titleEn}" · ${ctx.episodeCount} episodes
 Chat clips uploaded for episodes: ${ctx.clips.length ? ctx.clips.join(", ") : "none yet"} · poster: ${ctx.hasPoster ? "yes" : "no"} · trailer: ${ctx.hasTrailer ? "yes" : "no"}
 Media library: ${ctx.assets.length ? ctx.assets.map((a) => `${a.id} = ${a.kind} "${a.name}"`).join("; ") : "empty"}
+Other live series (for choice steps): ${ctx.otherSeries?.length ? ctx.otherSeries.map((o) => `${o.code} "${o.titleAr}" / "${o.titleEn}"`).join("; ") : "none yet"}
 Templates (for messages 24 h+ after the viewer's last message): ${ctx.templates.length ? ctx.templates.map((t) => `${t.name} (${t.approved ? "approved" : "not approved yet"})${t.bodyAr ? `: ${t.bodyAr}` : ""}`).join("; ") : "none"}
 
 Step kinds:
@@ -330,7 +345,11 @@ Answer only by calling write_flow with the complete flow.`;
 }
 
 export function scriptIssues(g: FlowGraph, ctx: AgentContext): Issue[] {
-  const v: ValidateCtx = { episodeCount: ctx.episodeCount, templates: ctx.templates.map((t) => ({ name: t.name, approved: t.approved })) };
+  const v: ValidateCtx = {
+    episodeCount: ctx.episodeCount,
+    templates: ctx.templates.map((t) => ({ name: t.name, approved: t.approved })),
+    seriesCodes: ctx.otherSeries?.map((o) => o.code),
+  };
   return validateFlow(g, v);
 }
 
