@@ -1,6 +1,6 @@
 "use server";
 
-import { createTemplate, inActiveUse, templateUsage, updateTemplate } from "@/lib/messaging/template-store";
+import { createTemplate, inActiveUse, syncTemplates, templateUsage, updateTemplate, type SyncResult } from "@/lib/messaging/template-store";
 import type { TemplateDraft } from "@/lib/whatsapp/template-rules";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, opt, str, uuid } from "@/lib/admin/forms";
@@ -38,14 +38,17 @@ export async function submitTemplateAction(fd: FormData) {
 
 export async function syncTemplatesAction() {
   const admin = await requireAdmin("messaging");
-  let updated = 0;
+  let r: SyncResult = { updated: 0, added: 0, skipped: [], errors: [] };
   try {
-    updated = await syncTemplateStatuses(admin.tenantId);
+    r = await syncTemplates(admin.tenantId);
   } catch (e) {
     done("/admin/templates", e instanceof Error ? e.message : "Sync failed.", "err");
   }
-  await audit(admin, "templates.synced", "wa_templates", null, { count: updated });
-  done("/admin/templates", `Synced ${updated} templates from Meta.`);
+  await audit(admin, "templates.synced", "wa_templates", null, { updated: r.updated, added: r.added, skipped: r.skipped.length, errors: r.errors.length });
+  const parts = [`${r.added} added from Meta`, `${r.updated} updated`];
+  if (r.skipped.length) parts.push(`${r.skipped.length} skipped (not Arabic or English: ${r.skipped.slice(0, 4).join(", ")})`);
+  if (r.errors.length) done("/admin/templates", `Sync: ${parts.join(", ")}. Not saved: ${r.errors.slice(0, 3).join("; ")}`, "err");
+  done("/admin/templates", `Sync: ${parts.join(", ")}.`);
 }
 
 /** New or edited template from the shared editor on the WhatsApp templates page (Arabic + English together). */

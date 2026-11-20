@@ -51,7 +51,7 @@ async function submitRow(tenantId: string, row: Omit<TemplateRow, "id">): Promis
     .upsert({ ...row, tenant_id: tenantId, meta_status: "draft", meta_reason: null, updated_at: new Date().toISOString() }, { onConflict: "tenant_id,name,lang" })
     .select("id")
     .single();
-  if (error || !data) return `Couldn't save ${row.name} (${row.lang}): ${error?.message}`;
+  if (error || !data) return `Couldn't save ${row.name} (${row.lang}): ${error?.message ?? "unknown error"}`;
   if (!wabaConfigured()) return null; // saved as draft; submit later from WhatsApp templates
   const r = await submitTemplate({ ...row, id: data.id });
   await db()
@@ -84,28 +84,59 @@ export async function addStarterTemplates(tenantId: string): Promise<string[]> {
   return (await Promise.all(todo.map((r) => submitRow(tenantId, r)))).filter(Boolean) as string[];
 }
 
-/** Pull approval status from Meta. Templates made directly in WhatsApp Manager are added too. */
-export async function syncTemplateStatuses(tenantId: string): Promise<number> {
+export type SyncResult = { updated: number; added: number; skipped: string[]; errors: string[] };
+
+/**
+ * Pull templates from Meta: approval status for ours, and templates made directly in WhatsApp Manager
+ * (with their text and button) so they can be picked in flows, sequences and campaigns.
+ * Only Arabic and English templates are kept (the bot speaks those two).
+ */
+export async function syncTemplates(tenantId: string): Promise<SyncResult> {
   const remote = await fetchMetaTemplates();
-  let updated = 0;
+  const r: SyncResult = { updated: 0, added: 0, skipped: [], errors: [] };
   for (const m of remote) {
     const lang = m.language.startsWith("ar") ? "ar" : m.language.startsWith("en") ? "en" : null;
-    if (!lang) continue;
-    const { data } = await db()
-      .from("wa_templates")
-      .update({ meta_template_id: m.id, meta_status: m.status, meta_reason: m.rejected_reason && m.rejected_reason !== "NONE" ? m.rejected_reason : null, updated_at: new Date().toISOString() })
-      .eq("tenant_id", tenantId)
-      .eq("name", m.name)
-      .eq("lang", lang)
-      .select("id");
-    if (!data?.length) {
-      await db()
-        .from("wa_templates")
-        .insert({ tenant_id: tenantId, name: m.name, lang, category: m.category?.toLowerCase() === "utility" ? "utility" : "marketing", body: "(created in WhatsApp Manager)", meta_template_id: m.id, meta_status: m.status });
+    if (!lang) {
+      r.skipped.push(`${m.name} (${m.language})`);
+      continue;
     }
-    updated++;
+    const status = { meta_template_id: m.id, meta_status: m.status, meta_reason: m.rejected_reason && m.rejected_reason !== "NONE" ? m.rejected_reason : null, updated_at: new Date().toISOString() };
+    const { data, error } = await db().from("wa_templates").update(status).eq("tenant_id", tenantId).eq("name", m.name).eq("lang", lang).select("id");
+    if (error) {
+      r.errors.push(`${m.name}: ${error.message}`);
+      continue;
+    }
+    if (data?.length) {
+      r.updated++;
+      continue;
+    }
+    const body = m.components?.find((c) => c.type === "BODY")?.text ?? "(created in WhatsApp Manager)";
+    const button = m.components?.find((c) => c.type === "BUTTONS")?.buttons?.[0];
+    const header = m.components?.find((c) => c.type === "HEADER");
+    const ins = await db()
+      .from("wa_templates")
+      .insert({
+        tenant_id: tenantId,
+        name: m.name,
+        lang,
+        category: m.category?.toLowerCase() === "utility" ? "utility" : "marketing",
+        header_type: header?.format === "IMAGE" ? "image" : "none",
+        body,
+        button_text: button?.text ?? null,
+        button_type: button?.type === "QUICK_REPLY" ? "quick_reply" : "url",
+        ...status,
+      });
+    if (ins.error) r.errors.push(`${m.name}: ${ins.error.message}`);
+    else r.added++;
   }
-  return updated;
+  return r;
+}
+
+/** Status-only sync for the cron and the builder's "Check approval": returns how many were updated or added. */
+export async function syncTemplateStatuses(tenantId: string): Promise<number> {
+  const r = await syncTemplates(tenantId);
+  if (r.errors.length) throw new Error(`Couldn't save some templates: ${r.errors.slice(0, 3).join("; ")}`);
+  return r.updated + r.added;
 }
 
 // ---------------------------------------------------------------------------

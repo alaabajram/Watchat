@@ -86,13 +86,14 @@ export type MetaTemplate = {
   status: string;
   category: string;
   rejected_reason?: string;
+  components?: { type: string; format?: string; text?: string; buttons?: { type: string; text?: string }[] }[];
 };
 
 export async function fetchMetaTemplates(): Promise<MetaTemplate[]> {
   const wabaId = process.env.WHATSAPP_WABA_ID;
   if (!wabaId) throw new Error("Set WHATSAPP_WABA_ID (your Messaging account ID) in Vercel first.");
   const out: MetaTemplate[] = [];
-  let url: string | null = graph(`${wabaId}/message_templates?fields=id,name,language,status,category,rejected_reason&limit=100`);
+  let url: string | null = graph(`${wabaId}/message_templates?fields=id,name,language,status,category,rejected_reason,components&limit=100`);
   for (let page = 0; url && page < 10; page++) {
     const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${env.waAccessToken}` } });
     const json = (await res.json()) as { data?: MetaTemplate[]; paging?: { next?: string }; error?: { message?: string } };
