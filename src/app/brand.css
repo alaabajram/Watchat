@@ -1,0 +1,127 @@
+/* Watchat brand: fonts, the light "app" theme from the design team's screens (splash, home) and the
+   logo motion. Scoped under .wc so the existing dark player pages are unchanged. */
+
+@font-face {
+  font-family: "Readex Pro";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 160 700;
+  src: url("/fonts/readex-pro-arabic-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011,
+    U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Readex Pro";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 160 700;
+  src: url("/fonts/readex-pro-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+.wc {
+  --wc-bg: #f4f2ee;
+  --wc-card: #ffffff;
+  --wc-ink: #121014;
+  --wc-muted: #5f5a55;
+  --wc-line: #ece8e2;
+  --wc-mint: #31e5a0;
+  --wc-mint-ink: #0b2e20;
+  --wc-mint-text: #0b6b49;
+  --wc-coral: #ff5a48;
+  --wc-coral-text: #c9341f;
+  --wc-night: #13101a;
+  --wc-night-2: #241f2e;
+  min-height: 100dvh;
+  background: var(--wc-bg);
+  color: var(--wc-ink);
+  color-scheme: light;
+  font-family: "Readex Pro", system-ui, "Segoe UI", "Noto Sans Arabic", Tahoma, sans-serif;
+  line-height: 1.6;
+}
+.wc a { color: inherit; text-decoration: none; }
+.wc h1, .wc h2, .wc h3, .wc p { margin: 0; }
+.wc :focus-visible { outline: 3px solid var(--wc-mint-text); outline-offset: 2px; border-radius: 8px; }
+
+.wc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 56px; padding: 0 24px; border-radius: 18px; border: 0;
+  background: var(--wc-mint); color: var(--wc-mint-ink) !important; font: inherit; font-weight: 600; font-size: 18px;
+  box-shadow: 0 14px 30px rgba(49, 229, 160, 0.38); cursor: pointer;
+}
+.wc-round {
+  width: 44px; height: 44px; border-radius: 50%; background: var(--wc-card);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative;
+}
+.wc-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: 999px;
+  background: var(--wc-card); font-weight: 600; font-size: 15px;
+}
+.wc-coin { width: 20px; height: 20px; border-radius: 50%; background: #f5b323; box-shadow: inset 0 0 0 3px #ffd877; flex-shrink: 0; }
+.wc-card { background: var(--wc-card); border-radius: 24px; box-shadow: 0 8px 26px rgba(18, 16, 20, 0.06); }
+.wc-chip { padding: 9px 16px; border-radius: 999px; background: var(--wc-card); font-size: 14px; white-space: nowrap; }
+.wc-chip[aria-current="true"] { background: var(--wc-ink); color: #fff; font-weight: 600; }
+.wc-link { font-size: 14px; color: var(--wc-coral-text); font-weight: 500; }
+.wc-scroller { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 0 16px; }
+.wc-scroller::-webkit-scrollbar { display: none; }
+.wc-scroller > * { scroll-snap-align: start; }
+.wc-poster { position: relative; border-radius: 18px; background: var(--wc-night-2); overflow: hidden; aspect-ratio: 2 / 3; }
+.wc-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wc-poster .wc-poster-fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 8px; text-align: center; color: #e8e3ee; font-size: 13px; }
+.wc-progress { height: 6px; border-radius: 6px; background: var(--wc-line); }
+.wc-progress > span { display: block; height: 6px; border-radius: 6px; background: var(--wc-mint); box-shadow: 0 0 8px rgba(49, 229, 160, 0.6); }
+
+/* Bottom navigation (fixed on phones, centred column on wider screens). */
+.wc-nav {
+  position: fixed; inset-inline: 0; bottom: 0; z-index: 10; background: var(--wc-card); border-top: 1px solid var(--wc-line);
+  padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
+}
+.wc-nav ul { list-style: none; margin: 0 auto; padding: 0; max-width: 520px; display: flex; justify-content: space-around; align-items: flex-end; }
+.wc-nav a { min-width: 58px; min-height: 44px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--wc-muted); }
+.wc-nav a[aria-current="page"] { color: var(--wc-coral-text); font-weight: 600; }
+.wc-nav .wc-fab {
+  width: 54px; height: 54px; margin-top: -28px; border-radius: 50%; background: var(--wc-coral); border: 5px solid #fff;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(255, 90, 72, 0.35);
+}
+
+/* ---------------- Logo motion (splash) ----------------
+   The bubble scrolls up three times like a feed, settles with a small overshoot, then the red dot pops in
+   and keeps pulsing. Box 112×152; bubble pitch 179px (152 + 27 gap). */
+.wc-logo { position: relative; width: 112px; height: 152px; }
+.wc-logo-clip { position: absolute; left: 0; top: 3px; width: 112px; height: 149px; overflow: hidden; }
+.wc-logo-strip { display: flex; flex-direction: column; gap: 27px; margin-top: -3px; animation: wc-scroll 2.6s cubic-bezier(0.65, 0, 0.35, 1) 0.4s both; }
+.wc-logo-strip img { width: 112px; height: 152px; display: block; }
+.wc-logo-dot { position: absolute; left: 87px; top: -3px; width: 28px; height: 28px; transform: scale(0); animation: wc-pop 0.45s ease-out 3s forwards; }
+.wc-logo-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: #fff; }
+.wc-logo-dot .wc-ring { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--wc-coral); box-sizing: border-box; opacity: 0; animation: wc-ring 1.6s ease-out 3.5s infinite; }
+.wc-logo-dot img { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; animation: wc-breathe 1.6s ease-in-out 3.5s infinite; }
+.wc-fade-in { opacity: 0; animation: wc-fade 0.6s ease-out 3.3s forwards; }
+
+@keyframes wc-scroll {
+  0%, 14% { transform: translateY(0); }
+  26%, 31% { transform: translateY(-179px); }
+  43%, 48% { transform: translateY(-358px); }
+  64% { transform: translateY(-547px); }
+  72%, 100% { transform: translateY(-537px); }
+}
+@keyframes wc-pop { 0% { transform: scale(0); } 60% { transform: scale(1.18); } 80% { transform: scale(0.96); } 100% { transform: scale(1); } }
+@keyframes wc-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes wc-ring { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes wc-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wc-logo-strip, .wc-logo-dot, .wc-logo-dot img, .wc-logo-dot .wc-ring, .wc-fade-in { animation: none; }
+  .wc-logo-strip { transform: translateY(-537px); }
+  .wc-logo-dot, .wc-fade-in { transform: none; opacity: 1; }
+}
+
+/* business.watchat.pro (markup from the design canvas, inline-styled) */
+.wc-biz { background: #f4f2ee; color-scheme: light; }
+.wc-biz a { color: #121014; text-decoration: none; }
+.wc-biz a:hover { color: #000; }
+.wc-biz h1, .wc-biz h2, .wc-biz h3, .wc-biz p { margin: 0; }
+.wc-biz details summary { cursor: pointer; list-style: none; }
+.wc-biz details summary::-webkit-details-marker { display: none; }
+.wc-biz :focus-visible { outline: 3px solid #0b6b49; outline-offset: 2px; border-radius: 8px; }

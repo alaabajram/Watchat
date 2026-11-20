@@ -189,3 +189,68 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
   watching.sort((a, b) => b.lastWatchedAt.localeCompare(a.lastWatchedAt));
   return { watching, more };
 }
+
+export type HomeSeries = {
+  code: string;
+  titleAr: string;
+  titleEn: string;
+  taglineAr: string | null;
+  taglineEn: string | null;
+  posterUrl: string | null;
+  bannerUrl: string | null; // wide banner, falling back to the poster
+  genres: string[];
+  total: number;
+  createdAt: string;
+};
+
+export type HomeWatching = HomeSeries & { resume: number | null; lastWatchedAt: string };
+
+/** Home screen: live catalogue (newest first) with genres and artwork, plus this viewer's "continue watching". */
+export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries[]; watching: HomeWatching[] }> {
+  const tenantId = await currentTenantId();
+  const now = new Date().toISOString();
+  const [{ data: catalog }, { data: rows }] = await Promise.all([
+    db()
+      .from("series")
+      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, episodes(number, status, release_at)")
+      .eq("tenant_id", tenantId)
+      .eq("status", "live")
+      .order("created_at", { ascending: false }),
+    db().from("progress").select("completed_at, updated_at, episodes!inner(number, series_id)").eq("viewer_id", viewerId),
+  ]);
+  type Row = { completed_at: string | null; updated_at: string; episodes: { number: number; series_id: string } };
+  const latestBySeries = new Map<string, Row>();
+  for (const r of (rows ?? []) as unknown as Row[]) {
+    const prev = latestBySeries.get(r.episodes.series_id);
+    if (!prev || r.updated_at > prev.updated_at) latestBySeries.set(r.episodes.series_id, r);
+  }
+  const catalogue: HomeSeries[] = [];
+  const watching: HomeWatching[] = [];
+  for (const s of catalog ?? []) {
+    const total = ((s.episodes ?? []) as { status: string; release_at: string | null }[]).filter(
+      (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
+    ).length;
+    if (total === 0) continue;
+    const item: HomeSeries = {
+      code: s.code,
+      titleAr: s.title_ar,
+      titleEn: s.title_en,
+      taglineAr: s.tagline_ar ?? null,
+      taglineEn: s.tagline_en ?? null,
+      posterUrl: s.poster_url,
+      bannerUrl: s.banner_wide_url ?? s.poster_url,
+      genres: (s.genres as string[] | null) ?? [],
+      total,
+      createdAt: s.created_at,
+    };
+    catalogue.push(item);
+    const latest = latestBySeries.get(s.id);
+    if (latest) {
+      const n = latest.episodes.number;
+      const next = latest.completed_at ? n + 1 : n;
+      watching.push({ ...item, resume: next <= total ? next : null, lastWatchedAt: latest.updated_at });
+    }
+  }
+  watching.sort((a, b) => b.lastWatchedAt.localeCompare(a.lastWatchedAt));
+  return { catalogue, watching };
+}

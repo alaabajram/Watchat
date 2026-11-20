@@ -19,6 +19,10 @@ describe("parseIntent", () => {
     expect(parseIntent(text("إيقاف"))).toEqual({ type: "stop" });
     expect(parseIntent(text("menu"))).toEqual({ type: "menu" });
     expect(parseIntent(text("رابط"))).toEqual({ type: "link" });
+    // Pre-filled by the watchat.pro splash button.
+    expect(parseIntent(text("ابدأ"))).toEqual({ type: "menu" });
+    expect(parseIntent(text("ابدا"))).toEqual({ type: "menu" });
+    expect(parseIntent(text("Start"))).toEqual({ type: "menu" });
   });
 
   it("maps button ids", () => {

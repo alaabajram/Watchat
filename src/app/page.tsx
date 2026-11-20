@@ -1,29 +1,28 @@
-import { redirect } from "next/navigation";
+// watchat.pro — one address, two doors:
+// • no session on this browser → splash with the animated logo and "Start in WhatsApp" (new viewers come in
+//   through the bot; the personal link it sends signs this browser in);
+// • a session → the home screen (banner carousel, continue watching, explore).
+// The browser is recognised by the HttpOnly session cookie that src/proxy.ts keeps renewing.
+
+import { Splash } from "@/components/brand/Splash";
+import { HomeScreen } from "@/components/home/HomeScreen";
+import { getHome } from "@/lib/content";
 import { env } from "@/lib/env";
 import { getSessionViewer } from "@/lib/session";
-import { webCopy } from "@/lib/web-copy";
+import { getBalance } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  // Signed-in viewers land on their account (continue watching, wallet).
-  if (await getSessionViewer()) redirect("/me");
-  const ar = webCopy("ar");
-  const en = webCopy("en");
-  const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=MENU` : null;
+export default async function Home({ searchParams }: { searchParams: Promise<{ lang?: string; genre?: string }> }) {
+  const params = await searchParams;
+  const viewer = await getSessionViewer();
 
-  return (
-    <main className="page center">
-      <h1 style={{ margin: 0, fontSize: 40 }}>واتشات · Watchat</h1>
-      <p style={{ margin: 0, fontSize: 20 }}>{ar.tagline}</p>
-      <p className="muted" style={{ margin: 0 }} dir="ltr">
-        {en.tagline}
-      </p>
-      {wa && (
-        <a className="btn" href={wa}>
-          {ar.startInWhatsApp}
-        </a>
-      )}
-    </main>
-  );
+  if (!viewer) {
+    const locale = params.lang === "en" ? "en" : "ar";
+    const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(locale === "en" ? "START" : "ابدأ")}` : null;
+    return <Splash locale={locale} waHref={wa} />;
+  }
+
+  const [{ catalogue, watching }, balance] = await Promise.all([getHome(viewer.id), getBalance(viewer.id)]);
+  return <HomeScreen locale={viewer.uiLocale} balance={balance} catalogue={catalogue} watching={watching} genre={params.genre ?? null} />;
 }
