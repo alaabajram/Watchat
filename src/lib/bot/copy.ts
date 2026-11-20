@@ -5,7 +5,8 @@
 
 export type CopyLang = "ar" | "en";
 
-type Entry = { label: string; kind: "text" | "button"; ar: string; en: string };
+// flowDefault: starting text for flow cards (edited on the cards in the Flow builder, not in Shared replies).
+type Entry = { label: string; kind: "text" | "button"; ar: string; en: string; flowDefault?: true };
 
 export const COPY = {
   welcomeAskLanguage: {
@@ -21,29 +22,33 @@ export const COPY = {
     kind: "text",
     ar: "هذا الإعلان الرسمي لـ «{title}». جاهز تبدأ؟",
     en: "Here's the official trailer for “{title}”. Ready to start?",
+    flowDefault: true,
   },
-  btnStartEp1: { label: "W2 · Start button", kind: "button", ar: "ابدأ الحلقة 1", en: "Start episode 1" },
-  btnNext: { label: "W3 · Next episode button", kind: "button", ar: "الحلقة التالية", en: "Next episode" },
-  btnNotForMe: { label: "W2/W3 · Not for me button", kind: "button", ar: "ما يناسبني", en: "Not for me" },
+  btnStartEp1: { label: "W2 · Start button", kind: "button", ar: "ابدأ الحلقة 1", en: "Start episode 1", flowDefault: true },
+  btnNext: { label: "W3 · Next episode button", kind: "button", ar: "الحلقة التالية", en: "Next episode", flowDefault: true },
+  btnNotForMe: { label: "W2/W3 · Not for me button", kind: "button", ar: "ما يناسبني", en: "Not for me", flowDefault: true },
   episodeCaption: {
     label: "W3/W4 · Episode caption",
     kind: "text",
     ar: "الحلقة {n} من {total} · {title}",
     en: "Episode {n} of {total} · {title}",
+    flowDefault: true,
   },
   videoMissing: {
     label: "Episode video not uploaded yet",
     kind: "text",
     ar: "(فيديو الحلقة {n} غير متوفر حاليًا)",
     en: "(Episode {n} video isn't available yet)",
+    flowDefault: true,
   },
   cliffhangerBody: {
     label: "W5 · Cliffhanger link message",
     kind: "text",
     ar: "الحلقة {next} بانتظارك 👀\nكمّل المشاهدة الحين، بدون تطبيق وبدون تسجيل.",
     en: "Episode {next} is waiting for you 👀\nKeep watching now — no app, no sign-up.",
+    flowDefault: true,
   },
-  btnWatchEp: { label: "W5 · Watch link button", kind: "button", ar: "شاهد الحلقة {next}", en: "Watch episode {next}" },
+  btnWatchEp: { label: "W5 · Watch link button", kind: "button", ar: "شاهد الحلقة {next}", en: "Watch episode {next}", flowDefault: true },
   optInBody: {
     label: "W6 · Alerts question",
     kind: "text",
@@ -137,6 +142,8 @@ export type CopyOverrides = Partial<Record<CopyKey, string>>;
 export type CopyVars = Partial<Record<"title" | "n" | "total" | "next" | "code", string | number>>;
 
 export const COPY_KEYS = Object.keys(COPY) as CopyKey[];
+/** Replies used outside series flows (menu, alerts, support, links…), edited in Admin → Shared replies. */
+export const SHARED_KEYS = COPY_KEYS.filter((k) => !(COPY[k] as Entry).flowDefault);
 
 export function isCopyKey(key: string): key is CopyKey {
   return key in COPY;

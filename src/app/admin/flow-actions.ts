@@ -2,10 +2,12 @@
 
 // Flow builder actions: save draft, publish (after checks), versions, and the series media library.
 
+import { agentContext, draftFlowWithAi, type FlowDraftResult } from "@/lib/ai/flow-agent";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { randomToken } from "@/lib/crypto";
 import { assetIdsIn, sanitizeGraph } from "@/lib/flows/sanitize";
-import { standardFlowFor, type Asset } from "@/lib/flows/store";
+import { loadBuilder, standardFlowFor, type Asset } from "@/lib/flows/store";
+import { allow } from "@/lib/security/rate-limit";
 import type { FlowGraph } from "@/lib/flows/types";
 import { hasErrors, validateFlow, type Issue } from "@/lib/flows/validate";
 import { db } from "@/lib/supabase";
@@ -71,13 +73,6 @@ export async function publishFlow(
   return { ok: true, version, versionId: v.id, issues };
 }
 
-export async function unpublishFlow(seriesId: string): Promise<void> {
-  const admin = await requireAdmin("bot");
-  const flow = await flowFor(admin.tenantId, seriesId);
-  await db().from("flows").update({ published_version_id: null }).eq("id", flow.id);
-  await audit(admin, "flow.unpublished", "series", seriesId);
-}
-
 export async function loadVersion(seriesId: string, versionId: string): Promise<FlowGraph | null> {
   const admin = await requireAdmin("bot");
   const flow = await flowFor(admin.tenantId, seriesId);
@@ -90,6 +85,20 @@ export async function standardFlow(seriesId: string): Promise<FlowGraph | null> 
   const admin = await requireAdmin("bot");
   if (!UUID.test(seriesId)) return null;
   return standardFlowFor(admin.tenantId, seriesId);
+}
+
+/** Build with AI: draft a new flow, or change the current one. The result goes on the canvas as the draft. */
+export async function aiDraftFlow(seriesId: string, request: string, mode: "change" | "new", current: unknown): Promise<FlowDraftResult> {
+  const admin = await requireAdmin("bot");
+  const ask = String(request ?? "").trim().slice(0, 3000);
+  if (ask.length < 5) return { ok: false, error: "Describe what the flow should do." };
+  if (!(await allow(`ai:${admin.id}`, 10, 600))) return { ok: false, error: "Too many AI requests. Wait a few minutes." };
+  const builder = UUID.test(seriesId) ? await loadBuilder(admin.tenantId, seriesId, admin.id) : null;
+  if (!builder) return { ok: false, error: "Series not found." };
+  const cur = mode === "change" ? sanitizeGraph(current) : null;
+  const result = await draftFlowWithAi({ tenantId: admin.tenantId, adminId: admin.id, ctx: agentContext(builder), request: ask, current: cur });
+  if (result.ok) await audit(admin, "flow.ai_draft", "series", seriesId, { mode, cards: result.graph.nodes.length, errors: result.errors.length });
+  return result;
 }
 
 // ---------------------------------------------------------------------------

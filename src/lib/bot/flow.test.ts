@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
 import { EMPTY_STATE, handleInbound, type BotDeps, type ChatState, type Series, type ViewerLang } from "./flow";
-import type { CopyOverrides } from "./copy";
+import { COPY, COPY_KEYS, type CopyKey, type CopyOverrides } from "./copy";
+import { defaultFlow } from "../flows/defaults";
 import { IDS } from "./intents";
 import type { FlowGraph } from "../flows/types";
 import type { FlowRun } from "./flow";
@@ -16,9 +17,6 @@ const SERIES: Series = {
   trailerUrl: "https://cdn.example/trailer.mp4",
   episodeCount: 30,
   waEpisodeCount: 3,
-  askLanguage: true,
-  sendTrailer: true,
-  askOptIn: true,
 };
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
@@ -31,6 +29,12 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
   let language: ViewerLang | null = null;
   let optIn: "in" | "out" | null = null;
   let run: FlowRun | null = null;
+  const texts = Object.fromEntries(
+    COPY_KEYS.map((k) => [k, { ar: opts.overrides?.[k] ?? COPY[k].ar, en: opts.overrides?.[k] ?? COPY[k].en }]),
+  ) as Record<CopyKey, { ar: string; en: string }>;
+  const flow =
+    opts.flow ??
+    defaultFlow({ askLanguage: true, sendTrailer: true, hasTrailer: Boolean(series.trailerUrl), askOptIn: true, waEpisodeCount: series.waEpisodeCount, episodeCount: series.episodeCount, texts });
 
   const deps: BotDeps = {
     upsertViewer: async (m) => ({ id: "v1", waId: m.from, language }),
@@ -65,8 +69,9 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     track: async (_v, name) => {
       events.push(name);
     },
-    getPublishedFlow: async (sid) => (opts.flow && sid === series.id ? { versionId: "ver1", graph: opts.flow } : null),
-    getFlowVersion: async (id) => (id === "ver1" && opts.flow ? opts.flow : null),
+    // Like production: the series' flow, or the standard flow published automatically.
+    getPublishedFlow: async (sid) => (sid === series.id ? { versionId: "ver1", graph: flow } : null),
+    getFlowVersion: async (id) => (id === "ver1" ? flow : null),
     getFlowRun: async () => run,
     saveFlowRun: async (_v, r) => {
       run = r;
@@ -88,46 +93,45 @@ const text = (body: string, referral = false): InboundMessage => ({
 });
 const tap = (replyId: string): InboundMessage => ({ id: `m${++seq}`, from: "971500000000", timestamp: 0, kind: "reply", replyId });
 
+/** Tap button number `i` on the last message the bot sent. */
+async function tapButton(f: ReturnType<typeof fakeDeps>, i: number) {
+  const last = f.sent.at(-1) as Extract<OutMessage, { kind: "buttons" }>;
+  await handleInbound(tap(last.buttons[i].id), f.deps);
+}
+
 describe("bot flow: series code to cliffhanger link", () => {
-  it("walks W1 → W2 → episodes 1–3 → W5 link → W6 opt-in", async () => {
+  it("runs the standard flow: language → trailer → episodes 1–3 → link → alerts", async () => {
     const f = fakeDeps();
 
-    // W1: series code from a Click-to-WhatsApp ad → language choice
+    // Series code from a Click-to-WhatsApp ad → language choice (with the poster)
     await handleInbound(text("Hi! I want to watch SECRETS01", true), f.deps);
-    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", buttons: [{ id: IDS.langAr }, { id: IDS.langEn }] });
-    expect(f.getState()).toEqual({ seriesId: "s1", step: "lang", waEpisode: 0 });
-    expect(f.events).toContain("chat_started");
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", header: { type: "image", link: SERIES.posterUrl } });
+    expect(f.events).toEqual(expect.arrayContaining(["chat_started", "flow_started"]));
+    expect(f.getState()).toMatchObject({ seriesId: "s1", step: "flow" });
 
-    // W2: Arabic chosen → trailer with Start / Not for me
-    await handleInbound(tap(IDS.langAr), f.deps);
+    // Arabic → trailer with Start / Not for me
+    await tapButton(f, 0);
     expect(f.getLanguage()).toBe("ar");
-    expect(f.sent.at(-1)).toMatchObject({
-      kind: "buttons",
-      header: { type: "video", link: SERIES.trailerUrl },
-      buttons: [{ id: IDS.start }, { id: IDS.notForMe }],
-    });
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", header: { type: "video", link: SERIES.trailerUrl } });
 
-    // Episode 1 and 2 arrive with Next buttons
-    await handleInbound(tap(IDS.start), f.deps);
+    // Start → episode 1, Next → episode 2
+    await tapButton(f, 0);
     expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", header: { link: "https://cdn.example/ep1-ar.mp4" } });
-    await handleInbound(tap(IDS.next), f.deps);
+    await tapButton(f, 0);
     expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", header: { link: "https://cdn.example/ep2-ar.mp4" } });
-    expect(f.events.filter((e) => e === "wa_episode_done")).toHaveLength(1);
 
-    // Episode 3 → plain video, then the personal link to episode 4, then the opt-in question
+    // Next → episode 3 as a plain video, the personal link to episode 4, then the alerts question
     const before = f.sent.length;
-    await handleInbound(tap(IDS.next), f.deps);
+    await tapButton(f, 0);
     const burst = f.sent.slice(before);
     expect(burst.map((m) => m.kind)).toEqual(["video", "cta_url", "buttons"]);
     expect(burst[1]).toMatchObject({ url: "https://watchat.test/w/token-ep4" });
-    expect(burst[2]).toMatchObject({ buttons: [{ id: IDS.optInYes }, { id: IDS.optInNo }] });
-    expect(f.getState()).toMatchObject({ step: "linked", waEpisode: 3 });
 
-    // Opt in
-    await handleInbound(tap(IDS.optInYes), f.deps);
+    await tapButton(f, 0);
     expect(f.getOptIn()).toBe("in");
+    expect(f.getRun()).toMatchObject({ status: "done" });
 
-    // Tapping Next again after the chat episodes just resends the link
+    // An old "Next" button from before flows just sends the viewer's link
     await handleInbound(tap(IDS.next), f.deps);
     expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-ep4" });
   });
@@ -135,15 +139,17 @@ describe("bot flow: series code to cliffhanger link", () => {
   it("sends English-subtitle clips to viewers who chose English", async () => {
     const f = fakeDeps();
     await handleInbound(text("SECRETS01"), f.deps);
-    await handleInbound(tap(IDS.langEn), f.deps);
-    await handleInbound(tap(IDS.start), f.deps);
+    await tapButton(f, 1); // English subtitles
+    await tapButton(f, 0); // Start
+    expect(f.getLanguage()).toBe("ar_en_subs");
     expect(f.sent.at(-1)).toMatchObject({ header: { link: "https://cdn.example/ep1-en.mp4" } });
   });
 
   it("offers other series on Not for me", async () => {
     const f = fakeDeps();
     await handleInbound(text("SECRETS01"), f.deps);
-    await handleInbound(tap(IDS.notForMe), f.deps);
+    await tapButton(f, 0); // Arabic
+    await tapButton(f, 1); // Not for me
     expect(f.sent.at(-1)).toMatchObject({ kind: "list" });
     const list = f.sent.at(-1) as Extract<OutMessage, { kind: "list" }>;
     expect(list.sections[0].rows.map((r) => r.id)).toEqual([`${IDS.seriesPrefix}DESERT02`]);
@@ -168,20 +174,18 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.sent.at(-1)).toMatchObject({ kind: "text" });
   });
 
-  it("uses admin text overrides", async () => {
+  it("builds the standard flow from the current default texts", async () => {
     const f = fakeDeps({ overrides: { trailerBody: "Custom trailer for {title}" } });
     await handleInbound(text("SECRETS01"), f.deps);
-    await handleInbound(tap(IDS.langAr), f.deps);
+    await tapButton(f, 0);
     expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: "Custom trailer for أسرار البيت" });
   });
 
-  it("follows the scenario: no language question, no trailer, no opt-in, 1 chat episode", async () => {
-    const f = fakeDeps({ series: { askLanguage: false, sendTrailer: false, askOptIn: false, waEpisodeCount: 1 } });
+  it("skips the trailer when the series has none", async () => {
+    const f = fakeDeps({ series: { trailerUrl: null } });
     await handleInbound(text("SECRETS01"), f.deps);
-    // Straight to episode 1 (the only chat episode), then the link to episode 2, no opt-in question.
-    expect(f.sent.map((m) => m.kind)).toEqual(["video", "cta_url"]);
-    expect(f.sent[1]).toMatchObject({ url: "https://watchat.test/w/token-ep2" });
-    expect(f.getState()).toMatchObject({ step: "linked", waEpisode: 1 });
+    await tapButton(f, 0); // Arabic → straight to episode 1
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", header: { link: "https://cdn.example/ep1-ar.mp4" } });
   });
 
   it("confirms a device with the right code only", async () => {
@@ -201,7 +205,7 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.getState()).toMatchObject({ seriesId: "s1", step: "linked", waEpisode: 3 });
   });
 
-  it("follows the series' published flow instead of the built-in scenario", async () => {
+  it("follows a custom flow drawn in the builder", async () => {
     const flow: FlowGraph = {
       v: 1,
       nodes: [

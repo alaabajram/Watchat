@@ -1,4 +1,4 @@
-// Series editor: details, scenario (chat flow) switches, pricing, media, episodes, licence, review & publish.
+// Series editor: details, chat episodes, pricing, media, episodes, licence, review & publish. The chat itself is in the Flow builder.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -128,22 +128,14 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
           <MediaUpload kind="clip" seriesCode={s.code} target="series" id={s.id} field="trailer_video_url" label="Upload trailer clip" />
         </div>
 
-        <h2>Chat scenario</h2>
+        <h2>Chat in WhatsApp</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          What happens after a viewer sends <code>{s.code}</code> in WhatsApp.
+          What happens after a viewer sends <code>{s.code}</code> is drawn in the <Link href={`/admin/flows/${s.id}`}>Flow builder</Link>. Until you publish
+          your own, the series uses the standard flow: language, trailer (if uploaded), the chat episodes below, the web link, then alerts.
         </p>
         <div className="grid3">
-          <label className="inline">
-            <input type="checkbox" name="ask_language" defaultChecked={s.ask_language} /> Ask Arabic / English subtitles first
-          </label>
-          <label className="inline">
-            <input type="checkbox" name="send_trailer" defaultChecked={s.send_trailer} /> Send the trailer before episode 1
-          </label>
-          <label className="inline">
-            <input type="checkbox" name="ask_opt_in" defaultChecked={s.ask_opt_in} /> Ask for new-episode alerts after the link
-          </label>
           <label>
-            Episodes sent inside WhatsApp (0–5)
+            Episodes in the standard flow (0–5)
             <input name="wa_episode_count" type="number" min={0} max={5} defaultValue={s.wa_episode_count} />
           </label>
         </div>

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { audit, requireAdmin } from "@/lib/admin/auth";
-import { bool, done, int, num, opt, str, uuid } from "@/lib/admin/forms";
+import { done, int, num, opt, str, uuid } from "@/lib/admin/forms";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
 
@@ -68,9 +68,6 @@ export async function updateSeriesAction(fd: FormData) {
     coins_per_episode: coins,
     season_pass_price_aed: num(fd, "season_pass_price_aed"),
     season_pass_price_sar: num(fd, "season_pass_price_sar"),
-    ask_language: bool(fd, "ask_language"),
-    send_trailer: bool(fd, "send_trailer"),
-    ask_opt_in: bool(fd, "ask_opt_in"),
   };
   const { error } = await db().from("series").update(patch).eq("id", id).eq("tenant_id", admin.tenantId);
   if (error) done(back, `Save failed: ${error.message}`, "err");

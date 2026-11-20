@@ -27,7 +27,7 @@ export default async function AiAccountPage({ searchParams }: { searchParams: Pr
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>
-          This label uses its own Claude account for <strong>Build with AI</strong> in Bot messages & scenarios. AI usage is billed to that account by
+          This label uses its own Claude account for <strong>Build with AI</strong> in the Flow builder. AI usage is billed to that account by
           Anthropic.
         </p>
         <ol className="muted" style={{ marginBottom: 0 }}>

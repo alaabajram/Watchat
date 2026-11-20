@@ -1,11 +1,11 @@
 // Loads everything the flow builder page needs, creating the series' draft from the standard
 // scenario the first time it's opened.
 
-import { loadSeriesContext } from "../ai/scenario-agent";
+import { getAiSettings } from "../ai/settings";
 import { db } from "../supabase";
-import { defaultFlow } from "./defaults";
 import type { PreviewSeries } from "./preview";
 import { sanitizeGraph } from "./sanitize";
+import { standardGraph } from "./standard";
 import type { FlowGraph } from "./types";
 
 export type Asset = { id: string; kind: "image" | "video"; name: string; url: string; sizeBytes: number | null; createdAt: string };
@@ -23,19 +23,10 @@ export type BuilderData = {
   versions: VersionInfo[];
   assets: Asset[];
   templates: TemplateInfo[];
+  aiReady: boolean;
 };
 
-export async function standardFlowFor(tenantId: string, seriesId: string): Promise<FlowGraph | null> {
-  const loaded = await loadSeriesContext(tenantId, seriesId);
-  if (!loaded) return null;
-  const sc = loaded.ctx.scenario;
-  return defaultFlow({
-    ...sc,
-    hasTrailer: Boolean(loaded.series.trailerUrl),
-    episodeCount: loaded.series.episodeCount,
-    texts: Object.fromEntries(Object.entries(loaded.ctx.texts).map(([k, v]) => [k, { ar: v.ar, en: v.en }])) as Parameters<typeof defaultFlow>[0]["texts"],
-  });
-}
+export { standardGraph as standardFlowFor };
 
 export async function loadBuilder(tenantId: string, seriesId: string, adminId: string): Promise<BuilderData | null> {
   const { data: s } = await db()
@@ -48,7 +39,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
 
   let { data: flow } = await db().from("flows").select("id, draft, draft_updated_at, published_version_id").eq("series_id", seriesId).maybeSingle();
   if (!flow) {
-    const draft = await standardFlowFor(tenantId, seriesId);
+    const draft = await standardGraph(tenantId, seriesId);
     const { data: created, error } = await db()
       .from("flows")
       .insert({ tenant_id: tenantId, series_id: seriesId, draft, draft_updated_by: adminId })
@@ -58,10 +49,11 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     flow = created;
   }
 
-  const [{ data: versions }, { data: assets }, { data: templates }] = await Promise.all([
+  const [{ data: versions }, { data: assets }, { data: templates }, ai] = await Promise.all([
     db().from("flow_versions").select("id, version, published_at, note, graph").eq("flow_id", flow!.id).order("version", { ascending: false }).limit(30),
     db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", tenantId).eq("series_id", seriesId).order("created_at", { ascending: false }),
     db().from("wa_templates").select("name, lang, meta_status, body").eq("tenant_id", tenantId).order("name"),
+    getAiSettings(tenantId),
   ]);
 
   const byName = new Map<string, TemplateInfo>();
@@ -93,5 +85,6 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     versions: (versions ?? []).map((v) => ({ id: v.id, version: v.version, publishedAt: v.published_at, note: v.note })),
     assets: (assets ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at })),
     templates: [...byName.values()],
+    aiReady: ai.connected && ai.enabled,
   };
 }

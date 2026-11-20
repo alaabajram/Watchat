@@ -2,9 +2,9 @@
 // Everything that touches the database or Meta goes through `BotDeps`, so the flow is easy to test
 // (see flow.test.ts) and easy to re-host for a partner brand.
 //
-// Messages follow the screens doc: W1 welcome+language · W2 trailer · W3/W4 episodes · W5 cliffhanger link
-// · W6 opt-in · W7 not for me · W12 menu · W13 device confirmed · W14 alerts stopped.
-// Texts come from copy.ts with admin overrides; the scenario switches come from the series row.
+// A series code starts the series' flow (Flow builder; the standard flow is published automatically
+// when none exists) and button taps move through it. Everything else here is shared replies:
+// menu, language, alerts, links, support, device confirmation, data deletion (texts: Shared replies).
 
 import { answer, startFlow, type FlowEnv, type RunResult } from "../flows/engine";
 import type { Condition, FlowGraph, Lang } from "../flows/types";
@@ -25,10 +25,7 @@ export type Series = {
   posterUrl: string | null;
   trailerUrl: string | null;
   episodeCount: number;
-  waEpisodeCount: number; // episodes sent inside the chat (default 3)
-  askLanguage: boolean; // scenario: ask Arabic / English subtitles first
-  sendTrailer: boolean; // scenario: send the trailer before episode 1
-  askOptIn: boolean; // scenario: ask for new-episode alerts after the link
+  waEpisodeCount: number; // episodes the standard flow sends inside the chat (default 3)
 };
 
 export type Clip = {
@@ -84,7 +81,7 @@ export interface BotDeps {
   /** Create a personal signed link and return its full URL. */
   mintLink(viewerId: string, series: Series, episodeNumber: number): Promise<string>;
   send(to: string, msg: OutMessage): Promise<void>;
-  /** The series' published flow (visual builder), or null to use the built-in scenario. */
+  /** The series' live flow; the standard flow is published automatically if none exists. Null only if the series is gone. */
   getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
   getFlowVersion(versionId: string): Promise<FlowGraph | null>;
   getFlowRun(viewerId: string): Promise<FlowRun | null>;
@@ -144,42 +141,31 @@ async function route(
         props: { code: series.code, source: msg.referral ? "ctwa_ad" : "organic", referral: msg.referral ?? null },
       });
       const flow = await deps.getPublishedFlow(series.id);
-      if (flow) {
-        await deps.track(viewer.id, "flow_started", { seriesId: series.id, props: { version: flow.versionId } });
-        const result = await startFlow(flow.graph, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
-        await saveRunResult(deps, viewer, series.id, flow.versionId, result);
-        return { seriesId: series.id, step: "flow", waEpisode: 0 };
+      if (!flow) {
+        await deps.send(to, { kind: "text", body: t("seriesNotFound") });
+        return null;
       }
-      if (!viewer.language && series.askLanguage) {
-        await sendLanguageChoice(to, series, deps);
-        return { seriesId: series.id, step: "lang", waEpisode: 0 };
-      }
-      const sc = await ctxFor(viewer, series, deps);
-      return startSeries(sc, series);
+      await deps.track(viewer.id, "flow_started", { seriesId: series.id, props: { version: flow.versionId } });
+      const result = await startFlow(flow.graph, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
+      await saveRunResult(deps, viewer, series.id, flow.versionId, result);
+      return { seriesId: series.id, step: "flow", waEpisode: 0 };
     }
 
     case "language": {
       await deps.setViewerLanguage(viewer.id, intent.lang);
       await deps.track(viewer.id, "language_set", { props: { language: intent.lang } });
-      const updated = await ctxFor({ ...viewer, language: intent.lang }, current, deps);
-      if (current && state.step === "lang") return startSeries(updated, current);
-      await sendMenu(updated);
+      await sendMenu(await ctxFor({ ...viewer, language: intent.lang }, current, deps));
       return null;
     }
 
     case "next_episode": {
+      // "Start" / "Next" on a message from before flows: send the viewer's link to where they are.
       if (!current) {
         await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
         return null;
       }
-      if (state.waEpisode >= 1) {
-        await deps.track(viewer.id, "wa_episode_done", { seriesId: current.id, episode: state.waEpisode });
-      }
-      if (state.waEpisode >= current.waEpisodeCount) {
-        await sendPlayerLink(c, current); // already past the chat episodes
-        return null;
-      }
-      return sendNextChatEpisode(c, current, state.waEpisode + 1);
+      await sendPlayerLink(c, current);
+      return null;
     }
 
     case "not_for_me": {
@@ -293,29 +279,6 @@ async function route(
   }
 }
 
-/** After the code (and language): trailer if the scenario wants one, otherwise straight to episode 1. */
-async function startSeries(c: Ctx, series: Series): Promise<ChatState> {
-  if (series.sendTrailer) {
-    await sendTrailer(c, series);
-    return { seriesId: series.id, step: "trailer", waEpisode: 0 };
-  }
-  return sendNextChatEpisode(c, series, 1);
-}
-
-/** Send chat episode n; after the last chat episode, the cliffhanger link and (optionally) the alerts question. */
-async function sendNextChatEpisode(c: Ctx, series: Series, n: number): Promise<ChatState> {
-  if (series.waEpisodeCount <= 0) {
-    await sendCliffhangerLink(c, series, 1);
-    return { seriesId: series.id, step: "linked", waEpisode: 0 };
-  }
-  await sendEpisode(c, series, n);
-  if (n < series.waEpisodeCount) return { seriesId: series.id, step: "episodes", waEpisode: n };
-
-  await sendCliffhangerLink(c, series, series.waEpisodeCount + 1);
-  if (series.askOptIn && (await c.deps.getOptIn(c.viewer.id)) === null) await sendOptInAsk(c);
-  return { seriesId: series.id, step: "linked", waEpisode: n };
-}
-
 // ---------------------------------------------------------------------------
 // Visual-builder flows
 // ---------------------------------------------------------------------------
@@ -411,59 +374,6 @@ async function sendLanguageChoice(to: string, series: Series | null, deps: BotDe
       { id: IDS.langEn, title: t("btnEnglishSubs") },
     ],
   });
-}
-
-/** W2 — trailer with Start / Not for me. */
-async function sendTrailer({ viewer, deps, lang, t }: Ctx, series: Series) {
-  await deps.send(viewer.waId, {
-    kind: "buttons",
-    body: t("trailerBody", { title: titleOf(series, lang) }),
-    ...(series.trailerUrl ? { header: { type: "video" as const, link: series.trailerUrl } } : {}),
-    buttons: [
-      { id: IDS.start, title: t("btnStartEp1") },
-      { id: IDS.notForMe, title: t("btnNotForMe") },
-    ],
-  });
-}
-
-/** W3 / W4 — one chat episode. Episodes before the last get Next / Not for me buttons. */
-async function sendEpisode({ viewer, deps, lang, t }: Ctx, series: Series, n: number) {
-  const clip = await deps.getClip(series.id, n);
-  const videoUrl = lang === "en" ? (clip?.videoUrlEn ?? clip?.videoUrlAr) : clip?.videoUrlAr;
-  const epTitle = (lang === "en" ? clip?.titleEn : clip?.titleAr) ?? titleOf(series, lang);
-  const caption = t("episodeCaption", { n, total: series.episodeCount, title: epTitle });
-  const missing = t("videoMissing", { n });
-
-  if (n >= series.waEpisodeCount) {
-    await deps.send(
-      viewer.waId,
-      videoUrl ? { kind: "video", link: videoUrl, caption } : { kind: "text", body: `${caption}\n${missing}` },
-    );
-  } else {
-    await deps.send(viewer.waId, {
-      kind: "buttons",
-      body: videoUrl ? caption : `${caption}\n${missing}`,
-      ...(videoUrl ? { header: { type: "video" as const, link: videoUrl } } : {}),
-      buttons: [
-        { id: IDS.next, title: t("btnNext") },
-        { id: IDS.notForMe, title: t("btnNotForMe") },
-      ],
-    });
-  }
-  await deps.track(viewer.id, "wa_episode_sent", { seriesId: series.id, episode: n });
-}
-
-/** W5 — personal link to the first web episode. */
-async function sendCliffhangerLink({ viewer, deps, t }: Ctx, series: Series, nextEp: number) {
-  const url = await deps.mintLink(viewer.id, series, nextEp);
-  await deps.send(viewer.waId, {
-    kind: "cta_url",
-    body: t("cliffhangerBody", { next: nextEp }),
-    buttonText: t("btnWatchEp", { next: nextEp }),
-    url,
-    ...(series.posterUrl ? { header: { type: "image" as const, link: series.posterUrl } } : {}),
-  });
-  await deps.track(viewer.id, "link_sent", { seriesId: series.id, episode: nextEp, props: { purpose: "cliffhanger" } });
 }
 
 /** W12 "Send me my link" — link to where the viewer left off. */

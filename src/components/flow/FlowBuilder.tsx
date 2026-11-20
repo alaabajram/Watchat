@@ -20,11 +20,12 @@ import {
   type Edge,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { checkFlow, loadVersion, publishFlow, saveFlowDraft, standardFlow, unpublishFlow } from "@/app/admin/flow-actions";
+import { checkFlow, loadVersion, publishFlow, saveFlowDraft, standardFlow } from "@/app/admin/flow-actions";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData } from "@/lib/flows/store";
 import { CARD_LABELS, portsOf, type FlowGraph, type NodeData, type NodeKind } from "@/lib/flows/types";
 import { validateFlow, type Issue } from "@/lib/flows/validate";
+import { AiPanel } from "./AiPanel";
 import { ADDABLE, CARD_STYLE, newCard } from "./cards";
 import { CardNode, type CardFlowNode } from "./CardNode";
 import { ChatPreview } from "./ChatPreview";
@@ -62,7 +63,8 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CardFlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<"cards" | "media">("cards");
+  const [tab, setTab] = useState<"cards" | "media" | "ai">("cards");
+  const [undo, setUndo] = useState<FlowGraph | null>(null);
   const [assets, setAssets] = useState(props.assets);
   const [published, setPublished] = useState(props.published);
   const [versions, setVersions] = useState(props.versions);
@@ -158,12 +160,12 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     if (n) flow.setCenter(n.position.x + 125, n.position.y + 100, { zoom: Math.max(flow.getZoom(), 0.9), duration: 300 });
   };
 
-  const replaceGraph = (g: FlowGraph) => {
+  const replaceGraph = (g: FlowGraph, opts: { fit?: boolean } = {}) => {
     const f = toFlow(g);
     setNodes(f.nodes);
     setEdges(f.edges);
     setSelected(null);
-    setTimeout(() => flow.fitView({ duration: 300 }), 50);
+    if (opts.fit !== false) setTimeout(() => flow.fitView({ duration: 300, maxZoom: 1 }), 50);
   };
 
   const selectedNode = nodes.find((n) => n.id === selected) ?? null;
@@ -196,7 +198,7 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
           {props.code} · {props.series.titleEn}
         </strong>
         <span className="muted" style={{ fontSize: 13 }}>
-          {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published · viewers get the built-in scenario"}
+          {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published yet · new chats get the standard flow"}
         </span>
         <span className="muted" style={{ fontSize: 13 }}>
           {saveState.busy ? "Saving…" : saveState.error ? `Save failed: ${saveState.error}` : dirty ? "Unsaved changes" : `Draft saved ${time(saveState.at)}`}
@@ -214,10 +216,6 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
               if (!confirm("Replace the draft with the standard scenario built from this series' settings and texts?")) return;
               const g = await standardFlow(props.seriesId);
               if (g) replaceGraph(g);
-            } else if (v === "unpublish") {
-              if (!confirm("Unpublish? New chats will use the built-in scenario until you publish again.")) return;
-              await unpublishFlow(props.seriesId);
-              setPublished(null);
             } else if (v) {
               if (!confirm("Load this version into the draft? Your current draft will be replaced (it isn't live until you publish).")) return;
               const g = await loadVersion(props.seriesId, v);
@@ -233,7 +231,6 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
             </option>
           ))}
           <option value="standard">Start from the standard scenario</option>
-          {published && <option value="unpublish">Unpublish</option>}
         </select>
         {props.canPublish && (
           <>
@@ -260,8 +257,26 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
             <button type="button" className={tab === "media" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("media")}>
               Media ({assets.length})
             </button>
+            <button type="button" className={tab === "ai" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("ai")}>
+              ✨ AI
+            </button>
           </div>
-          {tab === "cards" ? (
+          {tab === "ai" ? (
+            <AiPanel
+              seriesId={props.seriesId}
+              aiReady={props.aiReady}
+              graph={graph}
+              canUndo={Boolean(undo)}
+              onUndo={() => {
+                if (undo) replaceGraph(undo);
+                setUndo(null);
+              }}
+              onResult={(g) => {
+                setUndo(graph);
+                replaceGraph(g);
+              }}
+            />
+          ) : tab === "cards" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {ADDABLE.map((k) => (
                 <button

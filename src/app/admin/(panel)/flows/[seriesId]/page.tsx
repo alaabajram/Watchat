@@ -4,6 +4,7 @@ import { can, requireAdmin } from "@/lib/admin/auth";
 import { loadBuilder } from "@/lib/flows/store";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // Build with AI can take up to two AI calls
 
 export default async function FlowBuilderPage({ params }: { params: Promise<{ seriesId: string }> }) {
   const admin = await requireAdmin("bot");

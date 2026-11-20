@@ -1,81 +1,48 @@
-// Bot messages: edit every WhatsApp text, for all series or one series. Scenario switches live on each series page.
+// Shared replies: bot texts used outside series flows (menu, language change, alerts, links, support,
+// device confirmation, data deletion). Series chats themselves are edited in the Flow builder.
 
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
-import { COPY, COPY_KEYS } from "@/lib/bot/copy";
+import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
 import { db } from "@/lib/supabase";
 import { saveBotMessagesAction } from "../../bot-actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function BotPage({ searchParams }: { searchParams: Promise<{ series?: string; ok?: string; err?: string }> }) {
+export default async function SharedRepliesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("bot");
   const sp = await searchParams;
-  const seriesId = sp.series && /^[0-9a-f-]{36}$/.test(sp.series) ? sp.series : null;
-
-  const [{ data: seriesList }, { data: rows }] = await Promise.all([
-    db().from("series").select("id, code, title_en").eq("tenant_id", admin.tenantId).order("created_at"),
-    (() => {
-      const q = db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId);
-      return seriesId ? q.eq("series_id", seriesId) : q.is("series_id", null);
-    })(),
-  ]);
+  const { data: rows } = await db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId).is("series_id", null);
   const current = new Map((rows ?? []).map((r) => [`${r.key}.${r.lang}`, r.body as string]));
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Bot messages & scenarios</h1>
-        <Link className="btn" href={`/admin/bot/ai${seriesId ? `?series=${seriesId}` : ""}`}>
-          ✨ Build with AI
-        </Link>
-      </div>
+      <h1>Shared replies</h1>
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>
-          Edit what the WhatsApp bot says. Leave a field empty to use the default (shown in grey). Placeholders:{" "}
-          <code>{"{title}"}</code> series title · <code>{"{n}"}</code> episode · <code>{"{total}"}</code> episode count ·{" "}
-          <code>{"{next}"}</code> next episode. Buttons are limited to 20 characters by WhatsApp.
-        </p>
-        <p style={{ background: "#eff6ff", padding: 8, borderRadius: 6 }}>
-          Series with a published flow in the <Link href="/admin/flows">Flow builder</Link> use the texts on their flow cards. The texts here are used for the
-          menu, alerts, support and other shared replies, and for series without a published flow.
+          What the bot says outside a series&apos; chat flow: the menu, changing language, alerts on/off, &quot;send me my link&quot;, support, device
+          confirmation and data deletion. They&apos;re the same for every series.
         </p>
         <p className="muted" style={{ marginBottom: 0 }}>
-          The chat scenario (language question, trailer, number of chat episodes, alerts question) is set per series on its{" "}
-          <Link href="/admin/series">series page</Link>.
+          The chat for each series (welcome, trailer, episodes, cliffhanger link, alerts question) is edited on its cards in the{" "}
+          <Link href="/admin/flows">Flow builder</Link>. Leave a field empty to use the default (shown in grey). Placeholders: <code>{"{title}"}</code> series
+          title · <code>{"{n}"}</code> episode. Buttons are limited to 20 characters.
         </p>
       </div>
-      <form method="get" className="row card">
-        <label>
-          Editing texts for
-          <select name="series" defaultValue={seriesId ?? ""}>
-            <option value="">All series (defaults)</option>
-            {(seriesList ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                Only {s.code} · {s.title_en}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="secondary" style={{ alignSelf: "end" }}>
-          Switch
-        </button>
-      </form>
 
       <form action={saveBotMessagesAction}>
-        {seriesId && <input type="hidden" name="series_id" value={seriesId} />}
         <table className="card">
           <thead>
             <tr>
-              <th style={{ width: 220 }}>Message</th>
+              <th style={{ width: 220 }}>Reply</th>
               <th>Arabic</th>
               <th>English</th>
             </tr>
           </thead>
           <tbody>
-            {COPY_KEYS.map((key) => {
+            {SHARED_KEYS.map((key) => {
               const entry = COPY[key];
               const isButton = entry.kind === "button";
               return (
@@ -101,7 +68,7 @@ export default async function BotPage({ searchParams }: { searchParams: Promise<
           </tbody>
         </table>
         <p>
-          <button type="submit">Save texts</button>
+          <button type="submit">Save replies</button>
         </p>
       </form>
     </>

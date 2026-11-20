@@ -1,5 +1,6 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import { ensurePublishedFlow } from "../flows/standard";
 import type { FlowGraph } from "../flows/types";
 import { sendNamedTemplate } from "../messaging/runner";
 import { hmacHex } from "../crypto";
@@ -21,14 +22,11 @@ export type SeriesRow = {
   poster_url: string | null;
   trailer_video_url: string | null;
   wa_episode_count: number;
-  ask_language: boolean;
-  send_trailer: boolean;
-  ask_opt_in: boolean;
   episodes: { count: number }[] | null;
 };
 
 export const SERIES_SELECT =
-  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, ask_language, send_trailer, ask_opt_in, episodes(count)";
+  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, episodes(count)";
 
 export function toSeries(row: SeriesRow): Series {
   return {
@@ -40,9 +38,6 @@ export function toSeries(row: SeriesRow): Series {
     trailerUrl: row.trailer_video_url,
     waEpisodeCount: row.wa_episode_count,
     episodeCount: row.episodes?.[0]?.count ?? 0,
-    askLanguage: row.ask_language,
-    sendTrailer: row.send_trailer,
-    askOptIn: row.ask_opt_in,
   };
 }
 
@@ -256,10 +251,7 @@ export function createSupabaseDeps(): BotDeps {
     },
 
     async getPublishedFlow(seriesId) {
-      const { data: flow } = await db().from("flows").select("published_version_id").eq("series_id", seriesId).maybeSingle();
-      if (!flow?.published_version_id) return null;
-      const graph = await this.getFlowVersion(flow.published_version_id);
-      return graph ? { versionId: flow.published_version_id as string, graph } : null;
+      return ensurePublishedFlow(await currentTenantId(), seriesId);
     },
 
     async getFlowVersion(versionId) {

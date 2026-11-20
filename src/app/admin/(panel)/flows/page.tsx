@@ -32,8 +32,8 @@ export default async function FlowsPage() {
           video cuts and images to the series media library or straight onto a card.
         </p>
         <p className="muted" style={{ marginBottom: 0 }}>
-          Until a series&apos; flow is published, its chats use the built-in scenario (Bot messages & scenarios). Publishing affects new chats; viewers already
-          in the flow continue on the version they started.
+          A series without a published flow gets the standard flow (language, trailer, chat episodes, web link, alerts), published automatically on its
+          first chat. Publishing affects new chats; viewers already in the flow continue on the version they started.
         </p>
       </div>
       <table className="card">
@@ -57,7 +57,7 @@ export default async function FlowsPage() {
                   <strong>{s.code}</strong> · {s.title_en} <span dir="rtl">· {s.title_ar}</span>
                 </td>
                 <td>{s.status}</td>
-                <td>{v ? `Live v${v.version}` : f ? "Draft only" : "Not started"}</td>
+                <td>{v ? `Live v${v.version}` : "Standard flow"}</td>
                 <td>{a ? `${a.input} waiting for a tap · ${a.wait} waiting for time` : "—"}</td>
                 <td>
                   <Link className="btn" href={`/admin/flows/${s.id}`}>
