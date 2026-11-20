@@ -231,3 +231,64 @@ a {
   background: var(--brand);
   color: #fff;
 }
+
+/* ------------------------------------------------------------------ */
+/* Admin (plain functional styling until the design system arrives)  */
+/* ------------------------------------------------------------------ */
+.admin {
+  --a-bg: #f7f7f9;
+  --a-surface: #ffffff;
+  --a-text: #18181b;
+  --a-muted: #6b7280;
+  --a-line: #e5e7eb;
+  --a-brand: #e4572e;
+  min-height: 100dvh;
+  background: var(--a-bg);
+  color: var(--a-text);
+  color-scheme: light;
+  font-size: 14px;
+}
+.admin a { color: #1d4ed8; }
+.admin-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100dvh; }
+.admin-nav { background: #111827; color: #e5e7eb; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+.admin-nav a { color: #e5e7eb; text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+.admin-nav a:hover { background: #1f2937; }
+.admin-nav .brand { font-weight: 700; font-size: 16px; padding: 8px 10px 16px; }
+.admin-nav .who { margin-top: auto; font-size: 12px; color: #9ca3af; padding: 8px 10px; }
+.admin-main { padding: 24px 32px; max-width: 1200px; }
+.admin h1 { margin: 0 0 16px; font-size: 22px; }
+.admin h2 { margin: 24px 0 8px; font-size: 16px; }
+.admin .card { background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.admin table { width: 100%; border-collapse: collapse; background: var(--a-surface); }
+.admin th, .admin td { text-align: start; padding: 8px 10px; border-bottom: 1px solid var(--a-line); vertical-align: top; }
+.admin th { font-weight: 600; color: var(--a-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.admin input, .admin select, .admin textarea {
+  font: inherit; padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: var(--a-text); max-width: 100%;
+}
+.admin textarea { width: 100%; min-height: 64px; }
+.admin label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 13px; }
+.admin label.inline { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+.admin .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.admin .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.admin .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.admin .muted { color: var(--a-muted); }
+.admin button, .admin .abtn {
+  font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid transparent;
+  background: var(--a-brand); color: #fff; cursor: pointer; text-decoration: none; display: inline-block;
+}
+.admin button.secondary, .admin .abtn.secondary { background: #fff; color: var(--a-text); border-color: #d1d5db; }
+.admin button.danger { background: #b91c1c; }
+.admin .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #eef2ff; color: #3730a3; }
+.admin .badge.live, .admin .badge.APPROVED, .admin .badge.sent, .admin .badge.on { background: #dcfce7; color: #166534; }
+.admin .badge.draft, .admin .badge.off { background: #f3f4f6; color: #374151; }
+.admin .badge.in_review, .admin .badge.PENDING, .admin .badge.scheduled, .admin .badge.sending { background: #fef9c3; color: #854d0e; }
+.admin .badge.REJECTED, .admin .badge.failed, .admin .badge.cancelled, .admin .badge.archived { background: #fee2e2; color: #991b1b; }
+.flash { padding: 10px 14px; border-radius: 8px; margin: 0 0 16px; }
+.flash-ok { background: #dcfce7; color: #166534; }
+.flash-err { background: #fee2e2; color: #991b1b; }
+.admin .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.admin .kpi { background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 12px; padding: 14px; }
+.admin .kpi strong { display: block; font-size: 24px; }
+.admin .bar { height: 10px; background: var(--a-brand); border-radius: 6px; }
+.admin-auth { display: grid; place-items: center; min-height: 100dvh; }
+.admin-auth form { width: 360px; display: flex; flex-direction: column; gap: 12px; }

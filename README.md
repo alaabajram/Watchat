@@ -15,7 +15,7 @@ This repo is the **prototype starter**: the WhatsApp bot (welcome → language �
 | WhatsApp | **Meta WhatsApp Cloud API**, direct (no BSP) |
 | Web video | **Cloudflare Stream** (adaptive HLS, iframe player) |
 | Chat video | Small MP4 files (H.264 + AAC, under 16 MB) at public URLs, e.g. a Supabase Storage public bucket |
-| Payments | Tap Payments — *not wired yet* (week 5 of the plan) |
+| Payments | Tap Payments hosted checkout (Apple Pay, Google Pay, cards, mada), AED / SAR |
 
 ## How it works
 
@@ -85,13 +85,38 @@ To receive webhooks locally, expose port 3000 with a tunnel (e.g. `cloudflared t
 - Events store a keyed hash of the phone number, never the number itself.
 - **Before launch:** encrypt `viewers.phone_e164` at rest, switch to a System User token for Meta, and sign Cloudflare Stream playback URLs.
 
+## Admin panel (`/admin`)
+
+| Area | What the team can do | Roles |
+| --- | --- | --- |
+| Dashboard | Funnel by series, period and traffic source; episode-1 completion; paywall conversion; revenue; WhatsApp sends | all |
+| Series & episodes | Create series, edit titles/synopsis/poster/trailer, **chat scenario** (language question, trailer, chat episodes, alerts question), free episodes, paywall, coin price, season pass; upload web videos to Cloudflare Stream and WhatsApp clips to storage; licences; family-safe review; publish gate | owner, content |
+| Bot messages | Edit every WhatsApp text and button in Arabic and English, for all series or one series | owner, content, marketing |
+| Templates | Draft, submit to Meta, sync approval status; starter templates (resume, new series, win-back) | owner, marketing |
+| Sequences | Timed follow-ups: stopped mid-series, inactive, finished series — opted-in only | owner, marketing |
+| Campaigns | Broadcasts to segments (series, language, country, paid, inactive/active days) with audience size and cost estimate, scheduled in Gulf time | owner, marketing |
+| Viewers | Look up by number; progress, wallet, orders, consent history, devices, messages; grant coins, resend link, sign out devices, delete personal data | owner, support (finance: view) |
+| Pricing | Coin packs in AED and SAR | owner, finance |
+| Team / Audit log | Add people with roles, disable access; every change is logged | owner (audit: owner, finance) |
+
+**First sign-in:** set `ADMIN_SETUP_TOKEN` in Vercel, open `/admin/setup`, create the owner account. Invite the rest of the team from **Team** (they get a one-time password and must change it).
+
+## Viewer sign-in, memory and money
+- The WhatsApp link signs the viewer in on that device (HttpOnly cookie, 90 days sliding, max 3 devices). No forms.
+- Progress (position in each episode), unlocked episodes, season passes and coins are tied to the WhatsApp number and follow the viewer across devices.
+- Spending needs a **trusted device**: a link opened within 30 minutes of being sent, or a browser confirmed by sending `CONFIRM 123456` from the viewer's own WhatsApp number. A forwarded link can watch free episodes but can't spend.
+- All money moves inside Postgres functions (`unlock_episode`, `fulfil_order`, `grant_coins`): atomic, idempotent, append-only ledger. Prices always come from the database.
+- Tap payments are confirmed by re-reading the charge from Tap's API and matching amount and currency to our order.
+
+## Messaging rules (enforced in code)
+Opted-in viewers only · approved templates only · no marketing 22:00–09:00 Gulf time · max one marketing message per viewer per 20 hours · each sequence moment sent once (claimed in the database before sending).
+
 ## Next steps (from the delivery plan)
-- [ ] Player: vertical swipe, autoplay next, watch-time heartbeat (`progress.position_s`, `episode_completed` at 90%)
-- [ ] First-visit sheet (18+ and language), settings, share sheet
-- [ ] Wallet: coin store, Tap checkout (Apple Pay, Google Pay, cards, mada), unlock with coins, season pass
-- [ ] "Confirm in WhatsApp" for spending on a new device
-- [ ] Resume, next-series and win-back templates (opted-in viewers only) on a schedule
-- [ ] Admin panel: series/episode upload, review and licence gate, pricing, templates, campaigns, viewer lookup, funnel dashboard
+- [x] Player (swipe, autoplay next, resume, progress), wallet, coin store, Tap checkout, device confirmation
+- [x] Admin panel, editable bot, scenarios, sequences, campaigns
+- [ ] Apply the design team's UI (screens doc P1–P16 and admin)
+- [ ] First-visit sheet (18+ confirmation) and share sheet
+- [ ] Nonce-based CSP; encrypt `viewers.phone_e164` at rest; signed Cloudflare Stream URLs
 - [ ] Direct carrier billing (phase 2)
 
 Planning docs: architecture plan, screens & buttons, and the journey whiteboard are in the Watchat project.
