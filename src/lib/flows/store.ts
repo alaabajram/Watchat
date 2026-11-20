@@ -2,15 +2,18 @@
 // scenario the first time it's opened.
 
 import { getAiSettings } from "../ai/settings";
+import { listTemplates, type TemplateInfo } from "../messaging/template-store";
 import { db } from "../supabase";
 import type { PreviewSeries } from "./preview";
 import { sanitizeGraph } from "./sanitize";
 import { standardGraph } from "./standard";
 import type { FlowGraph } from "./types";
 
+export type { TemplateInfo };
 export type Asset = { id: string; kind: "image" | "video"; name: string; url: string; sizeBytes: number | null; createdAt: string };
+export type SavedCard = { id: string; name: string; cardCount: number; block: FlowGraph };
 export type VersionInfo = { id: string; version: number; publishedAt: string; note: string | null };
-export type TemplateInfo = { name: string; approved: boolean; status: string; bodyAr: string | null };
+
 
 export type BuilderData = {
   seriesId: string;
@@ -24,7 +27,15 @@ export type BuilderData = {
   assets: Asset[];
   templates: TemplateInfo[];
   aiReady: boolean;
+  myCards: SavedCard[];
 };
+
+export async function listMyCards(tenantId: string): Promise<SavedCard[]> {
+  const { data } = await db().from("saved_cards").select("id, name, card_count, block").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(200);
+  return (data ?? [])
+    .map((r) => ({ id: r.id as string, name: r.name as string, cardCount: r.card_count as number, block: sanitizeGraph(r.block) }))
+    .filter((c): c is SavedCard => Boolean(c.block));
+}
 
 export { standardGraph as standardFlowFor };
 
@@ -49,21 +60,14 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     flow = created;
   }
 
-  const [{ data: versions }, { data: assets }, { data: templates }, ai] = await Promise.all([
+  const [{ data: versions }, { data: assets }, templates, ai, myCards] = await Promise.all([
     db().from("flow_versions").select("id, version, published_at, note, graph").eq("flow_id", flow!.id).order("version", { ascending: false }).limit(30),
     db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", tenantId).eq("series_id", seriesId).order("created_at", { ascending: false }),
-    db().from("wa_templates").select("name, lang, meta_status, body").eq("tenant_id", tenantId).order("name"),
+    listTemplates(tenantId),
     getAiSettings(tenantId),
+    listMyCards(tenantId),
   ]);
 
-  const byName = new Map<string, TemplateInfo>();
-  for (const t of templates ?? []) {
-    const cur = byName.get(t.name) ?? { name: t.name, approved: false, status: t.meta_status, bodyAr: null };
-    if (t.meta_status === "APPROVED") cur.approved = true;
-    if (t.lang === "ar") cur.bodyAr = t.body;
-    cur.status = cur.approved ? "APPROVED" : t.meta_status;
-    byName.set(t.name, cur);
-  }
   const pub = (versions ?? []).find((v) => v.id === flow!.published_version_id);
   const eps = (s.episodes ?? []) as { number: number; wa_video_url_ar: string | null; wa_video_url_en: string | null }[];
 
@@ -84,7 +88,8 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     published: pub ? { versionId: pub.id, version: pub.version, graph: sanitizeGraph(pub.graph) ?? { v: 1, nodes: [], edges: [] } } : null,
     versions: (versions ?? []).map((v) => ({ id: v.id, version: v.version, publishedAt: v.published_at, note: v.note })),
     assets: (assets ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at })),
-    templates: [...byName.values()],
+    templates,
     aiReady: ai.connected && ai.enabled,
+    myCards,
   };
 }

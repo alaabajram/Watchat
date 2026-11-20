@@ -17,7 +17,7 @@ export interface FlowEnv {
   link(episode: number | "resume"): Promise<{ url: string; episode: number }>;
   clip(episode: number, lang: Lang): Promise<{ url: string | null; title: string | null }>;
   mediaUrl(ref: MediaRef): string | null;
-  template(name: string): Promise<"sent" | "skipped" | "failed">;
+  template(name: string, nodeId: string): Promise<"sent" | "skipped" | "failed">;
   check(condition: Condition): Promise<boolean>;
   suggest(): Promise<void>;
   /** False once 24 h have passed since the viewer's last message: only templates may be sent. */
@@ -169,7 +169,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
       return next((await env.check(d.condition)) ? "yes" : "no");
 
     case "template":
-      await env.template(d.name);
+      await env.template(d.name, node.id);
       return next();
 
     case "suggest":

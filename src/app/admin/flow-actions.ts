@@ -3,10 +3,13 @@
 // Flow builder actions: save draft, publish (after checks), versions, and the series media library.
 
 import { agentContext, draftFlowWithAi, type FlowDraftResult } from "@/lib/ai/flow-agent";
-import { audit, requireAdmin } from "@/lib/admin/auth";
+import { audit, can, requireAdmin } from "@/lib/admin/auth";
+import { addStarterTemplates, createTemplate, listTemplates, syncTemplateStatuses, type TemplateInfo } from "@/lib/messaging/template-store";
+import type { TemplateDraft } from "@/lib/whatsapp/template-rules";
+import { wabaConfigured } from "@/lib/whatsapp/templates";
 import { randomToken } from "@/lib/crypto";
-import { assetIdsIn, sanitizeGraph } from "@/lib/flows/sanitize";
-import { loadBuilder, standardFlowFor, type Asset } from "@/lib/flows/store";
+import { assetIdsIn, sanitizeBlock, sanitizeGraph } from "@/lib/flows/sanitize";
+import { listMyCards, loadBuilder, standardFlowFor, type Asset, type SavedCard } from "@/lib/flows/store";
 import { allow } from "@/lib/security/rate-limit";
 import type { FlowGraph } from "@/lib/flows/types";
 import { hasErrors, validateFlow, type Issue } from "@/lib/flows/validate";
@@ -99,6 +102,82 @@ export async function aiDraftFlow(seriesId: string, request: string, mode: "chan
   const result = await draftFlowWithAi({ tenantId: admin.tenantId, adminId: admin.id, ctx: agentContext(builder), request: ask, current: cur });
   if (result.ok) await audit(admin, "flow.ai_draft", "series", seriesId, { mode, cards: result.graph.nodes.length, errors: result.errors.length });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// My cards: reusable cards and groups of connected cards, shared by every series of the label
+// ---------------------------------------------------------------------------
+
+export async function saveMyCards(name: string, block: unknown): Promise<{ ok: boolean; cards: SavedCard[]; message: string }> {
+  const admin = await requireAdmin("bot");
+  const clean = sanitizeBlock(block);
+  const label = String(name ?? "").trim().slice(0, 80);
+  if (!label) return { ok: false, cards: await listMyCards(admin.tenantId), message: "Give it a name." };
+  if (!clean) return { ok: false, cards: await listMyCards(admin.tenantId), message: "Select one or more cards (not Start) to save." };
+  const { error } = await db().from("saved_cards").insert({ tenant_id: admin.tenantId, name: label, block: clean, card_count: clean.nodes.length, created_by: admin.id });
+  if (!error) await audit(admin, "my_cards.saved", "saved_card", null, { name: label, cards: clean.nodes.length });
+  return { ok: !error, cards: await listMyCards(admin.tenantId), message: error ? error.message : `Saved "${label}" to My cards.` };
+}
+
+export async function renameMyCard(id: string, name: string): Promise<SavedCard[]> {
+  const admin = await requireAdmin("bot");
+  const label = String(name ?? "").trim().slice(0, 80);
+  if (UUID.test(id) && label) await db().from("saved_cards").update({ name: label, updated_at: new Date().toISOString() }).eq("tenant_id", admin.tenantId).eq("id", id);
+  return listMyCards(admin.tenantId);
+}
+
+export async function deleteMyCard(id: string): Promise<SavedCard[]> {
+  const admin = await requireAdmin("bot");
+  if (UUID.test(id)) {
+    await db().from("saved_cards").delete().eq("tenant_id", admin.tenantId).eq("id", id);
+    await audit(admin, "my_cards.deleted", "saved_card", id);
+  }
+  return listMyCards(admin.tenantId);
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp templates from the Template card (needs the Messaging permission, like the templates page)
+// ---------------------------------------------------------------------------
+
+type TemplatesResult = { ok: boolean; templates: TemplateInfo[]; message?: string; name?: string };
+const NO_MESSAGING = "Creating templates needs the Messaging permission (owner or marketing). Ask them to add it on the WhatsApp templates page.";
+
+export async function createTemplateFromBuilder(draft: TemplateDraft): Promise<TemplatesResult> {
+  const admin = await requireAdmin("bot");
+  if (!can(admin, "messaging")) return { ok: false, templates: await listTemplates(admin.tenantId), message: NO_MESSAGING };
+  const d: TemplateDraft = {
+    title: String(draft?.title ?? "").slice(0, 80),
+    category: draft?.category === "utility" ? "utility" : "marketing",
+    ar: { body: String(draft?.ar?.body ?? "").slice(0, 1100), button: String(draft?.ar?.button ?? "").slice(0, 40) },
+    en: draft?.en ? { body: String(draft.en.body ?? "").slice(0, 1100), button: String(draft.en.button ?? "").slice(0, 40) } : null,
+  };
+  const r = await createTemplate(admin.tenantId, d);
+  const templates = await listTemplates(admin.tenantId);
+  if (!r.ok) return { ok: false, templates, message: r.errors.join(" ") };
+  await audit(admin, "template.created", "wa_template", r.name, { from: "flow_builder", category: d.category });
+  const where = wabaConfigured() ? "sent to Meta for approval (usually minutes, sometimes a few hours)" : "saved as a draft (set WHATSAPP_WABA_ID in Vercel to submit to Meta)";
+  return { ok: true, templates, name: r.name, message: r.problems.length ? r.problems.join(" ") : `Template "${r.name}" ${where}.` };
+}
+
+export async function addStarterTemplatesFromBuilder(): Promise<TemplatesResult> {
+  const admin = await requireAdmin("bot");
+  if (!can(admin, "messaging")) return { ok: false, templates: await listTemplates(admin.tenantId), message: NO_MESSAGING };
+  const problems = await addStarterTemplates(admin.tenantId);
+  await audit(admin, "templates.starters_added", "wa_templates", null, { from: "flow_builder" });
+  return { ok: !problems.length, templates: await listTemplates(admin.tenantId), message: problems.length ? problems.join(" ") : "3 starter templates added and sent to Meta for approval." };
+}
+
+export async function refreshTemplates(): Promise<TemplatesResult> {
+  const admin = await requireAdmin("bot");
+  let message: string | undefined;
+  if (wabaConfigured()) {
+    try {
+      await syncTemplateStatuses(admin.tenantId);
+    } catch (e) {
+      message = e instanceof Error ? e.message : "Couldn't reach Meta.";
+    }
+  }
+  return { ok: !message, templates: await listTemplates(admin.tenantId), message: message ?? "Status updated from Meta." };
 }
 
 // ---------------------------------------------------------------------------

@@ -18,6 +18,10 @@ export type PreviewSeries = {
   clips: Record<number, { ar: string | null; en: string | null }>;
 };
 
+/** A template as the preview shows it ({{1}} = series title, {{2}} = episode). */
+export type PreviewTemplate = { approved: boolean; ar: { body: string; button: string | null } | null; en: { body: string; button: string | null } | null };
+export type PreviewTemplates = Record<string, PreviewTemplate>;
+
 export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean };
 
 /** `items` is a fresh array after every step (handy for React state); the env writes to `sink`. */
@@ -28,7 +32,7 @@ export type PreviewSession = {
   sink: { items: PreviewItem[] };
 };
 
-export function previewEnv(series: PreviewSeries, viewer: SampleViewer, templates: Record<string, string>, sink: { items: PreviewItem[] }): FlowEnv {
+export function previewEnv(series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, sink: { items: PreviewItem[] }): FlowEnv {
   let clock = Date.parse("2026-01-01T10:00:00Z");
   const state = { ...viewer };
   const env: FlowEnv = {
@@ -52,9 +56,22 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
     },
     clip: async (n, l) => ({ url: series.clips[n]?.[l] ?? series.clips[n]?.ar ?? null, title: null }),
     mediaUrl: (ref: MediaRef) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
-    template: async (name) => {
-      sink.items.push({ from: "system", text: `Template “${name}”${templates[name] ? `: ${templates[name]}` : ""}` });
-      return "sent";
+    template: async (name, nodeId) => {
+      const t = templates[name];
+      const lang = env.lang;
+      const v = t ? (t[lang] ?? t.ar ?? t.en) : null;
+      if (!t || !v) {
+        sink.items.push({ from: "system", text: name ? `Template “${name}” doesn't exist yet.` : "Template card: no template picked.", nodeId });
+        return "skipped";
+      }
+      if (!t.approved) sink.items.push({ from: "system", text: `Template “${name}” · waiting for Meta approval (skipped until approved)`, nodeId });
+      const body = v.body.replace(/\{\{1\}\}/g, env.title(lang)).replace(/\{\{2\}\}/g, String(Math.max(state.reachedEpisode, 1)));
+      sink.items.push({
+        from: "bot",
+        nodeId,
+        msg: v.button ? { kind: "cta_url", body, buttonText: v.button, url: "https://watchat.pro/w/your-personal-link" } : { kind: "text", body },
+      });
+      return t.approved ? "sent" : "skipped";
     },
     check: async (c: Condition) => {
       switch (c.check) {
@@ -98,7 +115,7 @@ export function formatMinutes(m: number): string {
   return `${m} minute${m === 1 ? "" : "s"}`;
 }
 
-export async function previewStart(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: Record<string, string>, code: string): Promise<PreviewSession> {
+export async function previewStart(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string): Promise<PreviewSession> {
   const sink = { items: [{ from: "viewer", text: code }] as PreviewItem[] };
   const env = previewEnv(series, viewer, templates, sink);
   const result = await startFlow(g, env);

@@ -4,6 +4,7 @@ import { defaultFlow } from "./defaults";
 import { previewSkipWait, previewStart, previewTap, type PreviewSeries, type SampleViewer } from "./preview";
 import { buttonReplyId, parseButtonReplyId, type FlowGraph } from "./types";
 import { validateFlow } from "./validate";
+import { sanitizeBlock, sanitizeGraph } from "./sanitize";
 
 const texts = Object.fromEntries(COPY_KEYS.map((k) => [k, { ar: COPY[k].ar, en: COPY[k].en }])) as Record<CopyKey, { ar: string; en: string }>;
 const series: PreviewSeries = {
@@ -117,5 +118,24 @@ describe("flows", () => {
   it("encodes button replies so old buttons still route", () => {
     expect(parseButtonReplyId(buttonReplyId("ab12cd", "yes"))).toEqual({ nodeId: "ab12cd", port: "yes" });
     expect(parseButtonReplyId("ep:next")).toBeNull();
+  });
+
+  it("keeps card names and saves My cards blocks without Start, relative to the top-left card", () => {
+    const g = std();
+    const named = { ...g, nodes: g.nodes.map((n, i) => (i === 2 ? { ...n, name: "Trailer hook" } : n)) };
+    expect(sanitizeGraph(named)?.nodes[2].name).toBe("Trailer hook");
+
+    const pick = named.nodes.slice(0, 4); // Start + 3 cards
+    const ids = new Set(pick.map((n) => n.id));
+    const block = sanitizeBlock({ v: 1, nodes: pick, edges: named.edges.filter((e) => ids.has(e.source)) })!;
+    expect(block.nodes.some((n) => n.data.kind === "start")).toBe(false);
+    expect(block.nodes).toHaveLength(3);
+    expect(Math.min(...block.nodes.map((n) => n.position.x))).toBe(0);
+    expect(Math.min(...block.nodes.map((n) => n.position.y))).toBe(0);
+    // Only arrows between saved cards are kept
+    const kept = new Set(block.nodes.map((n) => n.id));
+    expect(block.edges.every((e) => kept.has(e.source) && kept.has(e.target))).toBe(true);
+    expect(block.nodes.find((n) => n.name === "Trailer hook")).toBeTruthy();
+    expect(sanitizeBlock({ v: 1, nodes: [named.nodes[0]], edges: [] })).toBeNull(); // Start alone can't be saved
   });
 });

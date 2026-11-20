@@ -3,6 +3,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/crypto";
 import { runFlowWaits } from "@/lib/flows/runner";
+import { syncTemplateStatuses } from "@/lib/messaging/template-store";
+import { currentTenantId } from "@/lib/supabase";
+import { wabaConfigured } from "@/lib/whatsapp/templates";
 import { runMessaging } from "@/lib/messaging/runner";
 
 export const runtime = "nodejs";
@@ -15,8 +18,17 @@ export async function GET(req: NextRequest) {
   if (!secret || !safeEqual(auth, `Bearer ${secret}`)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+  // Keep template approval status fresh so flows and the builder see approvals without a manual sync.
+  let templates: number | string = "skipped";
+  if (wabaConfigured()) {
+    try {
+      templates = await syncTemplateStatuses(await currentTenantId());
+    } catch (e) {
+      templates = e instanceof Error ? e.message : "sync failed";
+    }
+  }
   const flows = await runFlowWaits();
   const summary = await runMessaging();
-  console.log("[cron] messaging", JSON.stringify({ flows, ...summary }));
-  return NextResponse.json({ flows, ...summary });
+  console.log("[cron] messaging", JSON.stringify({ templates, flows, ...summary }));
+  return NextResponse.json({ templates, flows, ...summary });
 }

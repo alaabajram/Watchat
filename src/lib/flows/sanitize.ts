@@ -84,7 +84,8 @@ export function sanitizeGraph(input: unknown): FlowGraph | null {
     const nd = data(n.data);
     const p = obj(n.position);
     if (!nid || !nd || nodes.some((x) => x.id === nid)) continue;
-    nodes.push({ id: nid, position: { x: num(p.x, -100000, 100000, 0), y: num(p.y, -100000, 100000, 0) }, data: nd });
+    const name = str(n.name, 60).trim();
+    nodes.push({ id: nid, position: { x: num(p.x, -100000, 100000, 0), y: num(p.y, -100000, 100000, 0) }, data: nd, ...(name ? { name } : {}) });
   }
   const ids = new Set(nodes.map((n) => n.id));
   const edges: FlowEdge[] = [];
@@ -99,6 +100,22 @@ export function sanitizeGraph(input: unknown): FlowGraph | null {
     edges.push({ id: eid, source, sourceHandle: handle, target });
   }
   return { v: 1, nodes, edges };
+}
+
+/** A saved "My cards" block: no Start card, at most 30 cards, positions relative to the top-left card. */
+export function sanitizeBlock(input: unknown): FlowGraph | null {
+  const g = sanitizeGraph(input);
+  if (!g) return null;
+  const nodes = g.nodes.filter((n) => n.data.kind !== "start").slice(0, 30);
+  if (!nodes.length) return null;
+  const ids = new Set(nodes.map((n) => n.id));
+  const minX = Math.min(...nodes.map((n) => n.position.x));
+  const minY = Math.min(...nodes.map((n) => n.position.y));
+  return {
+    v: 1,
+    nodes: nodes.map((n) => ({ ...n, position: { x: n.position.x - minX, y: n.position.y - minY } })),
+    edges: g.edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
+  };
 }
 
 /** Media assets a flow uses (for the library's "used in" and to block deleting them). */

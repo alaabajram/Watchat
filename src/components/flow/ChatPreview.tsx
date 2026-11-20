@@ -5,7 +5,7 @@
 // Change the sample viewer to see what a returning viewer, an English viewer, etc. would get.
 
 import { useEffect, useRef, useState } from "react";
-import { previewSkipWait, previewStart, previewTap, type PreviewItem, type PreviewSeries, type PreviewSession, type SampleViewer } from "@/lib/flows/preview";
+import { previewSkipWait, previewStart, previewTap, type PreviewItem, type PreviewSeries, type PreviewSession, type PreviewTemplates, type SampleViewer } from "@/lib/flows/preview";
 import { parseButtonReplyId, type FlowGraph, type Lang } from "@/lib/flows/types";
 import type { OutMessage } from "@/lib/whatsapp/messages";
 
@@ -14,13 +14,13 @@ type Props = {
   graph: FlowGraph;
   logicKey: string;
   series: PreviewSeries;
-  templates: Record<string, string>;
+  templates: PreviewTemplates;
   code: string;
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
 };
 
-async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: Record<string, string>, code: string, path: Tap[]) {
+async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string, path: Tap[]) {
   let s = await previewStart(g, series, viewer, templates, code);
   const kept: Tap[] = [];
   for (const t of path) {

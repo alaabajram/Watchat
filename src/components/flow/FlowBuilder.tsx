@@ -20,9 +20,9 @@ import {
   type Edge,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { checkFlow, loadVersion, publishFlow, saveFlowDraft, standardFlow } from "@/app/admin/flow-actions";
+import { checkFlow, deleteMyCard, loadVersion, publishFlow, renameMyCard, saveFlowDraft, saveMyCards, standardFlow } from "@/app/admin/flow-actions";
 import { newId } from "@/lib/flows/defaults";
-import type { BuilderData } from "@/lib/flows/store";
+import type { BuilderData, SavedCard } from "@/lib/flows/store";
 import { CARD_LABELS, portsOf, type FlowGraph, type NodeData, type NodeKind } from "@/lib/flows/types";
 import { validateFlow, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
@@ -37,7 +37,7 @@ const edgeDefaults = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowCl
 
 function toFlow(g: FlowGraph): { nodes: CardFlowNode[]; edges: Edge[] } {
   return {
-    nodes: g.nodes.map((n) => ({ id: n.id, type: "card", position: n.position, deletable: n.data.kind !== "start", data: { card: n.data, thumb: null, errors: 0, warnings: 0 } })),
+    nodes: g.nodes.map((n) => ({ id: n.id, type: "card", position: n.position, deletable: n.data.kind !== "start", data: { card: n.data, name: n.name, thumb: null, errors: 0, warnings: 0 } })),
     edges: g.edges.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target, ...edgeDefaults })),
   };
 }
@@ -45,7 +45,7 @@ function toFlow(g: FlowGraph): { nodes: CardFlowNode[]; edges: Edge[] } {
 function toGraph(nodes: CardFlowNode[], edges: Edge[]): FlowGraph {
   return {
     v: 1,
-    nodes: nodes.map((n) => ({ id: n.id, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data: n.data.card })),
+    nodes: nodes.map((n) => ({ id: n.id, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data: n.data.card, ...(n.data.name?.trim() ? { name: n.data.name.trim() } : {}) })),
     edges: edges.filter((e) => e.sourceHandle).map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle!, target: e.target })),
   };
 }
@@ -66,6 +66,9 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   const [tab, setTab] = useState<"cards" | "media" | "ai">("cards");
   const [undo, setUndo] = useState<FlowGraph | null>(null);
   const [assets, setAssets] = useState(props.assets);
+  const [templates, setTemplates] = useState(props.templates);
+  const [myCards, setMyCards] = useState<SavedCard[]>(props.myCards);
+  const [blockName, setBlockName] = useState("");
   const [published, setPublished] = useState(props.published);
   const [versions, setVersions] = useState(props.versions);
   const [saveState, setSaveState] = useState<{ at: string | null; busy: boolean; error?: string }>({ at: props.draftUpdatedAt, busy: false });
@@ -81,11 +84,21 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   const savedKey = useRef(JSON.stringify(props.draft));
   const dirty = fullKey !== savedKey.current;
 
-  const templateBodies = useMemo(() => Object.fromEntries(props.templates.map((t) => [t.name, t.bodyAr ?? ""])), [props.templates]);
+  const templateBodies = useMemo(() => Object.fromEntries(templates.map((t) => [t.name, t.bodyAr ?? ""])), [templates]);
+  const previewTemplates = useMemo(
+    () =>
+      Object.fromEntries(
+        templates.map((t) => [
+          t.name,
+          { approved: t.approved, ar: t.ar ? { body: t.ar.body, button: t.ar.button } : null, en: t.en ? { body: t.en.body, button: t.en.button } : null },
+        ]),
+      ),
+    [templates],
+  );
   const issues = useMemo(
-    () => validateFlow(graph, { episodeCount: props.series.episodeCount, templates: props.templates.map((t) => ({ name: t.name, approved: t.approved })) }),
+    () => validateFlow(graph, { episodeCount: props.series.episodeCount, templates: templates.map((t) => ({ name: t.name, approved: t.approved })) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [logicKey, props.series.episodeCount, props.templates],
+    [logicKey, props.series.episodeCount, templates],
   );
   const errors = issues.filter((i) => i.level === "error");
   const warnings = issues.filter((i) => i.level === "warning");
@@ -153,6 +166,37 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     setSelected(id);
   };
 
+  /** Save cards (and the arrows between them) to My cards. */
+  const saveToMyCards = async (ids: string[], name: string) => {
+    const set = new Set(ids);
+    const block = { v: 1, nodes: graph.nodes.filter((n) => set.has(n.id)), edges: graph.edges.filter((e) => set.has(e.source) && set.has(e.target)) };
+    const r = await saveMyCards(name, block);
+    setMyCards(r.cards);
+    setMessage({ kind: r.ok ? "ok" : "err", text: r.message });
+    return r.ok;
+  };
+
+  /** Drop a My cards block below the flow with fresh ids, selected, and move the view to it. */
+  const insertBlock = (c: SavedCard) => {
+    const at = nodes.length ? { x: Math.min(...nodes.map((n) => n.position.x)), y: Math.max(...nodes.map((n) => n.position.y)) + 420 } : { x: 0, y: 0 };
+    const w = Math.max(...c.block.nodes.map((n) => n.position.x)) + 250;
+    setTimeout(() => flow.setCenter(at.x + w / 2, at.y + 150, { zoom: Math.max(flow.getZoom(), 0.8), duration: 300 }), 50);
+    const ids = new Map(c.block.nodes.map((n) => [n.id, newId()]));
+    setNodes((ns) => [
+      ...ns.map((n) => ({ ...n, selected: false })),
+      ...c.block.nodes.map((n) => ({
+        id: ids.get(n.id)!,
+        type: "card" as const,
+        position: { x: at.x + n.position.x, y: at.y + n.position.y },
+        selected: true,
+        data: { card: n.data, name: n.name, thumb: null, errors: 0, warnings: 0 },
+      })),
+    ]);
+    setEdges((es) => [...es, ...c.block.edges.map((e) => ({ id: newId(), source: ids.get(e.source)!, sourceHandle: e.sourceHandle, target: ids.get(e.target)!, ...edgeDefaults }))]);
+    setSelected(c.block.nodes.length === 1 ? ids.get(c.block.nodes[0].id)! : null);
+    setMessage({ kind: "ok", text: `Added "${c.name}". Connect it to your flow with arrows.` });
+  };
+
   const focusCard = (id: string) => {
     setSelected(id);
     setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === id })));
@@ -168,7 +212,8 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     if (opts.fit !== false) setTimeout(() => flow.fitView({ duration: 300, maxZoom: 1 }), 50);
   };
 
-  const selectedNode = nodes.find((n) => n.id === selected) ?? null;
+  const multi = nodes.filter((n) => n.selected && n.data.card.kind !== "start");
+  const selectedNode = multi.length > 1 ? null : (nodes.find((n) => n.id === selected) ?? null);
   const selectedTakesMedia = selectedNode && "media" in selectedNode.data.card;
 
   async function onPublish() {
@@ -292,7 +337,47 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
               ))}
               <p className="muted" style={{ fontSize: 12 }}>
                 Drag from a button&apos;s dot on the right of a card to another card to connect them. Select a card or arrow and press Delete to remove it.
+                Shift-drag on the canvas to select several cards.
               </p>
+              <strong style={{ marginTop: 4 }}>☆ My cards</strong>
+              {myCards.length === 0 && (
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                  Save any card (or a group of connected cards) with &quot;Save to My cards&quot; to reuse it in every series.
+                </p>
+              )}
+              {myCards.map((c) => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, border: "1px solid #e5e7eb", borderRadius: 8, padding: "4px 6px", background: "#fff" }}>
+                  <button type="button" className="secondary" style={{ flex: 1, textAlign: "left", border: 0, padding: "2px 4px" }} onClick={() => insertBlock(c)} title="Add to the canvas">
+                    <span dir="auto">{c.name}</span>
+                    <span className="muted" style={{ display: "block", fontSize: 11, fontWeight: 400 }}>
+                      {c.block.nodes.map((n) => CARD_STYLE[n.data.kind].icon).join(" ")} · {c.cardCount} card{c.cardCount === 1 ? "" : "s"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    title="Rename"
+                    style={{ padding: "0 6px", border: 0 }}
+                    onClick={async () => {
+                      const name = prompt("New name", c.name);
+                      if (name?.trim()) setMyCards(await renameMyCard(c.id, name));
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    title="Delete from My cards"
+                    style={{ padding: "0 6px", border: 0 }}
+                    onClick={async () => {
+                      if (confirm(`Delete "${c.name}" from My cards? Cards already on canvases stay.`)) setMyCards(await deleteMyCard(c.id));
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
           ) : (
             <MediaLibrary
@@ -350,10 +435,46 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
                 onClose={() => setSelected(null)}
                 assets={assets}
                 addAsset={(a) => setAssets((list) => [a, ...list])}
-                templates={props.templates}
+                templates={templates}
+                setTemplates={setTemplates}
                 series={props.series}
                 issues={issues.filter((i) => i.nodeId === selectedNode.id)}
+                name={selectedNode.data.name ?? ""}
+                onRename={(name) => setNodes((ns) => ns.map((n) => (n.id === selectedNode.id ? { ...n, data: { ...n.data, name } } : n)))}
+                onSaveToMyCards={() => {
+                  const fallback = selectedNode.data.name?.trim() || CARD_LABELS[selectedNode.data.card.kind];
+                  const name = prompt("Name in My cards", fallback);
+                  if (name?.trim()) void saveToMyCards([selectedNode.id], name);
+                }}
               />
+            </div>
+          )}
+
+          {multi.length > 1 && (
+            <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 7, background: "#fff", border: "1px solid #c7d2fe", borderRadius: 10, padding: "6px 8px", display: "flex", gap: 6, alignItems: "center", boxShadow: "0 4px 12px #0002", fontSize: 13 }}>
+              <strong>{multi.length} cards selected</strong>
+              <input value={blockName} onChange={(e) => setBlockName(e.target.value)} placeholder="Name, e.g. Reminder after 2 h" style={{ width: 200 }} dir="auto" />
+              <button
+                type="button"
+                disabled={!blockName.trim()}
+                onClick={async () => {
+                  if (await saveToMyCards(multi.map((n) => n.id), blockName)) setBlockName("");
+                }}
+              >
+                ☆ Save to My cards
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{ color: "#b91c1c" }}
+                onClick={() => {
+                  const ids = new Set(multi.map((n) => n.id));
+                  setNodes((ns) => ns.filter((n) => !ids.has(n.id)));
+                  setEdges((es) => es.filter((e) => !ids.has(e.source) && !ids.has(e.target)));
+                }}
+              >
+                Delete
+              </button>
             </div>
           )}
 
@@ -387,7 +508,7 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
 
         {/* Right: live preview, always visible */}
         <div className="card" style={{ margin: 0, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <ChatPreview graph={graph} logicKey={logicKey} series={props.series} templates={templateBodies} code={props.code} selectedNodeId={selected} onSelectNode={focusCard} />
+          <ChatPreview graph={graph} logicKey={logicKey} series={props.series} templates={previewTemplates} code={props.code} selectedNodeId={selected} onSelectNode={focusCard} />
         </div>
       </div>
     </div>

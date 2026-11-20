@@ -4,74 +4,18 @@ import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, opt, str, uuid } from "@/lib/admin/forms";
 import { estimateCost } from "@/lib/messaging/policy";
 import { db } from "@/lib/supabase";
-import { fetchMetaTemplates, submitTemplate, type TemplateRow } from "@/lib/whatsapp/templates";
+import { addStarterTemplates, syncTemplateStatuses } from "@/lib/messaging/template-store";
+import { submitTemplate, type TemplateRow } from "@/lib/whatsapp/templates";
 
 // ---------------------------------------------------------------------------
 // Templates
 // ---------------------------------------------------------------------------
 
-const STARTERS: Omit<TemplateRow, "id">[] = [
-  {
-    name: "resume_reminder",
-    lang: "ar",
-    category: "marketing",
-    header_type: "none",
-    body: "لسه ما خلصت «{{1}}» 👀 وقفت عند الحلقة {{2}}. كمّل الحين من حيث وقفت.\n\nأرسل STOP لإيقاف التنبيهات.",
-    button_text: "كمّل المشاهدة",
-  },
-  {
-    name: "resume_reminder",
-    lang: "en",
-    category: "marketing",
-    header_type: "none",
-    body: "You haven't finished “{{1}}” yet 👀 You stopped at episode {{2}}. Pick up where you left off.\n\nSend STOP to turn off alerts.",
-    button_text: "Continue watching",
-  },
-  {
-    name: "new_series_alert",
-    lang: "ar",
-    category: "marketing",
-    header_type: "none",
-    body: "مسلسل جديد على واتشات: «{{1}}» 🎬 أول الحلقات جاهزة الحين.\n\nأرسل STOP لإيقاف التنبيهات.",
-    button_text: "شاهد الآن",
-  },
-  {
-    name: "new_series_alert",
-    lang: "en",
-    category: "marketing",
-    header_type: "none",
-    body: "New on Watchat: “{{1}}” 🎬 The first episodes are ready now.\n\nSend STOP to turn off alerts.",
-    button_text: "Watch now",
-  },
-  {
-    name: "win_back",
-    lang: "ar",
-    category: "marketing",
-    header_type: "none",
-    body: "اشتقنا لك! «{{1}}» بانتظارك 🍿 ارجع وكمّل القصة.\n\nأرسل STOP لإيقاف التنبيهات.",
-    button_text: "رجوع للمشاهدة",
-  },
-  {
-    name: "win_back",
-    lang: "en",
-    category: "marketing",
-    header_type: "none",
-    body: "We missed you! “{{1}}” is waiting 🍿 Come back and finish the story.\n\nSend STOP to turn off alerts.",
-    button_text: "Back to watching",
-  },
-];
-
 export async function addStarterTemplatesAction() {
   const admin = await requireAdmin("messaging");
-  const { error } = await db()
-    .from("wa_templates")
-    .upsert(
-      STARTERS.map((t) => ({ ...t, tenant_id: admin.tenantId })),
-      { onConflict: "tenant_id,name,lang", ignoreDuplicates: true },
-    );
-  if (error) done("/admin/templates", `Failed: ${error.message}`, "err");
+  const problems = await addStarterTemplates(admin.tenantId);
   await audit(admin, "templates.starters_added", "wa_templates");
-  done("/admin/templates", "Starter templates added as drafts. Review the wording, then submit them to Meta.");
+  done("/admin/templates", problems.length ? problems.join(" ") : "Starter templates added and sent to Meta for approval.", problems.length ? "err" : "ok");
 }
 
 export async function saveTemplateAction(fd: FormData) {
@@ -124,40 +68,11 @@ export async function submitTemplateAction(fd: FormData) {
 
 export async function syncTemplatesAction() {
   const admin = await requireAdmin("messaging");
-  let remote: Awaited<ReturnType<typeof fetchMetaTemplates>>;
+  let updated = 0;
   try {
-    remote = await fetchMetaTemplates();
+    updated = await syncTemplateStatuses(admin.tenantId);
   } catch (e) {
     done("/admin/templates", e instanceof Error ? e.message : "Sync failed.", "err");
-  }
-  let updated = 0;
-  for (const m of remote) {
-    const lang = m.language.startsWith("ar") ? "ar" : m.language.startsWith("en") ? "en" : null;
-    if (!lang) continue;
-    const { data } = await db()
-      .from("wa_templates")
-      .update({ meta_template_id: m.id, meta_status: m.status, meta_reason: m.rejected_reason ?? null, updated_at: new Date().toISOString() })
-      .eq("tenant_id", admin.tenantId)
-      .eq("name", m.name)
-      .eq("lang", lang)
-      .select("id");
-    if (data?.length) {
-      updated++;
-    } else {
-      // Template created directly in WhatsApp Manager: register it so sequences/campaigns can use it.
-      await db()
-        .from("wa_templates")
-        .insert({
-          tenant_id: admin.tenantId,
-          name: m.name,
-          lang,
-          category: m.category?.toLowerCase() === "utility" ? "utility" : "marketing",
-          body: "(created in WhatsApp Manager)",
-          meta_template_id: m.id,
-          meta_status: m.status,
-        });
-      updated++;
-    }
   }
   await audit(admin, "templates.synced", "wa_templates", null, { count: updated });
   done("/admin/templates", `Synced ${updated} templates from Meta.`);

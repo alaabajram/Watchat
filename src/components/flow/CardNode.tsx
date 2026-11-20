@@ -8,7 +8,7 @@ import { formatMinutes } from "@/lib/flows/preview";
 import { CARD_LABELS, portsOf, type NodeData } from "@/lib/flows/types";
 import { CARD_STYLE } from "./cards";
 
-export type CardNodeData = { card: NodeData; thumb: string | null; errors: number; warnings: number; templateBody?: string | null };
+export type CardNodeData = { card: NodeData; name?: string; thumb: string | null; errors: number; warnings: number; templateBody?: string | null };
 export type CardFlowNode = Node<CardNodeData, "card">;
 
 const CONDITION_TEXT = {
@@ -64,7 +64,10 @@ export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
       {d.kind !== "start" && <Handle type="target" position={Position.Left} style={{ top: 18, width: 10, height: 10, background: "#94a3b8" }} />}
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: style.color, color: "#fff", borderRadius: "7px 7px 0 0" }}>
         <span>{style.icon}</span>
-        <strong style={{ flex: 1 }}>{CARD_LABELS[d.kind].split(":")[0]}</strong>
+        <strong style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} dir="auto">
+          {data.name || CARD_LABELS[d.kind].split(":")[0]}
+        </strong>
+        {data.name && <span style={{ opacity: 0.8, fontSize: 10 }}>{CARD_LABELS[d.kind].split(" ")[0]}</span>}
         {data.errors > 0 && <span title="Errors" style={{ background: "#dc2626", borderRadius: 8, padding: "0 6px" }}>{data.errors}</span>}
         {!data.errors && data.warnings > 0 && <span title="Warnings" style={{ background: "#f59e0b", borderRadius: 8, padding: "0 6px" }}>{data.warnings}</span>}
       </div>

@@ -32,9 +32,11 @@ type Props = {
   maxLength?: number;
   invalid?: boolean;
   compact?: boolean;
+  /** Quick-insert chips under the field, e.g. placeholders. */
+  tokens?: { label: string; text: string }[];
 };
 
-export function EmojiField({ value, onChange, dir, rows = 1, placeholder, maxLength, invalid, compact }: Props) {
+export function EmojiField({ value, onChange, dir, rows = 1, placeholder, maxLength, invalid, compact, tokens }: Props) {
   const field = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const selection = useRef<{ start: number | null; end: number | null }>({ start: null, end: null });
@@ -61,19 +63,24 @@ export function EmojiField({ value, onChange, dir, rows = 1, placeholder, maxLen
     if (el) selection.current = { start: el.selectionStart, end: el.selectionEnd };
   };
 
-  const pick = (emoji: string) => {
+  const insert = (text: string) => {
     const { start, end } = selection.current;
-    const r = insertText(value, start, end, emoji);
-    if (maxLength && r.value.length > maxLength) return;
+    const r = insertText(value, start, end, text);
+    if (maxLength && r.value.length > maxLength) return false;
     onChange(r.value);
     selection.current = { start: r.caret, end: r.caret };
-    const next = [emoji, ...recent.filter((e) => e !== emoji)];
-    setRecent(next);
-    saveRecent(next);
     requestAnimationFrame(() => {
       field.current?.focus();
       field.current?.setSelectionRange(r.caret, r.caret);
     });
+    return true;
+  };
+
+  const pick = (emoji: string) => {
+    if (!insert(emoji)) return;
+    const next = [emoji, ...recent.filter((e) => e !== emoji)];
+    setRecent(next);
+    saveRecent(next);
   };
 
   const common = {
@@ -94,6 +101,21 @@ export function EmojiField({ value, onChange, dir, rows = 1, placeholder, maxLen
   return (
     <div ref={wrap} style={{ position: "relative", width: "100%" }}>
       {rows > 1 ? <textarea rows={rows} {...common} /> : <input {...common} />}
+      {tokens && tokens.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+          {tokens.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => insert(t.text)}
+              style={{ background: "#eef2ff", color: "#3730a3", border: 0, borderRadius: 999, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}
+            >
+              + {t.label}
+            </button>
+          ))}
+        </div>
+      )}
       <button
         type="button"
         title="Add emoji"

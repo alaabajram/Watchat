@@ -9,6 +9,7 @@ import { CARD_LABELS, type Bi, type FlowButton, type MediaRef, type NodeData } f
 import type { PreviewSeries } from "@/lib/flows/preview";
 import { CARD_STYLE } from "./cards";
 import { EmojiField } from "./EmojiField";
+import { TemplatePanel } from "./TemplatePanel";
 import { ACCEPT, uploadAsset } from "./upload";
 
 type Props = {
@@ -21,8 +22,12 @@ type Props = {
   assets: Asset[];
   addAsset: (a: Asset) => void;
   templates: TemplateInfo[];
+  setTemplates: (t: TemplateInfo[]) => void;
   series: PreviewSeries;
   issues: { level: string; message: string }[];
+  name: string;
+  onRename: (name: string) => void;
+  onSaveToMyCards: () => void;
 };
 
 const count = (s: string) => Array.from(s).length;
@@ -149,6 +154,12 @@ export function Inspector(p: Props) {
         </button>
       </div>
       <p className="muted" style={{ margin: 0, fontSize: 12 }}>{style.help}</p>
+      {d.kind !== "start" && (
+        <label style={{ fontSize: 12 }}>
+          Card name (optional, shown on the canvas)
+          <input value={p.name} maxLength={60} dir="auto" placeholder={`e.g. ${d.kind === "message" ? "Hook after episode 2" : d.kind === "wait" ? "Wait 2 hours" : "Cliffhanger link"}`} onChange={(e) => p.onRename(e.target.value)} />
+        </label>
+      )}
       {p.issues.map((i, k) => (
         <div key={k} style={{ fontSize: 12, color: i.level === "error" ? "#b91c1c" : "#b45309" }}>
           {i.level === "error" ? "⛔" : "⚠️"} {i.message}
@@ -259,33 +270,18 @@ export function Inspector(p: Props) {
       )}
 
       {d.kind === "template" && (
-        <>
-          <label style={{ fontSize: 12 }}>
-            Template{" "}
-            <select value={d.name} onChange={(e) => set({ name: e.target.value })}>
-              <option value="">Pick a template</option>
-              {p.templates.map((t) => (
-                <option key={t.name} value={t.name}>
-                  {t.name} · {t.approved ? "approved" : t.status.toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </label>
-          {p.templates.find((t) => t.name === d.name)?.bodyAr && (
-            <div dir="rtl" style={{ background: "#efeae2", padding: 8, borderRadius: 8, fontSize: 13 }}>
-              {p.templates.find((t) => t.name === d.name)?.bodyAr}
-            </div>
-          )}
-          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-            Templates are written and sent for Meta approval on the WhatsApp templates page. Marketing templates only go to viewers who turned on alerts, at most one per 20 hours, never 22:00–09:00.
-          </p>
-        </>
+        <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
       )}
 
       {d.kind !== "start" && (
-        <button type="button" className="secondary" style={{ color: "#b91c1c", alignSelf: "flex-start" }} onClick={p.onDelete}>
-          Delete card
-        </button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="secondary" onClick={p.onSaveToMyCards} title="Reuse this card in any series from Add card → My cards">
+            ☆ Save to My cards
+          </button>
+          <button type="button" className="secondary" style={{ color: "#b91c1c" }} onClick={p.onDelete}>
+            Delete card
+          </button>
+        </div>
       )}
     </div>
   );

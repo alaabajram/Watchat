@@ -30,7 +30,8 @@ export type NodeData =
 
 export type NodeKind = NodeData["kind"];
 
-export type FlowNode = { id: string; position: { x: number; y: number }; data: NodeData };
+/** `name` is an optional label the team gives a card (shown on the canvas), e.g. "Hook after episode 2". */
+export type FlowNode = { id: string; position: { x: number; y: number }; data: NodeData; name?: string };
 export type FlowEdge = { id: string; source: string; sourceHandle: string; target: string };
 export type FlowGraph = { v: 1; nodes: FlowNode[]; edges: FlowEdge[] };
 

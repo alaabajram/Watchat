@@ -241,7 +241,8 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
       default:
         data = { kind: "suggest" };
     }
-    nodes.push({ id, position: prevNode(id)?.position ?? { x: 0, y: 0 }, data });
+    const keptName = prevNode(id)?.name;
+    nodes.push({ id, position: prevNode(id)?.position ?? { x: 0, y: 0 }, data, ...(keptName ? { name: keptName } : {}) });
   }
   if (!nodes.some((n) => n.data.kind === "start")) nodes.unshift({ id: newId(), position: { x: 0, y: 0 }, data: { kind: "start" } });
   layoutNew(nodes, edges, new Set(previous?.nodes.map((n) => n.id) ?? []));
