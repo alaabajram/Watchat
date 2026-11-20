@@ -158,7 +158,7 @@ function withPinHint(viewer: Viewer, deps: BotDeps): BotDeps {
     async send(to, m, ref) {
       if (viewer.pinHintSent || m.kind !== "cta_url" || !m.url.includes("/w/")) return deps.send(to, m, ref);
       const { t } = await ctxFor(viewer, null, deps);
-      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}\n${await deps.accountUrl()}` }, ref);
+      await deps.send(to, { ...m, body: `${m.body}\n\n${t("pinHint")}` }, ref);
       viewer.pinHintSent = true;
       await deps.markPinHintSent(viewer.id);
     },

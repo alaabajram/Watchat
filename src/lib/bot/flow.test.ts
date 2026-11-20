@@ -371,7 +371,7 @@ describe("my account (no message needed to come back)", () => {
     const first = f.sent.at(-1) as Extract<OutMessage, { kind: "cta_url" }>;
     expect(first.kind).toBe("cta_url");
     expect(first.body).toContain(COPY.pinHint.ar);
-    expect(first.body).toContain("https://watchat.test/me");
+    expect(first.body).not.toContain("/me"); // no bare address to tap before the button has signed them in
     expect(f.pinMarks).toEqual(["v1"]);
 
     await handleInbound(text("رابط"), f.deps);

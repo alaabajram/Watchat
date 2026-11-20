@@ -107,8 +107,8 @@ export const COPY = {
   pinHint: {
     label: "Pin tip (added once, to the first link)",
     kind: "text",
-    ar: "📌 ثبّت هذه الرسالة (اضغط عليها مطوّلاً ← تثبيت). وحسابك دايماً هنا:",
-    en: "📌 Pin this message (press and hold → Pin). Your account is always here:",
+    ar: "📌 افتح الزر أول مرة من هنا ليسجّل دخولك، وبعدها ثبّت هذه الرسالة (اضغط عليها مطوّلاً ← تثبيت) لترجع لحسابك متى ما حبيت.",
+    en: "📌 Open the button the first time to sign in, then pin this message (press and hold → Pin) to get back to your account anytime.",
   },
   btnOpenPlayer: { label: "W12 · Open player button", kind: "button", ar: "افتح المشغّل", en: "Open my player" },
   needSeriesFirst: {

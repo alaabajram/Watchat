@@ -4,6 +4,7 @@
 // Coming back here costs no WhatsApp messages.
 
 import Link from "next/link";
+import { Splash } from "@/components/brand/Splash";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { TopBar } from "@/components/TopBar";
 import { getLibrary } from "@/lib/content";
@@ -25,29 +26,14 @@ function Poster({ url, alt }: { url: string | null; alt: string }) {
   );
 }
 
-export default async function MyAccountPage() {
+export default async function MyAccountPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
   const viewer = await getSessionViewer();
   if (!viewer) {
-    const t = webCopy("ar");
-    const en = webCopy("en");
+    // Same look as watchat.pro's splash; one tap opens WhatsApp with «حسابي» ready, the bot replies with a sign-in link.
+    const locale = (await searchParams).lang === "en" ? "en" : "ar";
+    const t = webCopy(locale);
     const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}` : null;
-    return (
-      <main className="page center" dir="rtl">
-        <h1 style={{ margin: 0 }}>{t.accountSignedOutTitle}</h1>
-        <p style={{ margin: 0 }}>{t.accountSignedOutBody}</p>
-        <p className="muted" style={{ margin: 0 }} dir="ltr">
-          {en.accountSignedOutBody}
-        </p>
-        {wa && (
-          <a className="btn" href={wa}>
-            {t.signInWithWhatsApp} · {en.signInWithWhatsApp}
-          </a>
-        )}
-        <p className="muted" style={{ margin: 0 }}>
-          {t.continueManual(ACCOUNT_WORD)}
-        </p>
-      </main>
-    );
+    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/me" />;
   }
 
   const locale = viewer.uiLocale;

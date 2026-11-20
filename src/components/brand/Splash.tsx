@@ -6,9 +6,9 @@
 import { ChatIcon } from "./icons";
 import { webCopy, dirFor, type Locale } from "@/lib/web-copy";
 
-export function Splash({ locale, waHref }: { locale: Locale; waHref: string | null }) {
+export function Splash({ locale, waHref, cta, hint, path = "/" }: { locale: Locale; waHref: string | null; cta?: string; hint?: string; path?: string }) {
   const t = webCopy(locale);
-  const other = locale === "ar" ? { href: "/?lang=en", label: "EN", aria: "English" } : { href: "/", label: "عربي", aria: "العربية" };
+  const other = locale === "ar" ? { href: `${path}?lang=en`, label: "EN", aria: "English" } : { href: path, label: "عربي", aria: "العربية" };
   return (
     <div className="wc" dir={dirFor(locale)} lang={locale} style={{ background: "#fff" }}>
     <main style={{ minHeight: "100dvh", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "20px 24px calc(32px + env(safe-area-inset-bottom))", maxWidth: 520, margin: "0 auto" }}>
@@ -44,10 +44,10 @@ export function Splash({ locale, waHref }: { locale: Locale; waHref: string | nu
         {waHref && (
           <a className="wc-btn" href={waHref} style={{ minHeight: 60 }}>
             <ChatIcon />
-            {t.startInWhatsApp}
+            {cta ?? t.startInWhatsApp}
           </a>
         )}
-        <p style={{ fontSize: 13, color: "var(--wc-muted)", textAlign: "center" }}>{t.splashHint}</p>
+        <p style={{ fontSize: 13, color: "var(--wc-muted)", textAlign: "center" }}>{hint ?? t.splashHint}</p>
       </div>
     </main>
     </div>
