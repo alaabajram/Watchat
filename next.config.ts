@@ -4,7 +4,8 @@ import type { NextConfig } from "next";
 // CSP note: Next.js needs inline scripts for hydration; move to nonce-based CSP before launch.
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://embed.cloudflarestream.com",
+  // React's dev tooling needs eval; production never gets it.
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://embed.cloudflarestream.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https:",

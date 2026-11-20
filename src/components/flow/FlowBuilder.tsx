@@ -1,0 +1,380 @@
+"use client";
+
+// The visual flow builder: cards on a canvas linked by arrows, a card editor, the series media library,
+// and a live WhatsApp preview that always shows how the chat will look. Autosaves the draft;
+// "Publish" checks the flow and makes it live for new and continuing chats.
+
+import "@xyflow/react/dist/style.css";
+import {
+  addEdge,
+  Background,
+  Controls,
+  MarkerType,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+  type Connection,
+  type Edge,
+} from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { checkFlow, loadVersion, publishFlow, saveFlowDraft, standardFlow, unpublishFlow } from "@/app/admin/flow-actions";
+import { newId } from "@/lib/flows/defaults";
+import type { BuilderData } from "@/lib/flows/store";
+import { CARD_LABELS, portsOf, type FlowGraph, type NodeData, type NodeKind } from "@/lib/flows/types";
+import { validateFlow, type Issue } from "@/lib/flows/validate";
+import { ADDABLE, CARD_STYLE, newCard } from "./cards";
+import { CardNode, type CardFlowNode } from "./CardNode";
+import { ChatPreview } from "./ChatPreview";
+import { Inspector } from "./Inspector";
+import { MediaLibrary } from "./MediaLibrary";
+
+const nodeTypes = { card: CardNode };
+const edgeDefaults = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed, color: "#64748b" }, style: { stroke: "#64748b", strokeWidth: 2 } };
+
+function toFlow(g: FlowGraph): { nodes: CardFlowNode[]; edges: Edge[] } {
+  return {
+    nodes: g.nodes.map((n) => ({ id: n.id, type: "card", position: n.position, deletable: n.data.kind !== "start", data: { card: n.data, thumb: null, errors: 0, warnings: 0 } })),
+    edges: g.edges.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target, ...edgeDefaults })),
+  };
+}
+
+function toGraph(nodes: CardFlowNode[], edges: Edge[]): FlowGraph {
+  return {
+    v: 1,
+    nodes: nodes.map((n) => ({ id: n.id, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data: n.data.card })),
+    edges: edges.filter((e) => e.sourceHandle).map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle!, target: e.target })),
+  };
+}
+
+export function FlowBuilder(props: BuilderData & { canPublish: boolean }) {
+  return (
+    <ReactFlowProvider>
+      <Builder {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function Builder(props: BuilderData & { canPublish: boolean }) {
+  const initial = useMemo(() => toFlow(props.draft), [props.draft]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CardFlowNode>(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<"cards" | "media">("cards");
+  const [assets, setAssets] = useState(props.assets);
+  const [published, setPublished] = useState(props.published);
+  const [versions, setVersions] = useState(props.versions);
+  const [saveState, setSaveState] = useState<{ at: string | null; busy: boolean; error?: string }>({ at: props.draftUpdatedAt, busy: false });
+  const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [note, setNote] = useState("");
+  const [showIssues, setShowIssues] = useState(false);
+  const flow = useReactFlow();
+  const canvas = useRef<HTMLDivElement>(null);
+
+  const graph = useMemo(() => toGraph(nodes, edges), [nodes, edges]);
+  const logicKey = useMemo(() => JSON.stringify({ n: graph.nodes.map((n) => [n.id, n.data]), e: graph.edges }), [graph]);
+  const fullKey = useMemo(() => JSON.stringify(graph), [graph]);
+  const savedKey = useRef(JSON.stringify(props.draft));
+  const dirty = fullKey !== savedKey.current;
+
+  const templateBodies = useMemo(() => Object.fromEntries(props.templates.map((t) => [t.name, t.bodyAr ?? ""])), [props.templates]);
+  const issues = useMemo(
+    () => validateFlow(graph, { episodeCount: props.series.episodeCount, templates: props.templates.map((t) => ({ name: t.name, approved: t.approved })) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [logicKey, props.series.episodeCount, props.templates],
+  );
+  const errors = issues.filter((i) => i.level === "error");
+  const warnings = issues.filter((i) => i.level === "warning");
+
+  // Badges, thumbnails and template text on the cards.
+  useEffect(() => {
+    setNodes((ns) =>
+      ns.map((n) => {
+        const d = n.data.card;
+        const media = "media" in d ? d.media : null;
+        const thumb = media ? ("assetId" in media ? media.url : media.source === "poster" ? props.series.posterUrl : props.series.trailerUrl) : d.kind === "episode" ? null : null;
+        const e = issues.filter((i) => i.nodeId === n.id && i.level === "error").length;
+        const w = issues.filter((i) => i.nodeId === n.id && i.level === "warning").length;
+        const templateBody = d.kind === "template" ? (templateBodies[d.name] ?? null) : undefined;
+        if (n.data.thumb === thumb && n.data.errors === e && n.data.warnings === w && n.data.templateBody === templateBody) return n;
+        return { ...n, data: { ...n.data, thumb, errors: e, warnings: w, templateBody } };
+      }),
+    );
+  }, [issues, setNodes, props.series.posterUrl, props.series.trailerUrl, templateBodies]);
+
+  // Autosave the draft 2 s after the last change.
+  useEffect(() => {
+    if (!dirty) return;
+    const t = setTimeout(async () => {
+      setSaveState((s) => ({ ...s, busy: true }));
+      const snapshot = fullKey;
+      const r = await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
+      if (r.ok) {
+        savedKey.current = snapshot;
+        setSaveState({ at: r.savedAt, busy: false });
+      } else setSaveState((s) => ({ ...s, busy: false, error: r.error }));
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [fullKey, dirty, props.seriesId]);
+
+  // Warn before leaving with unsaved changes.
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => {
+      if (fullKey !== savedKey.current) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [fullKey]);
+
+  const onConnect = useCallback(
+    (c: Connection) =>
+      setEdges((es) => addEdge({ ...c, id: newId(), ...edgeDefaults }, es.filter((e) => !(e.source === c.source && e.sourceHandle === c.sourceHandle)))),
+    [setEdges],
+  );
+
+  const updateCard = (id: string, data: NodeData) => {
+    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, card: data } } : n)));
+    const ports = new Set(portsOf(data).map((p) => p.id));
+    setEdges((es) => es.filter((e) => e.source !== id || ports.has(e.sourceHandle ?? "")));
+  };
+
+  const addCard = (kind: NodeKind) => {
+    const rect = canvas.current?.getBoundingClientRect();
+    const center = flow.screenToFlowPosition({ x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - 125, y: (rect?.top ?? 0) + (rect?.height ?? 600) / 3 });
+    const id = newId();
+    setNodes((ns) => [
+      ...ns.map((n) => ({ ...n, selected: false })),
+      { id, type: "card", position: { x: center.x + (ns.length % 5) * 20, y: center.y + (ns.length % 5) * 20 }, selected: true, data: { card: newCard(kind, props.series.episodeCount), thumb: null, errors: 0, warnings: 0 } },
+    ]);
+    setSelected(id);
+  };
+
+  const focusCard = (id: string) => {
+    setSelected(id);
+    setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === id })));
+    const n = flow.getNode(id);
+    if (n) flow.setCenter(n.position.x + 125, n.position.y + 100, { zoom: Math.max(flow.getZoom(), 0.9), duration: 300 });
+  };
+
+  const replaceGraph = (g: FlowGraph) => {
+    const f = toFlow(g);
+    setNodes(f.nodes);
+    setEdges(f.edges);
+    setSelected(null);
+    setTimeout(() => flow.fitView({ duration: 300 }), 50);
+  };
+
+  const selectedNode = nodes.find((n) => n.id === selected) ?? null;
+  const selectedTakesMedia = selectedNode && "media" in selectedNode.data.card;
+
+  async function onPublish() {
+    setMessage(null);
+    const r = await publishFlow(props.seriesId, graph, note);
+    if (!r.ok) {
+      setShowIssues(true);
+      setMessage({ kind: "err", text: r.error ?? `Fix ${r.issues.filter((i) => i.level === "error").length} problem(s) before publishing.` });
+      return;
+    }
+    savedKey.current = fullKey;
+    setSaveState({ at: new Date().toISOString(), busy: false });
+    setPublished({ versionId: r.versionId, version: r.version, graph });
+    setVersions([{ id: r.versionId, version: r.version, publishedAt: new Date().toISOString(), note: note || null }, ...versions]);
+    setNote("");
+    setMessage({ kind: "ok", text: `Published version ${r.version}. New chats for ${props.code} follow this flow now.` });
+  }
+
+  const time = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }) : "");
+  const publishedDiffers = published && JSON.stringify({ n: published.graph.nodes.map((n) => [n.id, n.data]), e: published.graph.edges }) !== logicKey;
+
+  return (
+    <div className="flow-builder" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 24px)", gap: 8 }}>
+      {/* Toolbar */}
+      <div className="card" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 12px", margin: 0 }}>
+        <strong>
+          {props.code} · {props.series.titleEn}
+        </strong>
+        <span className="muted" style={{ fontSize: 13 }}>
+          {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published · viewers get the built-in scenario"}
+        </span>
+        <span className="muted" style={{ fontSize: 13 }}>
+          {saveState.busy ? "Saving…" : saveState.error ? `Save failed: ${saveState.error}` : dirty ? "Unsaved changes" : `Draft saved ${time(saveState.at)}`}
+        </span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="secondary" onClick={() => setShowIssues(!showIssues)} style={{ color: errors.length ? "#b91c1c" : undefined }}>
+          {errors.length ? `⛔ ${errors.length}` : "✓"} {warnings.length ? `⚠️ ${warnings.length}` : ""} Checks
+        </button>
+        <select
+          value=""
+          onChange={async (e) => {
+            const v = e.target.value;
+            e.target.value = "";
+            if (v === "standard") {
+              if (!confirm("Replace the draft with the standard scenario built from this series' settings and texts?")) return;
+              const g = await standardFlow(props.seriesId);
+              if (g) replaceGraph(g);
+            } else if (v === "unpublish") {
+              if (!confirm("Unpublish? New chats will use the built-in scenario until you publish again.")) return;
+              await unpublishFlow(props.seriesId);
+              setPublished(null);
+            } else if (v) {
+              if (!confirm("Load this version into the draft? Your current draft will be replaced (it isn't live until you publish).")) return;
+              const g = await loadVersion(props.seriesId, v);
+              if (g) replaceGraph(g);
+            }
+          }}
+        >
+          <option value="">Versions & more…</option>
+          {versions.map((v) => (
+            <option key={v.id} value={v.id}>
+              Load v{v.version} · {time(v.publishedAt)}
+              {v.note ? ` · ${v.note}` : ""}
+            </option>
+          ))}
+          <option value="standard">Start from the standard scenario</option>
+          {published && <option value="unpublish">Unpublish</option>}
+        </select>
+        {props.canPublish && (
+          <>
+            <input placeholder="What changed? (optional)" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 180 }} />
+            <button type="button" onClick={onPublish} disabled={errors.length > 0} title={errors.length ? "Fix the problems first" : "Make this flow live"}>
+              Publish
+            </button>
+          </>
+        )}
+      </div>
+      {message && (
+        <div className="card" style={{ margin: 0, padding: "6px 12px", color: message.kind === "ok" ? "#166534" : "#b91c1c" }}>
+          {message.text}
+        </div>
+      )}
+
+      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "250px 1fr 370px", gap: 8 }}>
+        {/* Left: add cards / media library */}
+        <div className="card" style={{ margin: 0, padding: 8, overflowY: "auto" }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            <button type="button" className={tab === "cards" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("cards")}>
+              Add card
+            </button>
+            <button type="button" className={tab === "media" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("media")}>
+              Media ({assets.length})
+            </button>
+          </div>
+          {tab === "cards" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {ADDABLE.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="secondary"
+                  onClick={() => addCard(k)}
+                  title={CARD_STYLE[k].help}
+                  style={{ textAlign: "left", padding: "6px 8px", borderLeft: `4px solid ${CARD_STYLE[k].color}` }}
+                >
+                  {CARD_STYLE[k].icon} {CARD_LABELS[k]}
+                </button>
+              ))}
+              <p className="muted" style={{ fontSize: 12 }}>
+                Drag from a button&apos;s dot on the right of a card to another card to connect them. Select a card or arrow and press Delete to remove it.
+              </p>
+            </div>
+          ) : (
+            <MediaLibrary
+              seriesId={props.seriesId}
+              assets={assets}
+              setAssets={setAssets}
+              graph={graph}
+              publishedGraph={published?.graph ?? null}
+              canAttach={Boolean(selectedTakesMedia)}
+              onAttach={(a) => {
+                if (!selectedNode) return;
+                const d = selectedNode.data.card;
+                if (d.kind === "link" && a.kind === "video") return setMessage({ kind: "err", text: "Web link cards can only show an image." });
+                if ("media" in d) updateCard(selectedNode.id, { ...d, media: { assetId: a.id, url: a.url, type: a.kind, name: a.name } } as NodeData);
+              }}
+              onShowCard={focusCard}
+            />
+          )}
+        </div>
+
+        {/* Canvas */}
+        <div ref={canvas} className="card" style={{ margin: 0, padding: 0, position: "relative", overflow: "hidden" }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={(_, n) => setSelected(n.id)}
+            onPaneClick={() => setSelected(null)}
+            onNodesDelete={(del) => del.some((n) => n.id === selected) && setSelected(null)}
+            deleteKeyCode={["Backspace", "Delete"]}
+            fitView
+            fitViewOptions={{ maxZoom: 1, padding: 0.1 }}
+            minZoom={0.2}
+          >
+            <Background gap={20} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeColor={(n) => CARD_STYLE[(n.data as CardFlowNode["data"]).card.kind].color} />
+          </ReactFlow>
+
+          {selectedNode && (
+            <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 340, background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 12, overflowY: "auto", zIndex: 5, boxShadow: "-4px 0 12px #0001" }}>
+              <Inspector
+                seriesId={props.seriesId}
+                nodeId={selectedNode.id}
+                data={selectedNode.data.card}
+                onChange={(d) => updateCard(selectedNode.id, d)}
+                onDelete={() => {
+                  setNodes((ns) => ns.filter((n) => n.id !== selectedNode.id));
+                  setEdges((es) => es.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id));
+                  setSelected(null);
+                }}
+                onClose={() => setSelected(null)}
+                assets={assets}
+                addAsset={(a) => setAssets((list) => [a, ...list])}
+                templates={props.templates}
+                series={props.series}
+                issues={issues.filter((i) => i.nodeId === selectedNode.id)}
+              />
+            </div>
+          )}
+
+          {showIssues && (
+            <div style={{ position: "absolute", left: 8, bottom: 8, maxWidth: 520, maxHeight: "45%", overflowY: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, zIndex: 6, fontSize: 13, boxShadow: "0 4px 12px #0002" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <strong>{issues.length ? "Checks before publishing" : "All checks pass ✓"}</strong>
+                <button type="button" className="secondary" style={{ padding: "0 6px" }} onClick={() => setShowIssues(false)}>
+                  ✕
+                </button>
+              </div>
+              {issues.map((i: Issue, k) => (
+                <div key={k} onClick={() => i.nodeId && focusCard(i.nodeId)} style={{ cursor: i.nodeId ? "pointer" : "default", padding: "2px 0", color: i.level === "error" ? "#b91c1c" : "#b45309" }}>
+                  {i.level === "error" ? "⛔" : "⚠️"} {i.message}
+                </div>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                style={{ marginTop: 6, padding: "2px 8px", fontSize: 12 }}
+                onClick={async () => {
+                  const server = await checkFlow(props.seriesId, graph);
+                  setMessage({ kind: server.some((i) => i.level === "error") ? "err" : "ok", text: server.length ? `Server check: ${server.length} item(s), same as listed.` : "Server check passed ✓" });
+                }}
+              >
+                Re-check with latest templates
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right: live preview, always visible */}
+        <div className="card" style={{ margin: 0, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <ChatPreview graph={graph} logicKey={logicKey} series={props.series} templates={templateBodies} code={props.code} selectedNodeId={selected} onSelectNode={focusCard} />
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -4,6 +4,8 @@ import type { OutMessage } from "../whatsapp/messages";
 import { EMPTY_STATE, handleInbound, type BotDeps, type ChatState, type Series, type ViewerLang } from "./flow";
 import type { CopyOverrides } from "./copy";
 import { IDS } from "./intents";
+import type { FlowGraph } from "../flows/types";
+import type { FlowRun } from "./flow";
 
 const SERIES: Series = {
   id: "s1",
@@ -21,13 +23,14 @@ const SERIES: Series = {
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
-function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string } = {}) {
+function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph } = {}) {
   const series: Series = { ...SERIES, ...opts.series };
   const sent: OutMessage[] = [];
   const events: string[] = [];
   let state: ChatState = EMPTY_STATE;
   let language: ViewerLang | null = null;
   let optIn: "in" | "out" | null = null;
+  let run: FlowRun | null = null;
 
   const deps: BotDeps = {
     upsertViewer: async (m) => ({ id: "v1", waId: m.from, language }),
@@ -62,8 +65,16 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     track: async (_v, name) => {
       events.push(name);
     },
+    getPublishedFlow: async (sid) => (opts.flow && sid === series.id ? { versionId: "ver1", graph: opts.flow } : null),
+    getFlowVersion: async (id) => (id === "ver1" && opts.flow ? opts.flow : null),
+    getFlowRun: async () => run,
+    saveFlowRun: async (_v, r) => {
+      run = r;
+    },
+    sendFlowTemplate: async () => "sent",
+    checkCondition: async (_v, _s, c) => c.check === "opted_in" && optIn === "in",
   };
-  return { deps, sent, events, getState: () => state, getOptIn: () => optIn, getLanguage: () => language };
+  return { deps, sent, events, getState: () => state, getOptIn: () => optIn, getLanguage: () => language, getRun: () => run };
 }
 
 let seq = 0;
@@ -188,6 +199,45 @@ describe("bot flow: series code to cliffhanger link", () => {
     expect(f.sent).toHaveLength(1);
     expect(f.sent[0]).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-ep4" });
     expect(f.getState()).toMatchObject({ seriesId: "s1", step: "linked", waEpisode: 3 });
+  });
+
+  it("follows the series' published flow instead of the built-in scenario", async () => {
+    const flow: FlowGraph = {
+      v: 1,
+      nodes: [
+        { id: "s", position: { x: 0, y: 0 }, data: { kind: "start" } },
+        {
+          id: "q",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "message",
+            body: { ar: "تبي تشوف؟", en: "Want to watch?" },
+            buttons: [
+              { id: "yes", title: { ar: "إيه", en: "Yes" } },
+              { id: "no", title: { ar: "لا", en: "No" } },
+            ],
+            media: null,
+          },
+        },
+        { id: "e1", position: { x: 0, y: 0 }, data: { kind: "episode", episode: 1, caption: { ar: "الحلقة {n}", en: "Episode {n}" }, buttons: [] } },
+        { id: "w", position: { x: 0, y: 0 }, data: { kind: "wait", minutes: 120 } },
+      ],
+      edges: [
+        { id: "1", source: "s", sourceHandle: "next", target: "q" },
+        { id: "2", source: "q", sourceHandle: "yes", target: "e1" },
+        { id: "3", source: "e1", sourceHandle: "next", target: "w" },
+      ],
+    };
+    const f = fakeDeps({ flow });
+    await handleInbound(text("SECRETS01"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: "تبي تشوف؟", buttons: [{ id: "f:q:yes" }, { id: "f:q:no" }] });
+    expect(f.getRun()).toMatchObject({ nodeId: "q", status: "input", versionId: "ver1" });
+    expect(f.events).toContain("flow_started");
+
+    await handleInbound(tap("f:q:yes"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "video", link: "https://cdn.example/ep1-ar.mp4", caption: "الحلقة 1" });
+    expect(f.getRun()).toMatchObject({ nodeId: "w", status: "wait" });
+    expect(f.getRun()?.resumeAt).toBeTruthy();
   });
 
   it("answers random text with the menu", async () => {

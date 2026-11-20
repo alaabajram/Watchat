@@ -2,6 +2,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/crypto";
+import { runFlowWaits } from "@/lib/flows/runner";
 import { runMessaging } from "@/lib/messaging/runner";
 
 export const runtime = "nodejs";
@@ -14,7 +15,8 @@ export async function GET(req: NextRequest) {
   if (!secret || !safeEqual(auth, `Bearer ${secret}`)) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+  const flows = await runFlowWaits();
   const summary = await runMessaging();
-  console.log("[cron] messaging", JSON.stringify(summary));
-  return NextResponse.json(summary);
+  console.log("[cron] messaging", JSON.stringify({ flows, ...summary }));
+  return NextResponse.json({ flows, ...summary });
 }

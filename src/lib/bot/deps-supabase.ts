@@ -1,5 +1,7 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import type { FlowGraph } from "../flows/types";
+import { sendNamedTemplate } from "../messaging/runner";
 import { hmacHex } from "../crypto";
 import { env } from "../env";
 import { trackEvent } from "../events";
@@ -53,6 +55,12 @@ const hmacByViewer = new Map<string, string>();
 /** wa_id → viewer id, so outgoing messages can be logged against the viewer without another query. */
 const viewerByWaId = new Map<string, string>();
 
+/** Let sends and events from scheduled jobs be logged against a viewer (no inbound message to learn it from). */
+export function primeViewer(viewerId: string, waId: string): void {
+  hmacByViewer.set(viewerId, phoneHmac(waId));
+  viewerByWaId.set(waId, viewerId);
+}
+
 export function createSupabaseDeps(): BotDeps {
   return {
     async upsertViewer(msg: InboundMessage): Promise<Viewer> {
@@ -68,7 +76,7 @@ export function createSupabaseDeps(): BotDeps {
       if (existing) {
         await db()
           .from("viewers")
-          .update({ last_seen_at: new Date().toISOString(), wa_profile_name: msg.profileName ?? null })
+          .update({ last_seen_at: new Date().toISOString(), last_inbound_at: new Date().toISOString(), wa_profile_name: msg.profileName ?? null })
           .eq("id", existing.id);
         hmacByViewer.set(existing.id, hmac);
         viewerByWaId.set(msg.from, existing.id);
@@ -95,6 +103,7 @@ export function createSupabaseDeps(): BotDeps {
             phone_hmac: hmac,
             wa_profile_name: msg.profileName ?? null,
             country: countryFromPhone(msg.from),
+            last_inbound_at: new Date().toISOString(),
             first_source_id: firstSourceId,
           },
           { onConflict: "tenant_id,phone_hmac" },
@@ -244,6 +253,72 @@ export function createSupabaseDeps(): BotDeps {
           status: result.ok ? "sent" : "failed",
           error: result.ok ? null : result.error,
         });
+    },
+
+    async getPublishedFlow(seriesId) {
+      const { data: flow } = await db().from("flows").select("published_version_id").eq("series_id", seriesId).maybeSingle();
+      if (!flow?.published_version_id) return null;
+      const graph = await this.getFlowVersion(flow.published_version_id);
+      return graph ? { versionId: flow.published_version_id as string, graph } : null;
+    },
+
+    async getFlowVersion(versionId) {
+      const { data } = await db().from("flow_versions").select("graph").eq("id", versionId).maybeSingle();
+      return (data?.graph as FlowGraph | undefined) ?? null;
+    },
+
+    async getFlowRun(viewerId) {
+      const { data } = await db().from("flow_runs").select("series_id, version_id, node_id, status, resume_at").eq("viewer_id", viewerId).maybeSingle();
+      return data
+        ? { seriesId: data.series_id, versionId: data.version_id, nodeId: data.node_id, status: data.status, resumeAt: data.resume_at }
+        : null;
+    },
+
+    async saveFlowRun(viewerId, run) {
+      const { error } = await db()
+        .from("flow_runs")
+        .upsert({
+          viewer_id: viewerId,
+          tenant_id: await currentTenantId(),
+          series_id: run.seriesId,
+          version_id: run.versionId,
+          node_id: run.nodeId,
+          status: run.status,
+          resume_at: run.resumeAt,
+          updated_at: new Date().toISOString(),
+        });
+      if (error) throw new Error(`saveFlowRun failed: ${error.message}`);
+    },
+
+    async sendFlowTemplate(viewer, series, name) {
+      const optedIn = (await this.getOptIn(viewer.id)) === "in";
+      return sendNamedTemplate(
+        { viewerId: viewer.id, phone: `+${viewer.waId}`, language: viewer.language, seriesId: series.id, episode: series.waEpisodeCount + 1 },
+        name,
+        optedIn,
+      );
+    },
+
+    async checkCondition(viewer, series, c) {
+      switch (c.check) {
+        case "opted_in":
+          return (await this.getOptIn(viewer.id)) === "in";
+        case "language_en":
+          return viewer.language === "ar_en_subs";
+        case "paid": {
+          const { count } = await db().from("orders").select("id", { count: "exact", head: true }).eq("viewer_id", viewer.id).eq("status", "paid");
+          return (count ?? 0) > 0;
+        }
+        case "reached_episode": {
+          const { count } = await db()
+            .from("progress")
+            .select("episode_id, episodes!inner(number, series_id)", { count: "exact", head: true })
+            .eq("viewer_id", viewer.id)
+            .eq("episodes.series_id", series.id)
+            .gte("episodes.number", c.episode);
+          return (count ?? 0) > 0;
+        }
+      }
     },
 
     async track(viewerId, name, data): Promise<void> {

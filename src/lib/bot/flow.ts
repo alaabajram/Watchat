@@ -6,6 +6,8 @@
 // · W6 opt-in · W7 not for me · W12 menu · W13 device confirmed · W14 alerts stopped.
 // Texts come from copy.ts with admin overrides; the scenario switches come from the series row.
 
+import { answer, startFlow, type FlowEnv, type RunResult } from "../flows/engine";
+import type { Condition, FlowGraph, Lang } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
 import { makeT, type CopyLang, type CopyOverrides, type T } from "./copy";
@@ -37,7 +39,7 @@ export type Clip = {
   videoUrlEn: string | null;
 };
 
-export type ChatStep = "idle" | "lang" | "trailer" | "episodes" | "linked";
+export type ChatStep = "idle" | "lang" | "trailer" | "episodes" | "linked" | "flow";
 export type ChatState = { seriesId: string | null; step: ChatStep; waEpisode: number };
 
 export type EventName =
@@ -49,7 +51,18 @@ export type EventName =
   | "opt_in_changed"
   | "language_set"
   | "data_deletion_requested"
-  | "device_confirmed";
+  | "device_confirmed"
+  | "flow_started"
+  | "flow_blocked";
+
+/** Where a viewer is in a series' published flow. */
+export type FlowRun = {
+  seriesId: string;
+  versionId: string;
+  nodeId: string;
+  status: "input" | "wait" | "running" | "done" | "blocked";
+  resumeAt: string | null;
+};
 
 export interface BotDeps {
   upsertViewer(msg: InboundMessage): Promise<Viewer>;
@@ -71,6 +84,14 @@ export interface BotDeps {
   /** Create a personal signed link and return its full URL. */
   mintLink(viewerId: string, series: Series, episodeNumber: number): Promise<string>;
   send(to: string, msg: OutMessage): Promise<void>;
+  /** The series' published flow (visual builder), or null to use the built-in scenario. */
+  getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
+  getFlowVersion(versionId: string): Promise<FlowGraph | null>;
+  getFlowRun(viewerId: string): Promise<FlowRun | null>;
+  saveFlowRun(viewerId: string, run: FlowRun): Promise<void>;
+  /** Send an approved template (respects opt-in and the marketing frequency cap). */
+  sendFlowTemplate(viewer: Viewer, series: Series, name: string): Promise<"sent" | "skipped" | "failed">;
+  checkCondition(viewer: Viewer, series: Series, condition: Condition): Promise<boolean>;
   track(
     viewerId: string,
     name: EventName,
@@ -122,6 +143,13 @@ async function route(
         seriesId: series.id,
         props: { code: series.code, source: msg.referral ? "ctwa_ad" : "organic", referral: msg.referral ?? null },
       });
+      const flow = await deps.getPublishedFlow(series.id);
+      if (flow) {
+        await deps.track(viewer.id, "flow_started", { seriesId: series.id, props: { version: flow.versionId } });
+        const result = await startFlow(flow.graph, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
+        await saveRunResult(deps, viewer, series.id, flow.versionId, result);
+        return { seriesId: series.id, step: "flow", waEpisode: 0 };
+      }
       if (!viewer.language && series.askLanguage) {
         await sendLanguageChoice(to, series, deps);
         return { seriesId: series.id, step: "lang", waEpisode: 0 };
@@ -156,22 +184,20 @@ async function route(
 
     case "not_for_me": {
       await deps.track(viewer.id, "wa_dropout", { seriesId: current?.id, episode: state.waEpisode });
-      const others = await deps.listOtherSeries(current?.id ?? null);
-      if (others.length === 0) {
-        await deps.send(to, { kind: "text", body: t("noOtherSeries") });
+      await sendSuggestions(c, current);
+      return null;
+    }
+
+    case "flow_reply": {
+      const run = await deps.getFlowRun(viewer.id);
+      const graph = run ? await deps.getFlowVersion(run.versionId) : null;
+      const series = run ? await deps.getSeries(run.seriesId) : null;
+      if (!run || !graph || !series) {
+        await sendMenu(c);
         return null;
       }
-      await deps.send(to, {
-        kind: "list",
-        body: t("notForMeBody"),
-        buttonText: t("btnSeeSeries"),
-        sections: [
-          {
-            title: t("seriesSectionTitle"),
-            rows: others.map((s) => ({ id: `${IDS.seriesPrefix}${s.code}`, title: titleOf(s, c.lang) })),
-          },
-        ],
-      });
+      const result = await answer(graph, intent.nodeId, intent.port, flowEnvFor(viewer, series, deps, { canSendFreeform: true }));
+      await saveRunResult(deps, viewer, series.id, run.versionId, result);
       return null;
     }
 
@@ -288,6 +314,85 @@ async function sendNextChatEpisode(c: Ctx, series: Series, n: number): Promise<C
   await sendCliffhangerLink(c, series, series.waEpisodeCount + 1);
   if (series.askOptIn && (await c.deps.getOptIn(c.viewer.id)) === null) await sendOptInAsk(c);
   return { seriesId: series.id, step: "linked", waEpisode: n };
+}
+
+// ---------------------------------------------------------------------------
+// Visual-builder flows
+// ---------------------------------------------------------------------------
+
+const viewerLangToFlow = (l: ViewerLang | null): Lang | null => (l === "ar_en_subs" ? "en" : l === "ar" ? "ar" : null);
+
+/** Connect the pure flow engine to WhatsApp and the database for one viewer. */
+export function flowEnvFor(viewer: Viewer, series: Series, deps: BotDeps, opts: { canSendFreeform: boolean; now?: () => number }): FlowEnv {
+  const v = { ...viewer };
+  const env: FlowEnv = {
+    lang: viewerLangToFlow(v.language) ?? "ar",
+    title: (l) => titleOf(series, l),
+    totalEpisodes: series.episodeCount,
+    send: (msg) => deps.send(v.waId, msg),
+    knownLanguage: () => viewerLangToFlow(v.language),
+    setLanguage: async (l) => {
+      v.language = l === "en" ? "ar_en_subs" : "ar";
+      await deps.setViewerLanguage(v.id, v.language);
+      await deps.track(v.id, "language_set", { props: { language: v.language } });
+    },
+    optIn: () => deps.getOptIn(v.id),
+    setOptIn: async (yes) => {
+      await deps.setOptIn(v.id, yes ? "in" : "out", "flow");
+      await deps.track(v.id, "opt_in_changed", { props: { status: yes ? "in" : "out", source: "flow" } });
+    },
+    link: async (ep) => {
+      const episode = ep === "resume" ? await deps.resumeEpisode(v.id, series) : Math.min(Math.max(ep, 1), Math.max(series.episodeCount, 1));
+      return { url: await deps.mintLink(v.id, series, episode), episode };
+    },
+    clip: async (n, l) => {
+      const clip = await deps.getClip(series.id, n);
+      return { url: (l === "en" ? (clip?.videoUrlEn ?? clip?.videoUrlAr) : clip?.videoUrlAr) ?? null, title: (l === "en" ? clip?.titleEn : clip?.titleAr) ?? null };
+    },
+    mediaUrl: (ref) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
+    template: (name) => deps.sendFlowTemplate(v, series, name),
+    check: (cond) => deps.checkCondition(v, series, cond),
+    suggest: async () => {
+      await deps.track(v.id, "wa_dropout", { seriesId: series.id });
+      const lang = viewerLangToFlow(v.language) ?? "ar";
+      await sendSuggestions({ viewer: v, deps, lang, t: makeT(lang, await deps.getCopyOverrides(series.id, lang)) }, series);
+    },
+    canSendFreeform: () => opts.canSendFreeform,
+    track: (name, data) => deps.track(v.id, name as EventName, { seriesId: series.id, ...data }),
+    now: opts.now ?? (() => Date.now()),
+  };
+  return env;
+}
+
+export async function saveRunResult(deps: BotDeps, viewer: Viewer, seriesId: string, versionId: string, r: RunResult): Promise<void> {
+  if (r.status === "blocked") await deps.track(viewer.id, "flow_blocked", { seriesId, props: { node: r.nodeId, reason: r.reason } });
+  await deps.saveFlowRun(viewer.id, {
+    seriesId,
+    versionId,
+    nodeId: "nodeId" in r ? r.nodeId : "",
+    status: r.status,
+    resumeAt: r.status === "wait" ? new Date(r.resumeAt).toISOString() : null,
+  });
+}
+
+/** W7 — "not for me": list other live series. */
+async function sendSuggestions({ viewer, deps, lang, t }: Ctx, current: Series | null) {
+  const others = await deps.listOtherSeries(current?.id ?? null);
+  if (others.length === 0) {
+    await deps.send(viewer.waId, { kind: "text", body: t("noOtherSeries") });
+    return;
+  }
+  await deps.send(viewer.waId, {
+    kind: "list",
+    body: t("notForMeBody"),
+    buttonText: t("btnSeeSeries"),
+    sections: [
+      {
+        title: t("seriesSectionTitle"),
+        rows: others.map((s) => ({ id: `${IDS.seriesPrefix}${s.code}`, title: titleOf(s, lang) })),
+      },
+    ],
+  });
 }
 
 // ---------------------------------------------------------------------------

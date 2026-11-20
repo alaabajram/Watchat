@@ -36,7 +36,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   return (
     <>
       <p>
-        <Link href="/admin/series">← All series</Link>
+        <Link href="/admin/series">← All series</Link> · <Link href={`/admin/flows/${s.id}`}>Open this series&apos; chat flow builder →</Link>
       </p>
       <h1>
         {s.code} · {s.title_en} <span className={`badge ${s.status}`}>{s.status}</span>

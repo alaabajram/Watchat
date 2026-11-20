@@ -68,6 +68,16 @@ async function recentlyMarketed(viewerId: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
+/** Send a template by name from a flow's Template card. Marketing templates need the viewer's opt-in. */
+export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boolean): Promise<"sent" | "skipped" | "failed"> {
+  const tenantId = await currentTenantId();
+  const templates = await loadTemplates(tenantId, name);
+  const t = templates.get(templateLangFor(r.language)) ?? templates.get("ar");
+  if (t?.category === "marketing" && !optedIn) return "skipped";
+  const result = await sendTemplate(r, templates);
+  return result.ok ? "sent" : result.skipped ? "skipped" : "failed";
+}
+
 /** Send one template to one viewer. Returns the Meta message id or an error. */
 async function sendTemplate(r: Recipient, templates: Map<string, Template>): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
   const lang = templateLangFor(r.language);

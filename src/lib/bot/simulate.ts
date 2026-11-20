@@ -42,6 +42,12 @@ export async function simulateChat(series: Series, overrides: Record<CopyLang, C
       turns.push({ from: "bot", msg });
     },
     track: async () => {},
+    getPublishedFlow: async () => null,
+    getFlowVersion: async () => null,
+    getFlowRun: async () => null,
+    saveFlowRun: async () => {},
+    sendFlowTemplate: async () => "skipped",
+    checkCondition: async () => false,
   };
 
   let seq = 0;

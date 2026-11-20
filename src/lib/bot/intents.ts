@@ -1,3 +1,4 @@
+import { parseButtonReplyId } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 
 // Button / list-row ids the bot sends. Keep them short and stable: viewers may tap old messages.
@@ -31,6 +32,7 @@ export type Intent =
   | { type: "delete_data" }
   | { type: "confirm_code"; code: string }
   | { type: "watch"; code: string; episode: number | null }
+  | { type: "flow_reply"; nodeId: string; port: string }
   | { type: "unknown"; text?: string };
 
 const STOP_WORDS = ["STOP", "UNSUBSCRIBE", "إيقاف", "ايقاف", "توقف", "الغاء", "إلغاء"];
@@ -97,6 +99,8 @@ export function intentFromReplyId(id: string): Intent {
     case IDS.menuSupport:
       return { type: "support" };
   }
+  const flow = parseButtonReplyId(id);
+  if (flow) return { type: "flow_reply", ...flow };
   if (id.startsWith(IDS.seriesPrefix)) return { type: "series_code", code: id.slice(IDS.seriesPrefix.length) };
   return { type: "unknown" };
 }

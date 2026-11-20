@@ -256,6 +256,14 @@ a {
 .admin-nav .brand { font-weight: 700; font-size: 16px; padding: 8px 10px 16px; }
 .admin-nav .who { margin-top: auto; font-size: 12px; color: #9ca3af; padding: 8px 10px; }
 .admin-main { padding: 24px 32px; max-width: 1200px; }
+.admin-main:has(.flow-builder) { max-width: none; padding: 12px 16px; }
+/* Flow builder: compact controls, and keep admin button styles off the canvas widgets. */
+.admin .flow-builder input, .admin .flow-builder select, .admin .flow-builder textarea { padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.admin .flow-builder textarea { min-height: 0; }
+.admin .flow-builder button { padding: 5px 10px; font-size: 13px; }
+.admin .flow-builder label { font-weight: 500; font-size: 12px; }
+.admin .flow-builder .react-flow__controls button { background: #fff; color: #111; padding: 4px; border: 0; border-bottom: 1px solid #eee; border-radius: 0; }
+.admin .flow-builder .react-flow__controls button svg { fill: #111; }
 .admin h1 { margin: 0 0 16px; font-size: 22px; }
 .admin h2 { margin: 24px 0 8px; font-size: 16px; }
 .admin .card { background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }

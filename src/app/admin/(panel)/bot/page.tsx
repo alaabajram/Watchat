@@ -38,6 +38,10 @@ export default async function BotPage({ searchParams }: { searchParams: Promise<
           <code>{"{title}"}</code> series title · <code>{"{n}"}</code> episode · <code>{"{total}"}</code> episode count ·{" "}
           <code>{"{next}"}</code> next episode. Buttons are limited to 20 characters by WhatsApp.
         </p>
+        <p style={{ background: "#eff6ff", padding: 8, borderRadius: 6 }}>
+          Series with a published flow in the <Link href="/admin/flows">Flow builder</Link> use the texts on their flow cards. The texts here are used for the
+          menu, alerts, support and other shared replies, and for series without a published flow.
+        </p>
         <p className="muted" style={{ marginBottom: 0 }}>
           The chat scenario (language question, trailer, number of chat episodes, alerts question) is set per series on its{" "}
           <Link href="/admin/series">series page</Link>.

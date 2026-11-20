@@ -1,0 +1,122 @@
+// In-memory FlowEnv for the editor's live chat preview (and tests). Nothing is sent or saved.
+
+import type { OutMessage } from "../whatsapp/messages";
+import { answer, resumeAfterWait, startFlow, type FlowEnv, type RunResult } from "./engine";
+import type { Condition, FlowGraph, Lang, MediaRef } from "./types";
+
+export type PreviewItem =
+  | { from: "viewer"; text: string }
+  | { from: "bot"; msg: OutMessage; nodeId: string }
+  | { from: "system"; text: string; nodeId?: string };
+
+export type PreviewSeries = {
+  titleAr: string;
+  titleEn: string;
+  episodeCount: number;
+  posterUrl: string | null;
+  trailerUrl: string | null;
+  clips: Record<number, { ar: string | null; en: string | null }>;
+};
+
+export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean };
+
+/** `items` is a fresh array after every step (handy for React state); the env writes to `sink`. */
+export type PreviewSession = {
+  items: PreviewItem[];
+  result: RunResult;
+  env: FlowEnv;
+  sink: { items: PreviewItem[] };
+};
+
+export function previewEnv(series: PreviewSeries, viewer: SampleViewer, templates: Record<string, string>, sink: { items: PreviewItem[] }): FlowEnv {
+  let clock = Date.parse("2026-01-01T10:00:00Z");
+  const state = { ...viewer };
+  const env: FlowEnv = {
+    lang: state.language ?? "ar",
+    title: (l) => (l === "en" ? series.titleEn : series.titleAr),
+    totalEpisodes: series.episodeCount,
+    send: async (msg, nodeId) => {
+      sink.items.push({ from: "bot", msg, nodeId });
+    },
+    knownLanguage: () => state.language,
+    setLanguage: async (l) => {
+      state.language = l;
+    },
+    optIn: async () => state.optIn,
+    setOptIn: async (yes) => {
+      state.optIn = yes ? "in" : "out";
+    },
+    link: async (ep) => {
+      const episode = ep === "resume" ? Math.max(state.reachedEpisode, 1) : ep;
+      return { url: `https://watchat.pro/w/your-personal-link`, episode };
+    },
+    clip: async (n, l) => ({ url: series.clips[n]?.[l] ?? series.clips[n]?.ar ?? null, title: null }),
+    mediaUrl: (ref: MediaRef) => ("assetId" in ref ? ref.url : ref.source === "poster" ? series.posterUrl : series.trailerUrl),
+    template: async (name) => {
+      sink.items.push({ from: "system", text: `Template “${name}”${templates[name] ? `: ${templates[name]}` : ""}` });
+      return "sent";
+    },
+    check: async (c: Condition) => {
+      switch (c.check) {
+        case "opted_in":
+          return state.optIn === "in";
+        case "language_en":
+          return state.language === "en";
+        case "paid":
+          return state.paid;
+        case "reached_episode":
+          return state.reachedEpisode >= c.episode;
+      }
+    },
+    suggest: async () => {
+      sink.items.push({ from: "system", text: "Bot sends the list of other series." });
+    },
+    canSendFreeform: () => state.withinWindow,
+    track: async () => {},
+    now: () => clock,
+  };
+  // Waits are skipped in the preview; move the clock so resumeAt stays meaningful.
+  (env as FlowEnv & { advance: (ms: number) => void }).advance = (ms) => {
+    clock += ms;
+  };
+  return env;
+}
+
+function note(items: PreviewItem[], r: RunResult, g: FlowGraph) {
+  if (r.status === "wait") {
+    const n = g.nodes.find((x) => x.id === r.nodeId);
+    const minutes = n?.data.kind === "wait" ? n.data.minutes : 0;
+    items.push({ from: "system", text: `⏱ Waits ${formatMinutes(minutes)}`, nodeId: r.nodeId });
+  }
+  if (r.status === "blocked") items.push({ from: "system", text: `⛔ ${r.reason}`, nodeId: r.nodeId });
+  if (r.status === "done") items.push({ from: "system", text: "Chat ends here." });
+}
+
+export function formatMinutes(m: number): string {
+  if (m % 1440 === 0) return `${m / 1440} day${m === 1440 ? "" : "s"}`;
+  if (m % 60 === 0) return `${m / 60} hour${m === 60 ? "" : "s"}`;
+  return `${m} minute${m === 1 ? "" : "s"}`;
+}
+
+export async function previewStart(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: Record<string, string>, code: string): Promise<PreviewSession> {
+  const sink = { items: [{ from: "viewer", text: code }] as PreviewItem[] };
+  const env = previewEnv(series, viewer, templates, sink);
+  const result = await startFlow(g, env);
+  note(sink.items, result, g);
+  return { items: [...sink.items], result, env, sink };
+}
+
+export async function previewTap(g: FlowGraph, s: PreviewSession, nodeId: string, port: string, label: string): Promise<PreviewSession> {
+  s.sink.items.push({ from: "viewer", text: label });
+  const result = await answer(g, nodeId, port, s.env);
+  note(s.sink.items, result, g);
+  return { ...s, items: [...s.sink.items], result };
+}
+
+export async function previewSkipWait(g: FlowGraph, s: PreviewSession): Promise<PreviewSession> {
+  if (s.result.status !== "wait") return s;
+  (s.env as FlowEnv & { advance: (ms: number) => void }).advance(s.result.resumeAt - s.env.now());
+  const result = await resumeAfterWait(g, s.result.nodeId, s.env);
+  note(s.sink.items, result, g);
+  return { ...s, items: [...s.sink.items], result };
+}
