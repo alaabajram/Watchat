@@ -31,6 +31,7 @@ describe("personal link rules — an unknown browser never gets the owner's acco
 
   it("a brand-new browser signs in only on the first open, soon after sending (a new viewer's first link)", () => {
     expect(decideLinkOpen(link(5), null, null, now)).toBe("sign_in_first_open");
+    expect(decideLinkOpen(link(23 * 60), null, null, now)).toBe("sign_in_first_open"); // opened later the same day
     expect(decideLinkOpen(link(FIRST_OPEN_MINUTES + 5), null, null, now)).toBe("ask_whatsapp"); // late
   });
 

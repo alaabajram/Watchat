@@ -5,7 +5,7 @@
 //   • signed in here as the owner → open the episode;
 //   • signed in here to ANOTHER account (a forwarded link) → stay in that account, same episode on the web;
 //   • this browser was the owner's before (session went idle) → sign the owner in again, silently;
-//   • a brand-new browser opening the link for the FIRST time within FIRST_OPEN_MINUTES of sending
+//   • a brand-new browser opening the link for the FIRST time within 24 h of sending (FIRST_OPEN_MINUTES)
 //     → sign the owner in (how a new viewer's first link from an ad works);
 //   • anything else — a forwarded link on an unknown phone, a re-opened or expired link — → "Sign in with
 //     WhatsApp": sending the pre-filled message proves the opener's own number and the bot replies with a
@@ -22,8 +22,10 @@ import { db } from "./supabase";
 export const LINK_TTL_DAYS = 90;
 /** uses_left records whether the link has been opened yet: only its first open can sign in a new browser. */
 export const LINK_MAX_USES = 1;
-/** A brand-new browser is trusted with the owner's account only on the link's first open, this soon after sending. */
-export const FIRST_OPEN_MINUTES = 30;
+/** A brand-new browser is trusted with the owner's account only on the link's first open, within this long
+ *  after sending — WhatsApp's 24-hour customer-service window. Shorter would make late openers message again
+ *  (an extra WhatsApp reply to pay for); the risk is limited to a link nobody has opened yet. */
+export const FIRST_OPEN_MINUTES = 24 * 60;
 
 /** Sent from the "Sign in with WhatsApp" button; the bot replies with a sign-in link to /me. */
 export const ACCOUNT_WORD = "حسابي";
