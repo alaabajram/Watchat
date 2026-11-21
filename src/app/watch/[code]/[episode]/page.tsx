@@ -1,12 +1,10 @@
-// P4 Player + P8 paywall. The viewer is recognised silently from their session cookie, resumes where
-// they stopped, and pays from the wallet tied to their WhatsApp number.
+// P4 Player + P8 paywall as a full-screen vertical feed (scroll for next / previous episode). The viewer is
+// recognised silently from their session cookie, resumes where they stopped, and pays from the wallet tied to
+// their WhatsApp number.
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Paywall } from "@/components/Paywall";
-import { Player } from "@/components/Player";
-import { ShareButton } from "@/components/ShareButton";
-import { TopBar } from "@/components/TopBar";
+import { shareHref } from "@/components/ShareButton";
+import { WatchFeed, type FeedEpisode } from "@/components/watch/WatchFeed";
 import { canWatch, getEpisodes, getPosition, getSeriesByCode, getUnlocked, streamUrls } from "@/lib/content";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
@@ -53,9 +51,6 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
   ]);
   const allowed = canWatch(series, number, unlocked);
   const title = locale === "en" ? series.titleEn : series.titleAr;
-  const prev = episodes.find((e) => e.number === number - 1);
-  const next = episodes.find((e) => e.number === number + 1);
-  const returnTo = `/watch/${series.code}/${number}`;
 
   await trackEvent({
     viewerHmac: viewer.phoneHmac,
@@ -66,70 +61,27 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
 
   const currency = currencyFor(viewer.country);
   const passPrice = currency === "SAR" ? series.seasonPassPriceSar : series.seasonPassPriceAed;
-  const { hls, poster } = streamUrls(current.streamUid, env.streamCustomerCode);
+  // Every episode is a slide in the full-screen feed; only the one on screen loads its video.
+  const feed: FeedEpisode[] = episodes.map((e) => {
+    const { hls, poster } = streamUrls(e.streamUid, env.streamCustomerCode);
+    return { id: e.id, number: e.number, hls, poster, allowed: canWatch(series, e.number, unlocked), price: e.coinPrice ?? series.coinsPerEpisode };
+  });
 
   return (
-    <main className="wc wc-dark" dir={dirFor(locale)} lang={locale}>
-      <TopBar locale={locale} balance={balance} backHref={`/series/${series.code}`} backLabel={t.episodes} dark />
-
-      {allowed ? (
-        <Player
-          locale={locale}
-          episodeId={current.id}
-          src={hls}
-          poster={poster}
-          startAt={startAt}
-          subtitleLang={viewer.language === "ar_en_subs" ? "en" : "ar"}
-          nextHref={next ? `/watch/${series.code}/${next.number}` : null}
-          prevHref={prev ? `/watch/${series.code}/${prev.number}` : null}
-          seriesHref={`/series/${series.code}`}
-          title={`${title} · ${t.episode(number)}`}
-        />
-      ) : (
-        <div className="player">
-          {poster && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={poster} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(8px) brightness(0.5)" }} />
-          )}
-          <div className="placeholder" style={{ fontWeight: 600 }}>{t.locked}</div>
-        </div>
-      )}
-
-      <div className="player-bar">
-        <div style={{ minWidth: 0 }}>
-          <strong style={{ fontWeight: 600 }}>{title}</strong>
-          <div className="muted" style={{ fontSize: 14 }}>
-            {t.episode(number)} · {t.of(number, episodes.length)}
-          </div>
-        </div>
-        <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <ShareButton code={series.code} title={title} locale={locale} dark />
-          {prev && (
-            <Link className="btn secondary" href={`/watch/${series.code}/${prev.number}`}>
-              {t.previous}
-            </Link>
-          )}
-          {next && allowed && (
-            <Link className="btn" href={`/watch/${series.code}/${next.number}`}>
-              {t.next}
-            </Link>
-          )}
-        </nav>
-      </div>
-
-      {!allowed && (
-        <Paywall
-          locale={locale}
-          episodeId={current.id}
-          price={current.coinPrice ?? series.coinsPerEpisode}
-          balance={balance}
-          trusted={viewer.trusted}
-          seriesCode={series.code}
-          seriesId={series.id}
-          seasonPassLabel={passPrice !== null ? t.seasonPassPrice(formatMoney(passPrice, currency, locale)) : null}
-          returnTo={returnTo}
-        />
-      )}
-    </main>
+    <WatchFeed
+      locale={locale}
+      seriesCode={series.code}
+      seriesId={series.id}
+      title={title}
+      synopsis={(locale === "en" ? series.synopsisEn : series.synopsisAr) ?? null}
+      episodes={feed}
+      startNumber={number}
+      startAt={startAt}
+      subtitleLang={viewer.language === "ar_en_subs" ? "en" : "ar"}
+      shareHref={shareHref(series.code, title, locale)}
+      balance={balance}
+      trusted={viewer.trusted}
+      seasonPassLabel={passPrice !== null ? t.seasonPassPrice(formatMoney(passPrice, currency, locale)) : null}
+    />
   );
 }
