@@ -8,6 +8,7 @@ import { flowSummary, health, HEALTH_COLOR } from "@/lib/ctr/ctr";
 import "@xyflow/react/dist/style.css";
 import {
   addEdge,
+  reconnectEdge,
   Background,
   Controls,
   MarkerType,
@@ -201,6 +202,36 @@ function Builder(props: Props) {
     (c: Connection) =>
       setEdges((es) => addEdge({ ...c, id: newId(), ...edgeDefaults }, es.filter((e) => !(e.source === c.source && e.sourceHandle === c.sourceHandle)))),
     [setEdges],
+  );
+
+  // Re-link an existing arrow: drag either end onto another card. Dropping it on empty canvas removes it.
+  const reconnected = useRef(true);
+  const onReconnectStart = useCallback(() => {
+    reconnected.current = false;
+    setSelected(null); // the card editor would cover cards on the right of the canvas
+  }, []);
+  const onReconnect = useCallback(
+    (old: Edge, c: Connection) => {
+      reconnected.current = true;
+      // One arrow per button: the arrow takes over the new button, replacing any arrow already there.
+      setEdges((es) => reconnectEdge(old, c, es.filter((e) => e.id === old.id || !(e.source === c.source && e.sourceHandle === c.sourceHandle)), { shouldReplaceId: false }));
+    },
+    [setEdges],
+  );
+  const onReconnectEnd = useCallback(
+    (_: unknown, edge: Edge) => {
+      if (!reconnected.current) setEdges((es) => es.filter((e) => e.id !== edge.id));
+      reconnected.current = true;
+    },
+    [setEdges],
+  );
+  const selectedEdge = edges.find((e) => e.selected) ?? null;
+  const shownEdges = useMemo(
+    () =>
+      edges.map((e) =>
+        e.selected ? { ...e, style: { stroke: MINT, strokeWidth: 3 }, markerEnd: { type: MarkerType.ArrowClosed, color: MINT }, zIndex: 5 } : e,
+      ),
+    [edges],
   );
 
   const updateCard = (id: string, data: NodeData) => {
@@ -458,7 +489,8 @@ function Builder(props: Props) {
                 </button>
               ))}
               <p className="muted" style={{ fontSize: 12 }}>
-                Drag from a button&apos;s dot on the right of a card to another card to connect them. Select a card or arrow and press Delete to remove it.
+                Drag from a button&apos;s dot on the right of a card to another card to connect them. To re-link, drag either end of an arrow onto another card
+                (or drag a new arrow from the same button: it replaces the old one). Select a card or arrow and press Delete to remove it.
                 Shift-drag on the canvas to select several cards.
               </p>
               <strong style={{ marginTop: 4 }}>☆ My cards</strong>
@@ -531,11 +563,18 @@ function Builder(props: Props) {
         <div ref={canvas} style={{ ...PANEL, background: "#f7f5f2", padding: 0, position: "relative", overflow: "hidden" }}>
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={shownEdges}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnectStart={onReconnectStart}
+            onConnectStart={() => setSelected(null)}
+            onReconnect={onReconnect}
+            onReconnectEnd={onReconnectEnd}
+            reconnectRadius={16}
+            edgesReconnectable
+            onEdgeClick={() => setSelected(null)}
             onNodeClick={(_, n) => setSelected(n.id)}
             onPaneClick={() => setSelected(null)}
             onNodesDelete={(del) => del.some((n) => n.id === selected) && setSelected(null)}
@@ -589,6 +628,22 @@ function Builder(props: Props) {
                   if (name?.trim()) void saveToMyCards([selectedNode.id], name);
                 }}
               />
+            </div>
+          )}
+
+          {selectedEdge && multi.length <= 1 && (
+            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 7, background: "#fff", borderRadius: 14, padding: "8px 10px", display: "flex", gap: 10, alignItems: "center", boxShadow: "0 4px 12px #0002", fontSize: 13 }}>
+              <span>
+                <strong>Arrow selected</strong> · drag its end onto another card to re-link it
+              </span>
+              <button
+                type="button"
+                className="secondary"
+                style={{ color: "#b91c1c" }}
+                onClick={() => setEdges((es) => es.filter((e) => e.id !== selectedEdge.id))}
+              >
+                Delete arrow
+              </button>
             </div>
           )}
 
