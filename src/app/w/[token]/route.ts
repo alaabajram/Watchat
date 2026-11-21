@@ -7,6 +7,7 @@
 //  • Anything else (unknown browser: forwarded, re-opened or expired link) → "Sign in with WhatsApp" page.
 //    An unknown browser never gets the owner's account.
 
+import { canonicalRedirect } from "@/lib/canonical";
 import { siteUrl } from "@/lib/site/store";
 import { NextResponse, type NextRequest } from "next/server";
 import { trackEvent } from "@/lib/events";
@@ -27,6 +28,12 @@ function noStore(res: NextResponse) {
 export async function GET(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   const base = await siteUrl();
+
+  // Sign in on the site's own address only. A link built with another hostname (an older link, or one minted
+  // before the site address was set — e.g. the vercel.app domain) would save the sign-in on that hostname,
+  // where watchat.pro/me can't see it. So hop to the canonical address first, then sign in there.
+  const canonical = canonicalRedirect(req.nextUrl, base);
+  if (canonical) return noStore(NextResponse.redirect(canonical, 307));
   const ip = clientIp(req.headers);
 
   // Slow down anyone guessing tokens.
