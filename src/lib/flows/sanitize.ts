@@ -66,7 +66,7 @@ function condition(v: unknown): Condition {
   const c = obj(v);
   if (c.check === "reached_episode") return { check: "reached_episode", episode: num(c.episode, 1, 999, 1) };
   if (c.check === "watched_within") return { check: "watched_within", hours: num(c.hours, 1, 720, 24) };
-  if (c.check === "language_en" || c.check === "paid" || c.check === "started" || c.check === "came_back" || c.check === "paid_since" || c.check === "has_series") return { check: c.check };
+  if (c.check === "language_en" || c.check === "paid" || c.check === "started" || c.check === "came_back" || c.check === "paid_since" || c.check === "has_series" || c.check === "on_telegram") return { check: c.check };
   return { check: "opted_in" };
 }
 

@@ -13,6 +13,7 @@ import { sendWhatsApp } from "../whatsapp/client";
 import { placeholderCount } from "../whatsapp/templates";
 import { isQuietHours, MARKETING_GAP_HOURS, templateLangFor } from "./policy";
 import { runSequenceFlows, type SequenceFlowSummary } from "./sequence-flows";
+import { channelOfAddress, runsFor, type FlowChannel } from "../flows/types";
 
 type Template = {
   name: string;
@@ -226,7 +227,7 @@ export async function runMessaging(now = new Date()): Promise<RunSummary> {
   // --- Single-template sequences (no canvas) ----------------------------------------------
   const { data: sequences } = await db()
     .from("sequences")
-    .select("id, name, template_name")
+    .select("id, name, template_name, channel")
     .eq("tenant_id", tenantId)
     .eq("active", true)
     .is("graph", null)
@@ -252,6 +253,7 @@ export async function runMessaging(now = new Date()): Promise<RunSummary> {
       ref: string;
     }[]) {
       if (budget <= 0) break;
+      if (!runsFor((seq.channel ?? "both") as FlowChannel, channelOfAddress(c.phone_e164))) continue; // set for the other chat app
       // Claim this moment first; a duplicate run gets a unique-violation and moves on.
       const { error: claimError } = await db()
         .from("sequence_sends")

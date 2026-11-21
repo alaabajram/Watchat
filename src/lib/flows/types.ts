@@ -30,7 +30,33 @@ export type Condition =
   | { check: "came_back" } // active again (chat or web) since this sequence started for them
   | { check: "paid_since" } // paid since this sequence started for them
   // Shared flow only:
-  | { check: "has_series" }; // the viewer is following a series (so a player link can be sent)
+  | { check: "has_series" } // the viewer is following a series (so a player link can be sent)
+  // Every flow: which chat app the viewer uses
+  | { check: "on_telegram" };
+
+// ---------------------------------------------------------------------------
+// Channels: one flow for both chat apps, or a WhatsApp + Telegram pair
+// ---------------------------------------------------------------------------
+
+/** Who a flow, shared replies or sequence runs for. */
+export type FlowChannel = "both" | "whatsapp" | "telegram";
+/** The chat app a viewer uses. */
+export type ViewerChannel = "whatsapp" | "telegram";
+export const FLOW_CHANNELS: FlowChannel[] = ["both", "whatsapp", "telegram"];
+export const CHANNEL_LABEL: Record<FlowChannel, string> = { both: "WhatsApp + Telegram", whatsapp: "WhatsApp", telegram: "Telegram" };
+export const CHANNEL_COLOR: Record<ViewerChannel, string> = { whatsapp: "#25a35a", telegram: "#2481CC" };
+
+/** A viewer's chat app from their address ("tg:<id>" / "+tg:<id>" is Telegram). */
+export const channelOfAddress = (address: string | null | undefined): ViewerChannel =>
+  String(address ?? "").replace(/^\+/, "").startsWith("tg:") ? "telegram" : "whatsapp";
+
+/** Does something set to `flow` run for a viewer on `viewer`? */
+export const runsFor = (flow: FlowChannel, viewer: ViewerChannel): boolean => flow === "both" || flow === viewer;
+
+/** Of a series' (or the shared replies') flows, the one a viewer gets: their app's own flow, else the shared one. */
+export function pickChannelFlow<T extends { channel: FlowChannel }>(rows: T[], viewer: ViewerChannel): T | null {
+  return rows.find((r) => r.channel === viewer) ?? rows.find((r) => r.channel === "both") ?? null;
+}
 
 /** What starts a sequence flow (the same moments as the sequences table). */
 export type SequenceTrigger = "stopped_mid_series" | "inactive" | "finished_series";
@@ -164,11 +190,11 @@ export const CARD_LABELS: Record<NodeKind, string> = {
 /** Cards that can be added to a sequence flow (all business-initiated: templates only). */
 export const SEQUENCE_CARDS: NodeKind[] = ["trigger", "wait", "condition", "template", "end"];
 /** Checks offered on a Condition card in each kind of flow. */
-export const SEQUENCE_CHECKS: Condition["check"][] = ["came_back", "paid_since", "opted_in", "language_en", "paid", "watched_within"];
+export const SEQUENCE_CHECKS: Condition["check"][] = ["came_back", "paid_since", "opted_in", "language_en", "paid", "watched_within", "on_telegram"];
 
 /** Cards that can be added to the shared flow (replies inside the viewer's 24 h window, no waits or templates). */
 export const SHARED_CARDS: NodeKind[] = ["keyword", "message", "list", "link", "account", "language", "optin", "condition", "action", "suggest", "choice"];
-export const SHARED_CHECKS: Condition["check"][] = ["has_series", "opted_in", "language_en", "paid"];
+export const SHARED_CHECKS: Condition["check"][] = ["has_series", "opted_in", "language_en", "paid", "on_telegram"];
 
 /** Normalise what a viewer typed for keyword matching: Western digits, upper case, letters and digits only. */
 export function normaliseWord(text: string): string {

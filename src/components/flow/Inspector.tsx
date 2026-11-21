@@ -349,7 +349,7 @@ export function Inspector(p: Props) {
                       ? { check: "reached_episode", episode: 4 }
                       : check === "watched_within"
                         ? { check: "watched_within", hours: 2 }
-                        : { check: check as "opted_in" | "language_en" | "paid" | "started" | "came_back" | "paid_since" | "has_series" },
+                        : { check: check as "opted_in" | "language_en" | "paid" | "started" | "came_back" | "paid_since" | "has_series" | "on_telegram" },
                 });
               }}
             >
@@ -359,6 +359,7 @@ export function Inspector(p: Props) {
                     ["opted_in", "Turned on alerts"],
                     ["language_en", "Watches with English subtitles"],
                     ["paid", "Has paid before"],
+                    ["on_telegram", "Viewer is on Telegram (no: WhatsApp)"],
                   ]
                 : p.mode === "sequence"
                 ? [
@@ -368,6 +369,7 @@ export function Inspector(p: Props) {
                     ["language_en", "Watches with English subtitles"],
                     ["paid", "Has paid before"],
                     ["watched_within", "Watched on the web recently"],
+                    ["on_telegram", "Viewer is on Telegram (no: WhatsApp)"],
                   ]
                 : [
                     ["opted_in", "Turned on alerts"],
@@ -376,6 +378,7 @@ export function Inspector(p: Props) {
                     ["reached_episode", "Reached an episode on the web"],
                     ["started", "Already started this series (chat or web)"],
                     ["watched_within", "Watched on the web recently"],
+                    ["on_telegram", "Viewer is on Telegram (no: WhatsApp)"],
                   ]
               ).map(([v, l]) => (
                 <option key={v} value={v}>

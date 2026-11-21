@@ -171,12 +171,20 @@ export function ChatPreview(p: Props) {
               <option value="in">Alerts: on</option>
               <option value="out">Alerts: off</option>
             </select>
+            <select value={viewer.onTelegram ? "tg" : ""} onChange={(e) => (setViewer({ ...viewer, onTelegram: e.target.value === "tg" }), setPath([]))} style={{ fontSize: 12 }} aria-label="Chat app">
+              <option value="">On WhatsApp</option>
+              <option value="tg">On Telegram</option>
+            </select>
             <label className="inline" title="The viewer is following a series (has a place to continue from)">
               <input type="checkbox" checked={Boolean(viewer.hasSeries)} onChange={(e) => setViewer({ ...viewer, hasSeries: e.target.checked })} /> Following a series
             </label>
           </div>
         ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <select value={viewer.onTelegram ? "tg" : ""} onChange={(e) => (setViewer({ ...viewer, onTelegram: e.target.value === "tg" }), setPath([]))} style={{ fontSize: 12 }} aria-label="Chat app">
+            <option value="">On WhatsApp</option>
+            <option value="tg">On Telegram</option>
+          </select>
           {hasWeb && (
             <select value={entry} onChange={(e) => (setEntry(e.target.value as "chat" | "web"), setPath([]))} style={{ fontSize: 12 }}>
               <option value="chat">Starts: sends the code</option>

@@ -30,11 +30,12 @@ import type { SequenceInfo } from "@/lib/flows/sequence-store";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData, SavedCard } from "@/lib/flows/store";
 import { artUrl } from "@/lib/flows/meta";
-import { CARD_LABELS, IMAGE_ONLY_KINDS, mediaOf, portsOf, takesMedia, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
+import { CARD_LABELS, IMAGE_ONLY_KINDS, mediaOf, portsOf, takesMedia, type FlowChannel, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
 import { validateFlow, validateSequence, validateShared, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
 import { ADDABLE, CARD_STYLE, newCard, SEQUENCE_ADDABLE, SHARED_ADDABLE } from "./cards";
-import { CardNode, type CardFlowNode } from "./CardNode";
+import { CanvasChannel, CardNode, type CardFlowNode } from "./CardNode";
+import { ChannelBar, SequenceChannelSelect } from "./ChannelBar";
 import { ChatPreview } from "./ChatPreview";
 import { Inspector } from "./Inspector";
 import { MediaLibrary } from "./MediaLibrary";
@@ -77,6 +78,9 @@ function Builder(props: Props) {
   const seq = props.sequence ?? null;
   const shared = props.shared ?? null;
   const mode: "series" | "sequence" | "shared" = seq ? "sequence" : shared ? "shared" : "series";
+  // Which chat app this canvas runs for (cards show what differs between WhatsApp and Telegram).
+  const canvasChannel: FlowChannel = seq ? seq.channel : (props.channel ?? "both");
+  const tgCanvas = !seq && props.channel === "telegram" ? "telegram" : null;
   const initial = useMemo(() => toFlow(props.draft), [props.draft]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CardFlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -180,14 +184,14 @@ function Builder(props: Props) {
     const t = setTimeout(async () => {
       setSaveState((s) => ({ ...s, busy: true }));
       const snapshot = fullKey;
-      const r = seq ? await saveSequenceDraft(seq.id, JSON.parse(snapshot)) : shared ? await saveSharedDraft(JSON.parse(snapshot)) : await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
+      const r = seq ? await saveSequenceDraft(seq.id, JSON.parse(snapshot)) : shared ? await saveSharedDraft(JSON.parse(snapshot), tgCanvas) : await saveFlowDraft(props.seriesId, JSON.parse(snapshot), tgCanvas);
       if (r.ok) {
         savedKey.current = snapshot;
         setSaveState({ at: r.savedAt, busy: false });
       } else setSaveState((s) => ({ ...s, busy: false, error: r.error }));
     }, 2000);
     return () => clearTimeout(t);
-  }, [fullKey, dirty, props.seriesId, seq, shared]);
+  }, [fullKey, dirty, props.seriesId, seq, shared, tgCanvas]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -303,7 +307,7 @@ function Builder(props: Props) {
 
   async function onPublish() {
     setMessage(null);
-    const r = seq ? await publishSequence(seq.id, graph, note) : shared ? await publishShared(graph, note) : await publishFlow(props.seriesId, graph, note);
+    const r = seq ? await publishSequence(seq.id, graph, note) : shared ? await publishShared(graph, note, tgCanvas) : await publishFlow(props.seriesId, graph, note, tgCanvas);
     if (!r.ok) {
       setShowIssues(true);
       setMessage({ kind: "err", text: r.error ?? `Fix ${r.issues.filter((i) => i.level === "error").length} problem(s) before publishing.` });
@@ -345,11 +349,13 @@ function Builder(props: Props) {
                   : "Not published · publish to turn it on"
               }
             />
+            <SequenceChannelSelect id={seq.id} channel={seq.channel} />
           </>
         ) : shared ? (
           <>
             <strong>💬 Shared replies</strong>
             <StatusPill live={Boolean(published)} text={published ? `Live · v${published.version}${publishedDiffers ? " · unpublished changes" : ""}` : "Standard replies are live · publish to use yours"} />
+            <ChannelBar mode="shared" seriesId="" channel={canvasChannel} split={Boolean(props.split)} dirty={dirty} />
           </>
         ) : (
           <>
@@ -357,6 +363,7 @@ function Builder(props: Props) {
               {props.code} · {props.series.titleEn}
             </strong>
             <StatusPill live={Boolean(published)} text={published ? `Live · v${published.version}${publishedDiffers ? " · unpublished changes" : ""}` : "Not published · new chats get the standard flow"} />
+            <ChannelBar mode="series" seriesId={props.seriesId} channel={canvasChannel} split={Boolean(props.split)} dirty={dirty} />
           </>
         )}
         <span className="muted" style={{ fontSize: 13 }}>
@@ -401,7 +408,7 @@ function Builder(props: Props) {
               if (g) replaceGraph(g);
             } else if (v) {
               if (!confirm("Load this version into the draft? Your current draft will be replaced (it isn't live until you publish).")) return;
-              const g = await loadVersion(props.seriesId, v);
+              const g = await loadVersion(props.seriesId, v, tgCanvas);
               if (g) replaceGraph(g);
             }
           }}
@@ -560,6 +567,7 @@ function Builder(props: Props) {
 
         {/* Canvas */}
         <div ref={canvas} style={{ ...PANEL, background: "#f7f5f2", padding: 0, position: "relative", overflow: "hidden" }}>
+          <CanvasChannel.Provider value={canvasChannel}>
           <ReactFlow
             nodes={nodes}
             edges={shownEdges}
@@ -597,6 +605,7 @@ function Builder(props: Props) {
               }}
             />
           </ReactFlow>
+          </CanvasChannel.Provider>
 
           {selectedNode && (
             <div style={{ position: "absolute", top: 12, right: 12, bottom: 12, width: 350, background: "#fff", borderRadius: 20, padding: 16, overflowY: "auto", zIndex: 5, boxShadow: "0 12px 40px #1f1b2426" }}>

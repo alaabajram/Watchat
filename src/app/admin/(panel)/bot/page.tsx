@@ -13,10 +13,11 @@ import { setAccountLinkOnProfileAction } from "../../bot-actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function SharedRepliesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
+export default async function SharedRepliesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; channel?: string }> }) {
   const admin = await requireAdmin("bot");
   const sp = await searchParams;
-  const builder = await loadSharedBuilder(admin.tenantId);
+  // ?channel=telegram opens Telegram's own shared replies (when they're separate from WhatsApp's).
+  const builder = await loadSharedBuilder(admin.tenantId, sp.channel === "telegram" ? "telegram" : null);
   const accountUrl = `${await siteUrl()}/me`;
   // The profile box is a nice-to-have: whatever Meta does, the replies below must still load.
   let profile: BusinessProfile | string;

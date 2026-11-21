@@ -38,9 +38,11 @@ export async function createSequence(form: FormData) {
   const admin = await requireAdmin("messaging");
   const name = String(form.get("name") ?? "").trim().slice(0, 80) || "New sequence";
   const draft = starterSequence();
+  const ch = String(form.get("channel") ?? "both");
+  const channel = ["both", "whatsapp", "telegram"].includes(ch) ? ch : "both";
   const { data, error } = await db()
     .from("sequences")
-    .insert({ tenant_id: admin.tenantId, name, trigger: "stopped_mid_series", delay_hours: 24, template_name: null, active: false, draft })
+    .insert({ tenant_id: admin.tenantId, name, trigger: "stopped_mid_series", delay_hours: 24, template_name: null, active: false, draft, channel })
     .select("id")
     .single();
   if (error || !data) redirect(`/admin/sequences?err=${encodeURIComponent(error?.message ?? "Couldn't create the sequence")}`);
@@ -125,4 +127,13 @@ export async function deleteSequence(form: FormData) {
   await db().from("sequences").delete().eq("id", id);
   await audit(admin, "sequence.deleted", "sequence", id, {});
   redirect(`/admin/sequences?ok=${encodeURIComponent("Sequence deleted.")}`);
+}
+
+/** Who a sequence runs for: both chat apps, WhatsApp only (paid templates) or Telegram only (free messages). */
+export async function setSequenceChannel(id: string, channel: string): Promise<{ ok: boolean }> {
+  const admin = await requireAdmin("messaging");
+  if (!/^[0-9a-f-]{36}$/.test(id) || !["both", "whatsapp", "telegram"].includes(channel)) return { ok: false };
+  const { error } = await db().from("sequences").update({ channel, updated_at: new Date().toISOString() }).eq("id", id).eq("tenant_id", admin.tenantId);
+  if (!error) await audit(admin, "sequence.channel", "sequence", id, { channel });
+  return { ok: !error };
 }

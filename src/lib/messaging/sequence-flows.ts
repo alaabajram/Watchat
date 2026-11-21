@@ -12,6 +12,7 @@ import type { Condition, FlowGraph } from "../flows/types";
 import { templateNamesIn } from "../flows/validate";
 import { db } from "../supabase";
 import { sendNamedTemplate } from "./runner";
+import { channelOfAddress, runsFor, type FlowChannel } from "../flows/types";
 
 export type SequenceFlowSummary = { started: number; resumed: number; sent: number; skipped: number; failed: number; held: string[] };
 
@@ -39,6 +40,8 @@ async function approvedTemplates(tenantId: string, names: string[]): Promise<boo
 /** Answers a sequence Condition card. Exported for tests through `checkSequenceCondition`. */
 export async function checkSequenceCondition(c: Condition, v: ViewerRow, run: Run, now: number): Promise<boolean> {
   switch (c.check) {
+    case "on_telegram":
+      return String(v.phone_e164 ?? "").startsWith("+tg:");
     case "came_back": {
       const back = Math.max(v.last_seen_at ? Date.parse(v.last_seen_at) : 0, v.last_inbound_at ? Date.parse(v.last_inbound_at) : 0);
       return back > run.startedAt;
@@ -141,7 +144,7 @@ async function loadViewer(id: string): Promise<ViewerRow | null> {
 export async function runSequenceFlows(tenantId: string, now: Date, budget: { left: number }): Promise<SequenceFlowSummary> {
   const summary: SequenceFlowSummary = { started: 0, resumed: 0, sent: 0, skipped: 0, failed: 0, held: [] };
   const t = now.getTime();
-  const { data: seqs } = await db().from("sequences").select("id, name, tenant_id, graph, version, active").eq("tenant_id", tenantId).not("graph", "is", null);
+  const { data: seqs } = await db().from("sequences").select("id, name, tenant_id, graph, version, active, channel").eq("tenant_id", tenantId).not("graph", "is", null);
   const graphs = new Map<string, { seq: Seq; g: FlowGraph }>();
   for (const s of seqs ?? []) {
     const g = sanitizeGraph(s.graph);
@@ -193,7 +196,9 @@ export async function runSequenceFlows(tenantId: string, now: Date, budget: { le
     const entry = graphs.get(s.id as string);
     const trigger = entry?.g.nodes.find((n) => n.data.kind === "trigger");
     if (!entry || !trigger) continue;
-    if (!(await approvedTemplates(tenantId, templateNamesIn(entry.g)))) {
+    // Telegram-only sequences send templates as free Telegram messages: no Meta approval needed.
+    const seqChannel = ((s as { channel?: FlowChannel }).channel ?? "both") as FlowChannel;
+    if (seqChannel !== "telegram" && !(await approvedTemplates(tenantId, templateNamesIn(entry.g)))) {
       summary.held.push(s.name as string); // waiting for Meta's approval: don't use up anyone's moment
       continue;
     }
@@ -202,8 +207,9 @@ export async function runSequenceFlows(tenantId: string, now: Date, budget: { le
       console.error("[sequences] candidates failed", s.id, error.message);
       continue;
     }
-    for (const c of (candidates ?? []) as { viewer_id: string; series_id: string | null; episode_number: number | null; ref: string }[]) {
+    for (const c of (candidates ?? []) as { viewer_id: string; phone_e164?: string; series_id: string | null; episode_number: number | null; ref: string }[]) {
       if (budget.left <= 0) break;
+      if (!runsFor(seqChannel, channelOfAddress(c.phone_e164))) continue; // set for the other chat app
       // Claim the moment (sequence_candidates skips claimed ones), then create the run.
       const { error: claimError } = await db().from("sequence_sends").insert({ sequence_id: s.id, viewer_id: c.viewer_id, ref: c.ref, status: "flow" });
       if (claimError) continue;

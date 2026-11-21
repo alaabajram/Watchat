@@ -7,6 +7,7 @@ import { flowEnvFor, saveRunResult, type ViewerLang } from "../bot/flow";
 import { currentTenantId, db } from "../supabase";
 import { hasWebEntry, startFlow } from "./engine";
 import { ensurePublishedFlow } from "./standard";
+import { channelOfAddress } from "./types";
 
 export const WEB_TRIGGER_HOURS = 6;
 const WINDOW_MS = 24 * 3600 * 1000;
@@ -23,7 +24,8 @@ export async function onWebWatch(viewerId: string, seriesId: string, now = new D
   const existing = await deps.getFlowRun(viewerId, seriesId);
   if (existing?.webTriggeredAt && existing.webTriggeredAt > cutoff) return "skipped";
 
-  const flow = await ensurePublishedFlow(tenantId, seriesId);
+  const { data: who } = await db().from("viewers").select("phone_e164").eq("id", viewerId).maybeSingle();
+  const flow = await ensurePublishedFlow(tenantId, seriesId, channelOfAddress(who?.phone_e164));
   if (!flow) return "skipped";
 
   // Claim this trigger so parallel heartbeats can't fire it twice.
