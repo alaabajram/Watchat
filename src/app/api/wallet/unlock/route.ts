@@ -1,4 +1,4 @@
-// Unlock one episode with coins. Needs a trusted device (see /api/session/confirm).
+// Unlock one episode with coins.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
   const viewer = await getSessionViewer();
   if (!viewer) return err(401, "signed_out");
-  if (!viewer.trusted) return err(409, "confirm_device");
   if (!(await allow(`unlock:${viewer.id}`, 20, 60))) return err(429, "slow_down");
 
   const body = await readJson<{ episodeId?: string }>(req);

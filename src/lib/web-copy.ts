@@ -123,6 +123,8 @@ const strings = {
     back: "رجوع",
     nothingYet: "ما بدأت أي مسلسل بعد. اختر واحد من الرئيسية.",
     finishedSeries: "مسلسلات خلّصتها",
+    share: "شارك",
+    shareText: (title: string, url: string) => `تابع «${title}» على واتشات — دراما قصيرة تبدأها من الشات 👇\n${url}`,
   },
   en: {
     tagline: "Real drama, in the chat",
@@ -244,6 +246,8 @@ const strings = {
     back: "Back",
     nothingYet: "You haven't started a series yet. Pick one from Home.",
     finishedSeries: "Series you finished",
+    share: "Share",
+    shareText: (title: string, url: string) => `Watch “${title}” on Watchat — short dramas you start in the chat 👇\n${url}`,
   },
 };
 

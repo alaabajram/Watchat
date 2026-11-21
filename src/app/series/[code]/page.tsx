@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PlayIcon } from "@/components/brand/icons";
 import { BottomNav } from "@/components/home/BottomNav";
+import { ShareButton } from "@/components/ShareButton";
 import { TopBar } from "@/components/TopBar";
 import { canWatch, getEpisodes, getNextRelease, getSeriesByCode, getSeriesProgress, getUnlocked } from "@/lib/content";
 import { getSessionViewer } from "@/lib/session";
@@ -46,10 +47,13 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
         {(locale === "en" ? series.synopsisEn : series.synopsisAr) && (
           <p style={{ color: "var(--wc-muted)", fontSize: 16 }}>{locale === "en" ? series.synopsisEn : series.synopsisAr}</p>
         )}
-        <Link className="wc-btn" href={`/watch/${series.code}/${continueEp ?? 1}`} style={{ width: "100%" }}>
-          <PlayIcon />
-          {continueEp ? t.continueEp(continueEp) : t.watchNow}
-        </Link>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Link className="wc-btn" href={`/watch/${series.code}/${continueEp ?? 1}`} style={{ flex: 1 }}>
+            <PlayIcon />
+            {continueEp ? t.continueEp(continueEp) : t.watchNow}
+          </Link>
+          <ShareButton code={series.code} title={title} locale={locale} />
+        </div>
         <section aria-labelledby="h-eps" className="wc-card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
             <h2 id="h-eps" className="wc-section-title">{t.episodes}</h2>
