@@ -15,6 +15,8 @@ import { allow } from "@/lib/security/rate-limit";
 import type { FlowChannel, FlowGraph } from "@/lib/flows/types";
 import { hasErrors, validateFlow, type Issue } from "@/lib/flows/validate";
 import { db } from "@/lib/supabase";
+import { deleteStored, publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
+import type { UploadTarget } from "@/lib/storage/refs";
 
 const UUID = /^[0-9a-f-]{36}$/;
 
@@ -261,24 +263,24 @@ async function libraryOf(tenantId: string, seriesId: string): Promise<{ seriesId
   return { seriesId, prefix: `${s.code}/library/` };
 }
 
-export async function createAssetUpload(seriesId: string, mime: string, size: number): Promise<{ uploadUrl: string; path: string; publicUrl: string }> {
+export async function createAssetUpload(seriesId: string, mime: string, size: number): Promise<UploadTarget> {
   const admin = await requireAdmin("bot");
   const type = ASSET_TYPES[mime as keyof typeof ASSET_TYPES];
   if (!type) throw new Error("WhatsApp accepts JPG or PNG images and MP4 videos.");
   if (size > type.max) throw new Error(`Too big for WhatsApp: ${type.kind === "video" ? "videos up to 16 MB" : "images up to 5 MB"}.`);
   const lib = await libraryOf(admin.tenantId, seriesId);
-  const path = `${lib.prefix}${Date.now()}-${randomToken(6)}.${type.ext}`;
-  const { data, error } = await db().storage.from("media").createSignedUploadUrl(path);
-  if (error || !data) throw new Error(`Upload URL failed: ${error?.message}`);
-  return { uploadUrl: data.signedUrl, path, publicUrl: db().storage.from("media").getPublicUrl(path).data.publicUrl };
+  return uploadTarget(`${lib.prefix}${Date.now()}-${randomToken(6)}.${type.ext}`);
 }
 
 export async function registerAsset(seriesId: string, a: { path: string; name: string; mime: string; size: number }): Promise<Asset> {
   const admin = await requireAdmin("bot");
   const type = ASSET_TYPES[a.mime as keyof typeof ASSET_TYPES];
   const lib = await libraryOf(admin.tenantId, seriesId);
-  if (!type || !a.path.startsWith(lib.prefix) || a.path.includes("..")) throw new Error("Bad upload.");
-  const url = db().storage.from("media").getPublicUrl(a.path).data.publicUrl;
+  // Cloudflare Images ids carry no folder; R2 keys and Supabase paths must sit in this library's folder.
+  const key = a.path.startsWith("r2:") ? a.path.slice(3) : a.path;
+  const inLibrary = a.path.startsWith("cfimg:") ? type?.kind === "image" : key.startsWith(lib.prefix) && !key.includes("..");
+  const url = type && inLibrary ? publicUrlFor(a.path) : null;
+  if (!type || !url) throw new Error("Bad upload.");
   const { data, error } = await db()
     .from("media_assets")
     .insert({ tenant_id: admin.tenantId, series_id: lib.seriesId, kind: type.kind, name: a.name.slice(0, 120) || "Untitled", url, path: a.path, mime: a.mime, size_bytes: a.size, created_by: admin.id })
@@ -319,7 +321,7 @@ export async function deleteAsset(seriesId: string, assetId: string, currentDraf
   if (used) return { ok: false, error: `It's used in ${used}. Remove it from those cards first.` };
   const { data: a } = await db().from("media_assets").select("path, series_id").eq("tenant_id", admin.tenantId).eq("id", assetId).maybeSingle();
   if (!a) return { ok: true };
-  await db().storage.from("media").remove([a.path]);
+  await deleteStored(a.path);
   await db().from("media_assets").delete().eq("id", assetId);
   await audit(admin, "media.deleted", a.series_id ? "series" : "media_library", a.series_id ?? seriesId ?? null, { asset: assetId });
   return { ok: true };

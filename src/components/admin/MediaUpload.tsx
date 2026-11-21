@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { sendUpload } from "@/lib/storage/send";
 import { createMediaUpload, createStreamUpload, setMediaField } from "@/app/admin/content-actions";
 
 type Props = {
@@ -41,13 +42,9 @@ export function MediaUpload(p: Props) {
         await setMediaField(p.target, p.id, p.field, uid);
       } else {
         const ext = (file.name.split(".").pop() ?? "").toLowerCase().replace("jpeg", "jpg");
-        const { uploadUrl, publicUrl } = await createMediaUpload(p.kind, p.seriesCode, ext);
-        const body = new FormData();
-        body.append("cacheControl", "31536000");
-        body.append("", file);
-        const res = await fetch(uploadUrl, { method: "PUT", body, headers: { "x-upsert": "false" } });
-        if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-        await setMediaField(p.target, p.id, p.field, publicUrl);
+        const target = await createMediaUpload(p.kind, p.seriesCode, ext);
+        await sendUpload(target, file, (pct) => setStatus(`Uploading… ${pct}%`));
+        await setMediaField(p.target, p.id, p.field, target.publicUrl);
       }
       setStatus("Saved ✓");
       router.refresh();

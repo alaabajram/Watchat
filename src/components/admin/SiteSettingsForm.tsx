@@ -4,18 +4,15 @@
 
 import { useState } from "react";
 import { createSiteUpload, saveSiteSettings, type SiteForm } from "@/app/admin/site-actions";
+import { sendUpload } from "@/lib/storage/send";
 import { cleanSiteUrl, contrast, HEX, inkOn, readableOn } from "@/lib/site/brand";
 
 async function upload(kind: "logo-light" | "logo-dark" | "icon", file: File): Promise<string> {
   if (file.size > 2 * 1048576) throw new Error("Keep logos under 2 MB.");
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
-  const { uploadUrl, publicUrl } = await createSiteUpload(kind, ext);
-  const body = new FormData();
-  body.append("cacheControl", "31536000");
-  body.append("", file);
-  const res = await fetch(uploadUrl, { method: "PUT", body, headers: { "x-upsert": "false" } });
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return publicUrl;
+  const target = await createSiteUpload(kind, ext);
+  await sendUpload(target, file);
+  return target.publicUrl;
 }
 
 function LogoField({ label, hint, kind, value, onChange, dark }: { label: string; hint: string; kind: "logo-light" | "logo-dark" | "icon"; value: string | null; onChange: (v: string | null) => void; dark?: boolean }) {

@@ -7,6 +7,8 @@ import { randomToken } from "@/lib/crypto";
 import { cleanSiteUrl, HEX, PAGE_SLUGS, type PageSlug } from "@/lib/site/brand";
 import { clearSiteCache } from "@/lib/site/store";
 import { db } from "@/lib/supabase";
+import { uploadTarget } from "@/lib/storage/cloudflare";
+import type { UploadTarget } from "@/lib/storage/refs";
 
 export type SiteForm = {
   appUrl: string;
@@ -95,13 +97,9 @@ export async function savePage(slug: PageSlug, p: { titleAr: string; titleEn: st
 const IMAGE_EXT = ["png", "jpg", "jpeg", "webp"] as const;
 
 /** Signed URL to upload a logo straight from the browser to the public "media" bucket. */
-export async function createSiteUpload(kind: "logo-light" | "logo-dark" | "icon", ext: string): Promise<{ uploadUrl: string; publicUrl: string }> {
+export async function createSiteUpload(kind: "logo-light" | "logo-dark" | "icon", ext: string): Promise<UploadTarget> {
   const admin = await requireAdmin("site");
   const e = ext.toLowerCase();
   if (!(IMAGE_EXT as readonly string[]).includes(e) || !["logo-light", "logo-dark", "icon"].includes(kind)) throw new Error("File type not allowed.");
-  const path = `site/${admin.tenantId}/${kind}-${Date.now()}-${randomToken(6)}.${e}`;
-  const { data, error } = await db().storage.from("media").createSignedUploadUrl(path);
-  if (error || !data) throw new Error(`Upload URL failed: ${error?.message}`);
-  const { data: pub } = db().storage.from("media").getPublicUrl(path);
-  return { uploadUrl: data.signedUrl, publicUrl: pub.publicUrl };
+  return uploadTarget(`site/${admin.tenantId}/${kind}-${Date.now()}-${randomToken(6)}.${e}`);
 }
