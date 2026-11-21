@@ -2,7 +2,7 @@
   "name": "watchat",
   "version": "0.1.0",
   "private": true,
-  "description": "Watchat \u2014 Arabic micro-dramas that start in WhatsApp and continue on a no-download web player.",
+  "description": "Watchat — Arabic micro-dramas that start in WhatsApp and continue on a no-download web player.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -24,12 +24,14 @@
     "hls.js": "^1.7.4",
     "next": "^16.4.6",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.9.3",
     "vitest": "^5.1.1"
   }

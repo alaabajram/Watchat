@@ -3,10 +3,10 @@
 import { Flash } from "@/components/admin/Flash";
 import { SubmitButton } from "@/components/admin/SubmitButton";
 import { AI_MODELS } from "@/lib/ai/anthropic";
-import { getAiSettings } from "@/lib/ai/settings";
+import { assistantSettings, getAiSettings } from "@/lib/ai/settings";
 import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
-import { removeAiKeyAction, saveAiSettingsAction, testAiAction } from "../../ai-actions";
+import { removeAiKeyAction, saveAiSettingsAction, saveAssistantSettingsAction, testAiAction } from "../../ai-actions";
 
 const PURPOSES: Record<string, string> = {
   scenario_draft: "Scenario draft",
@@ -17,7 +17,7 @@ const PURPOSES: Record<string, string> = {
   flow_lessons: "Learning from your team",
   growth_run: "Growth agent review",
   test: "Connection test",
-  connection_test: "Connection test",
+  viewer_assistant: "Viewer assistant (web)",
 };
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export default async function AiAccountPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("aiAccount");
   const sp = await searchParams;
-  const s = await getAiSettings(admin.tenantId);
+  const [s, a] = await Promise.all([getAiSettings(admin.tenantId), assistantSettings(admin.tenantId)]);
   const { data: recent } = await db()
     .from("ai_usage")
     .select("purpose, model, input_tokens, output_tokens, ok, error, created_at")
@@ -99,6 +99,30 @@ export default async function AiAccountPage({ searchParams }: { searchParams: Pr
             </form>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Viewer assistant on the web</h2>
+        <p style={{ marginTop: 0 }}>
+          Viewers ask it for a series, search the catalogue, see the coin packs and season passes, or pick up where they left off (watchat.pro/assistant, also the
+          home-screen app). It answers buttons, greetings, titles, genres and cast <strong>without AI</strong>. Only free text it can&apos;t place goes to AI, on the
+          cheapest model (Claude Haiku), and the AI only classifies it: every answer is Watchat&apos;s own text or catalogue cards. Off-topic questions get a fixed
+          reply. The AI never sees phone numbers, prices beyond the offers, or anything from the admin.
+        </p>
+        <p className="muted">
+          {a.aiConnected ? `${a.usedToday} of ${a.dailyLimit} AI answers used today` : "No AI account connected: the assistant answers without AI"} · each viewer is
+          also limited to 20 messages per 10 minutes and 25 AI answers a day. This limit is separate from the monthly limit above.
+        </p>
+        <form action={saveAssistantSettingsAction} className="row" style={{ alignItems: "end", gap: 12 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" name="assistant_enabled" defaultChecked={a.enabled} /> Use AI for free text
+          </label>
+          <label>
+            AI answers per day (all viewers)
+            <input name="assistant_daily_limit" type="number" min={0} max={100000} defaultValue={a.dailyLimit} />
+          </label>
+          <button type="submit">Save</button>
+        </form>
       </div>
 
       <div className="card">

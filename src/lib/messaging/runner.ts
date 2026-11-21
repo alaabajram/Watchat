@@ -7,6 +7,7 @@ import type { MsgRef } from "../ctr/ctr";
 import { mintLink, refColumns } from "../links";
 import { marketFromPhone } from "../spend/meter";
 import { marketingBudgetReached } from "../spend/store";
+import { hasPush, pushKeys, sendPush } from "../push/push";
 import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import { placeholderCount } from "../whatsapp/templates";
@@ -78,7 +79,21 @@ async function recentlyMarketed(viewerId: string): Promise<boolean> {
     .eq("category", "marketing")
     .neq("status", "failed")
     .gte("created_at", since);
-  return (count ?? 0) > 0;
+  if ((count ?? 0) > 0) return true;
+  // Marketing that went by web push instead counts too: one nudge per gap, whatever the channel.
+  const { count: pushed } = await db()
+    .from("push_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("viewer_id", viewerId)
+    .eq("category", "marketing")
+    .eq("status", "sent")
+    .gte("created_at", since);
+  return (pushed ?? 0) > 0;
+}
+
+/** Fill a template's {{1}} (series title) and {{2}} (episode) for a push notification. */
+export function pushText(body: string, params: string[]): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "").replace(/\*([^*]+)\*/g, "$1").trim().slice(0, 400);
 }
 
 /** Send a template by name from a flow's Template card. Marketing templates need the viewer's opt-in. */
@@ -111,6 +126,12 @@ async function sendTemplate(
   const template = templates.get(lang) ?? templates.get("ar");
   if (!template || template.meta_status !== "APPROVED") return { ok: false, skipped: true, error: "template not approved" };
   if (template.category === "marketing" && (await recentlyMarketed(r.viewerId))) return { ok: false, skipped: true, error: "frequency cap" };
+  // Web push first: viewers who turned on alerts in the web app get it free instead of a paid WhatsApp template.
+  // If no device accepts it, the WhatsApp template goes out as before.
+  if (template.category === "marketing") {
+    const pushed = await tryPush(r, template, source, ref);
+    if (pushed) return { ok: true, id: "push" };
+  }
   if (template.category === "marketing" && (await marketingBudgetReached(await currentTenantId()))) {
     return { ok: false, skipped: true, error: "monthly WhatsApp budget reached" };
   }
@@ -152,6 +173,42 @@ async function sendTemplate(
       error: result.ok ? null : result.error,
     });
   return result.ok ? { ok: true, id: result.waMessageId } : { ok: false, error: result.error };
+}
+
+async function tryPush(r: Recipient, template: Template, source: SendSource, ref?: MsgRef): Promise<boolean> {
+  const tenantId = await currentTenantId();
+  if (!(await hasPush(r.viewerId))) return false;
+  try {
+    if (!(await pushKeys(tenantId)).pushFirst) return false;
+  } catch {
+    return false; // keys unreadable: use WhatsApp
+  }
+  const series = await getSeries(r.seriesId);
+  const title = series ? (template.lang === "en" ? series.title_en : series.title_ar) : "Watchat";
+  const episode = series ? Math.max(r.episode ?? 0, series.wa_episode_count + 1) : null;
+  let url = "/assistant";
+  if (series && episode) {
+    const full = await mintLink({ viewerId: r.viewerId, seriesId: series.id, episodeNumber: episode, purpose: "resume", ref });
+    url = new URL(full).pathname; // the push opens the personal link inside the installed app
+  }
+  const ok = await sendPush(tenantId, r.viewerId, {
+    title: title || "Watchat",
+    body: pushText(template.body, [title, String(r.episode ?? episode ?? "")]),
+    url,
+    tag: template.name,
+    image: series?.banner_wa_url || series?.poster_url || null,
+  });
+  await db().from("push_messages").insert({
+    tenant_id: tenantId,
+    viewer_id: r.viewerId,
+    template_name: template.name,
+    category: template.category,
+    source,
+    market: marketFromPhone(r.phone),
+    ...refColumns(ref),
+    status: ok ? "sent" : "failed",
+  });
+  return ok;
 }
 
 export async function runMessaging(now = new Date()): Promise<RunSummary> {
