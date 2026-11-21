@@ -2,7 +2,7 @@
 
 import { LIMITS } from "../whatsapp/messages";
 import { pick } from "./engine";
-import { CARD_LABELS, isEntry, isFreeform, portsOf, SEQUENCE_CARDS, SEQUENCE_CHECKS, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
+import { CARD_LABELS, isEntry, isFreeform, normaliseWord, portsOf, SEQUENCE_CARDS, SEQUENCE_CHECKS, SHARED_CARDS, SHARED_CHECKS, waitsForInput, type Bi, type FlowGraph, type FlowNode, type Lang } from "./types";
 
 export type Issue = { level: "error" | "warning"; nodeId?: string; message: string };
 export type ValidateCtx = { episodeCount: number; templates: { name: string; approved: boolean }[]; seriesCodes?: string[] };
@@ -79,6 +79,7 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
       case "condition":
         if (d.condition.check === "reached_episode") episodeOk(n, d.condition.episode, "Condition");
         if (d.condition.check === "came_back" || d.condition.check === "paid_since") err("Condition: that check is for sequence flows only.", n.id);
+        if (d.condition.check === "has_series") err("Condition: that check is for Shared replies only.", n.id);
         if (d.condition.check === "watched_within" && (d.condition.hours < 1 || d.condition.hours > 720)) err("Condition: hours must be 1–720.", n.id);
         break;
       case "choice": {
@@ -95,6 +96,12 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
       }
       case "trigger":
         err("Trigger cards belong to sequence flows.", n.id);
+        break;
+      case "keyword":
+      case "list":
+      case "account":
+      case "action":
+        err(`${name(n)} cards belong to Shared replies.`, n.id);
         break;
       case "template": {
         const t = ctx.templates.find((x) => x.name === d.name);
@@ -284,3 +291,143 @@ export function validateSequence(g: FlowGraph, ctx: SequenceCtx): Issue[] {
 
 /** Template names a flow uses (to hold a sequence until Meta has approved them all). */
 export const templateNamesIn = (g: FlowGraph) => [...new Set(g.nodes.flatMap((n) => (n.data.kind === "template" && n.data.name ? [n.data.name] : [])))];
+
+/** Words the bot always understands, whatever the shared flow says (opt-out must always work). */
+export const RESERVED_WORDS = ["STOP", "UNSUBSCRIBE"];
+
+/**
+ * Checks the shared flow (Shared replies) before publishing. Replies go out right after the viewer's
+ * message, so free-form cards are fine; waits, templates, episodes and series entry cards are not.
+ */
+export function validateShared(g: FlowGraph, ctx: { seriesCodes: string[] }): Issue[] {
+  const issues: Issue[] = [];
+  const err = (message: string, nodeId?: string) => issues.push({ level: "error", nodeId, message });
+  const warn = (message: string, nodeId?: string) => issues.push({ level: "warning", nodeId, message });
+  const name = (n: FlowNode) => CARD_LABELS[n.data.kind];
+  const ids = new Set(g.nodes.map((n) => n.id));
+  const text = (n: FlowNode, label: string, b: Bi, max: number, required = true) => {
+    if (required && !b.ar.trim()) err(`${label}: Arabic text is empty.`, n.id);
+    if (required && !b.en.trim()) warn(`${label}: no English text, English viewers will see the Arabic.`, n.id);
+    for (const lang of ["ar", "en"] as Lang[]) {
+      const v = pick(b, lang);
+      if (len(v) > max) err(`${label} (${lang}) is ${len(v)} characters; WhatsApp allows ${max}.`, n.id);
+      for (const m of v.matchAll(/\{([a-zA-Z]+)\}/g)) if (!PLACEHOLDERS.has(m[1])) err(`${label} uses {${m[1]}}; allowed: {title} {n}.`, n.id);
+    }
+  };
+
+  const keywords = g.nodes.filter((n) => n.data.kind === "keyword");
+  if (!keywords.length) err("Add at least one “Viewer sends” card: it's where a reply begins.");
+  const owner = new Map<string, string>();
+  let catchAll = 0;
+  for (const n of g.nodes) {
+    const d = n.data;
+    if (!SHARED_CARDS.includes(d.kind)) {
+      err(`${name(n).split(":")[0]} can't be used in Shared replies.`, n.id);
+      continue;
+    }
+    switch (d.kind) {
+      case "keyword": {
+        if (d.anythingElse) catchAll++;
+        if (!d.anythingElse && !d.words.length) err("Viewer sends: add at least one word.", n.id);
+        for (const w of d.words) {
+          const k = normaliseWord(w);
+          if (!k) err(`Viewer sends: "${w}" has no letters or digits.`, n.id);
+          else if (owner.has(k) && owner.get(k) !== n.id) err(`"${w}" is on two “Viewer sends” cards; the bot can only start one reply.`, n.id);
+          else owner.set(k, n.id);
+          if (/^[A-Z]{3,}\d{1,3}$/.test(k)) err(`"${w}" looks like a series code; viewers sending it would never reach the series.`, n.id);
+          if (ctx.seriesCodes.includes(k)) err(`"${w}" is a series code.`, n.id);
+        }
+        break;
+      }
+      case "message":
+        text(n, "Message", d.body, LIMITS.body, d.buttons.length > 0 || !d.media);
+        if (d.buttons.length > LIMITS.maxButtons) err(`Message: WhatsApp allows at most ${LIMITS.maxButtons} buttons.`, n.id);
+        d.buttons.forEach((b, i) => text(n, `Button ${i + 1}`, b.title, LIMITS.buttonTitle));
+        break;
+      case "list":
+        text(n, "Menu message", d.body, LIMITS.body);
+        text(n, "Menu button", d.button, LIMITS.listButton);
+        text(n, "Menu heading", d.section, LIMITS.rowTitle);
+        if (!d.rows.length) err("Menu list: add at least one row.", n.id);
+        if (d.rows.length > LIMITS.maxRows) err(`Menu list: WhatsApp allows at most ${LIMITS.maxRows} rows.`, n.id);
+        d.rows.forEach((r, i) => text(n, `Row ${i + 1}`, r.title, LIMITS.rowTitle));
+        for (const lang of ["ar", "en"] as Lang[]) {
+          const titles = d.rows.map((r) => pick(r.title, lang));
+          if (new Set(titles).size !== titles.length) err(`Menu list: row titles must be different (${lang}).`, n.id);
+        }
+        break;
+      case "link":
+        text(n, "Link message", d.body, LIMITS.body);
+        text(n, "Link button", d.button, LIMITS.ctaText);
+        if (d.episode !== "resume") err("Player link: in Shared replies the link opens where the viewer left off.", n.id);
+        break;
+      case "account":
+        text(n, "Account message", d.body, LIMITS.body);
+        text(n, "Account button", d.button, LIMITS.ctaText);
+        break;
+      case "language":
+        text(n, "Language question", d.body, LIMITS.body);
+        if (!d.btnAr.trim() || !d.btnEn.trim()) err("Language question: both button titles are needed.", n.id);
+        break;
+      case "optin":
+        text(n, "Alerts question", d.body, LIMITS.body);
+        text(n, "Yes button", d.yes, LIMITS.buttonTitle);
+        text(n, "No button", d.no, LIMITS.buttonTitle);
+        break;
+      case "condition":
+        if (!SHARED_CHECKS.includes(d.condition.check)) err("Condition: that check isn't available in Shared replies.", n.id);
+        break;
+      case "choice":
+        text(n, "Series choice message", d.body, LIMITS.body);
+        for (const o of d.options) if (o.code !== "AUTO" && !ctx.seriesCodes.includes(o.code)) err(`Series choice: ${o.code} isn't a live series.`, n.id);
+        break;
+    }
+  }
+  if (catchAll > 1) err("Only one “Viewer sends” card can catch anything else.");
+
+  for (const e of g.edges) {
+    const tgt = g.nodes.find((n) => n.id === e.target);
+    const src = g.nodes.find((n) => n.id === e.source);
+    if (tgt?.data.kind === "keyword") err("Arrows can't point into a “Viewer sends” card; it's where a reply begins.", tgt.id);
+    if (!src || !ids.has(e.target)) err("An arrow points to a card that no longer exists.");
+    else if (!portsOf(src.data).some((p) => p.id === e.sourceHandle)) err(`${name(src)}: an arrow starts from a button that no longer exists.`, src.id);
+  }
+  for (const n of g.nodes) {
+    for (const p of portsOf(n.data)) {
+      const out = g.edges.filter((e) => e.source === n.id && e.sourceHandle === p.id);
+      if (out.length > 1) err(`${name(n)}: "${p.label}" has more than one arrow.`, n.id);
+      // A language tap changes the viewer's language by itself, so it needs no next card here.
+      if (out.length === 0 && waitsForInput(n.data) && n.data.kind !== "language") warn(`${name(n)}: "${p.label}" leads nowhere; nothing happens when it's tapped.`, n.id);
+      if (out.length === 0 && n.data.kind === "keyword") err("Connect this “Viewer sends” card to the reply.", n.id);
+    }
+  }
+
+  // Reachable from some keyword card
+  const seen = new Set<string>(keywords.map((k) => k.id));
+  const queue = keywords.map((k) => k.id);
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const e of g.edges.filter((x) => x.source === id)) if (!seen.has(e.target)) (seen.add(e.target), queue.push(e.target));
+  }
+  for (const n of g.nodes) if (!seen.has(n.id)) warn(`${name(n)} isn't connected to a “Viewer sends” card, so it never runs.`, n.id);
+
+  // Loops without a button
+  const state = new Map<string, 1 | 2>();
+  const visit = (id: string): boolean => {
+    const n = g.nodes.find((x) => x.id === id);
+    if (!n || waitsForInput(n.data)) return false;
+    if (state.get(id) === 1) return true;
+    if (state.get(id) === 2) return false;
+    state.set(id, 1);
+    const loop = g.edges.filter((e) => e.source === id).some((e) => visit(e.target));
+    state.set(id, 2);
+    return loop;
+  };
+  for (const n of g.nodes) {
+    if (visit(n.id)) {
+      err("There's a loop with no button in it; the bot would repeat forever.", n.id);
+      break;
+    }
+  }
+  return issues;
+}

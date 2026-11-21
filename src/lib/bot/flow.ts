@@ -3,13 +3,15 @@
 // (see flow.test.ts) and easy to re-host for a partner brand.
 //
 // A series code starts the series' flow (Flow builder; the standard flow is published automatically
-// when none exists) and button taps move through it. Everything else here is shared replies:
-// menu, language, alerts, links, support, device confirmation, data deletion (texts: Shared replies).
+// when none exists) and button taps move through it. Words like ابدأ, رابط, حسابي, STOP run the shared
+// flow (Flow builder → Shared replies), built on the canvas; the built-in replies below are the safety net
+// (STOP and data deletion always work) and handle old menu buttons.
 
 import type { MsgRef } from "../ctr/ctr";
-import { answer, startFlow, type FlowEnv, type RunResult, type SeriesProgress } from "../flows/engine";
+import { answer, runFrom, startFlow, type FlowEnv, type RunResult, type SeriesProgress } from "../flows/engine";
+import { matchKeyword } from "../flows/shared";
 import { artUrl, metaVars, type SeriesMeta } from "../flows/meta";
-import type { Condition, FlowGraph, Lang } from "../flows/types";
+import { sharedReplyId, type Condition, type FlowGraph, type Lang, type SharedAction } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 import type { OutMessage } from "../whatsapp/messages";
 import { makeT, type CopyLang, type CopyOverrides, type T } from "./copy";
@@ -105,6 +107,8 @@ export interface BotDeps {
   /** The series' live flow; the standard flow is published automatically if none exists. Null only if the series is gone. */
   getPublishedFlow(seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null>;
   getFlowVersion(versionId: string): Promise<FlowGraph | null>;
+  /** The published Shared replies flow (the standard one, with saved texts, until the team publishes their own). */
+  getSharedFlow(): Promise<FlowGraph>;
   getFlowRun(viewerId: string, seriesId: string): Promise<FlowRun | null>;
   /** The viewer's runs, most recently active first. */
   listFlowRuns(viewerId: string): Promise<FlowRun[]>;
@@ -143,8 +147,40 @@ export async function handleInbound(msg: InboundMessage, baseDeps: BotDeps): Pro
   const deps = withPinHint(viewer, baseDeps);
   const state = await deps.getChatState(viewer.id);
   const intent = parseIntent(msg);
+  if (await routeShared(intent, viewer, state, msg, deps)) return;
   const next = await route(intent, viewer, state, msg, deps);
   if (next) await deps.saveChatState(viewer.id, next);
+}
+
+/** Intents a "Viewer sends" card may answer (series codes, links from the web and flow buttons never go here). */
+const SHARED_INTENTS = new Set<Intent["type"]>(["menu", "link", "account", "stop", "delete_data", "unknown"]);
+
+/**
+ * Shared replies built on the canvas. Returns true when the shared flow answered.
+ * An exact word on a "Viewer sends" card wins; STOP and data deletion fall back to the built-in replies
+ * when no card has those words; anything else goes to the "anything else" card.
+ */
+async function routeShared(intent: Intent, viewer: Viewer, state: ChatState, msg: InboundMessage, deps: BotDeps): Promise<boolean> {
+  const tap = intent.type === "shared_reply" ? intent : null;
+  if (!tap && !(msg.kind === "text" && SHARED_INTENTS.has(intent.type))) return false;
+  const graph = await deps.getSharedFlow();
+  const current = state.seriesId ? await deps.getSeries(state.seriesId) : null;
+  const env = sharedEnvFor(viewer, current, deps);
+
+  if (tap) {
+    if (!graph.nodes.some((n) => n.id === tap.nodeId)) return false; // card removed since: the built-in menu answers
+    await answer(graph, tap.nodeId, tap.port, env);
+    return true;
+  }
+  const exact = matchKeyword(graph, msg.text ?? "", { allowCatchAll: false });
+  const card = exact ?? (intent.type === "stop" || intent.type === "delete_data" ? null : matchKeyword(graph, "", { allowCatchAll: true }));
+  if (!card) return false;
+  if (!exact && !current && intent.type === "unknown") {
+    const { t } = await ctxFor(viewer, null, deps);
+    await deps.send(viewer.waId, { kind: "text", body: t("needSeriesFirst") });
+  }
+  await runFrom(graph, card.id, env);
+  return true;
 }
 
 /**
@@ -353,6 +389,7 @@ async function route(
     }
 
     case "menu":
+    case "shared_reply":
     case "unknown": {
       if (!current && intent.type === "unknown") {
         await deps.send(to, { kind: "text", body: t("needSeriesFirst") });
@@ -463,6 +500,72 @@ export function flowEnvFor(
     now: opts.now ?? (() => Date.now()),
   };
   return env;
+}
+
+/** FlowEnv for the shared flow: works with or without a current series; buttons carry "s:" ids. */
+export function sharedEnvFor(viewer: Viewer, series: Series | null, deps: BotDeps): FlowEnv {
+  const v = { ...viewer };
+  const base: FlowEnv = series
+    ? flowEnvFor(v, series, deps, { canSendFreeform: true })
+    : {
+        lang: viewerLangToFlow(v.language) ?? "ar",
+        title: () => "Watchat",
+        totalEpisodes: 0,
+        send: async () => {},
+        knownLanguage: () => viewerLangToFlow(v.language),
+        setLanguage: async (l) => {
+          v.language = l === "en" ? "ar_en_subs" : "ar";
+          await deps.setViewerLanguage(v.id, v.language);
+          await deps.track(v.id, "language_set", { props: { language: v.language } });
+        },
+        optIn: () => deps.getOptIn(v.id),
+        setOptIn: async () => {},
+        // No series yet: the account page is the closest thing to "where they left off".
+        link: async () => ({ url: await deps.mintAccountLink(v.id), episode: 1 }),
+        progress: async () => ({ maxStarted: 0, maxCompleted: 0, lastWatchedAt: null }),
+        noteChatEpisode: () => {},
+        clip: async () => ({ url: null, title: null }),
+        mediaUrl: (ref) => ("assetId" in ref ? ref.url : null),
+        meta: () => ({ tagline: "", genre: "", cast: "" }),
+        template: async () => "skipped",
+        check: (c) => deps.checkCondition(v, null as unknown as Series, c),
+        suggest: async () => {
+          const lang = viewerLangToFlow(v.language) ?? "ar";
+          await sendSuggestions({ viewer: v, deps, lang, t: makeT(lang, await deps.getCopyOverrides(null, lang)) }, null);
+        },
+        seriesOptions: async (codes) => {
+          const out: { code: string; titleAr: string; titleEn: string }[] = [];
+          for (const code of codes.filter((c) => c !== "AUTO")) {
+            const found = await deps.findSeriesByCode(code);
+            if (found) out.push({ code: found.code, titleAr: found.titleAr, titleEn: found.titleEn });
+          }
+          if (codes.includes("AUTO")) for (const o of await deps.listOtherSeries(null)) if (!out.some((x) => x.code === o.code)) out.push({ code: o.code, titleAr: o.titleAr, titleEn: o.titleEn });
+          return out;
+        },
+        canSendFreeform: () => true,
+        track: (name, data) => deps.track(v.id, name as EventName, data),
+        now: () => Date.now(),
+      };
+  return {
+    ...base,
+    send: (msg) => deps.send(v.waId, msg),
+    replyId: sharedReplyId,
+    setOptIn: async (yes) => {
+      await deps.setOptIn(v.id, yes ? "in" : "out", "shared_reply");
+      await deps.track(v.id, "opt_in_changed", { props: { status: yes ? "in" : "out", source: "shared_reply" } });
+    },
+    check: async (c) => (c.check === "has_series" ? series !== null : base.check(c)),
+    accountLink: () => deps.mintAccountLink(v.id),
+    action: async (a: SharedAction) => {
+      if (a === "delete_data") {
+        await deps.track(v.id, "data_deletion_requested");
+        await deps.setOptIn(v.id, "out", "delete_request");
+        return;
+      }
+      await deps.setOptIn(v.id, a === "opt_in" ? "in" : "out", a === "opt_out" ? "stop_command" : "shared_reply");
+      await deps.track(v.id, "opt_in_changed", { props: { status: a === "opt_in" ? "in" : "out", source: a === "opt_out" ? "stop_command" : "shared_reply" } });
+    },
+  };
 }
 
 export async function saveRunResult(

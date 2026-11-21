@@ -4,6 +4,7 @@ import type { OutMessage } from "../whatsapp/messages";
 import { EMPTY_STATE, handleInbound, type BotDeps, type ChatState, type Series, type ViewerLang } from "./flow";
 import { COPY, COPY_KEYS, type CopyKey, type CopyOverrides } from "./copy";
 import { defaultFlow } from "../flows/defaults";
+import { standardSharedFlow } from "../flows/shared";
 import { IDS } from "./intents";
 import type { FlowGraph } from "../flows/types";
 import type { SeriesProgress } from "../flows/engine";
@@ -23,7 +24,7 @@ const SERIES: Series = {
 const OTHER: Series = { ...SERIES, id: "s2", code: "DESERT02", titleAr: "رمال", titleEn: "Sands" };
 
 /** In-memory fake of the database + Meta, recording everything the bot sends. */
-function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; progress?: Partial<SeriesProgress>; newViewer?: boolean } = {}) {
+function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; validCode?: string; flow?: FlowGraph; shared?: FlowGraph; progress?: Partial<SeriesProgress>; newViewer?: boolean } = {}) {
   let pinHintSent = !opts.newViewer;
   const refs: (MsgRef | undefined)[] = [];
   const pinMarks: string[] = [];
@@ -86,6 +87,8 @@ function fakeDeps(opts: { series?: Partial<Series>; overrides?: CopyOverrides; v
     // Like production: the series' flow, or the standard flow published automatically.
     getPublishedFlow: async (sid) => (flows[sid] ? { versionId: `ver-${sid}`, graph: flows[sid] } : null),
     getFlowVersion: async (id) => flows[id.replace("ver-", "")] ?? null,
+    // Like production before a team publishes its own: the standard shared flow with the saved texts.
+    getSharedFlow: async () => opts.shared ?? standardSharedFlow((k) => texts[k]),
     getFlowRun: async (_v, sid) => runs.get(sid) ?? null,
     listFlowRuns: async () => [...runs.values()].reverse(),
     saveFlowRun: async (_v, r) => {
@@ -184,7 +187,11 @@ describe("bot flow: series code to cliffhanger link", () => {
 
     await handleInbound(text("stop"), f.deps);
     expect(f.getOptIn()).toBe("out");
-    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", buttons: [{ id: IDS.optInYes }] });
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: COPY.stopConfirmed.ar, buttons: [{ id: "s:stopped:on" }] });
+    // "Turn alerts back on" (a card in Shared replies) → alerts on + confirmation
+    await tapButton(f, 0);
+    expect(f.getOptIn()).toBe("in");
+    expect(f.sent.at(-1)).toMatchObject({ kind: "text", body: COPY.optInConfirmed.ar });
   });
 
   it("logs a data deletion request and turns alerts off", async () => {
@@ -399,5 +406,64 @@ describe("CTR tracking", () => {
     expect(typeof ref?.node).toBe("string");
     await tapButton(f, 0);
     expect(f.events).toContain("flow_tap");
+  });
+});
+
+describe("shared replies built on the canvas", () => {
+  const custom: FlowGraph = {
+    v: 1,
+    nodes: [
+      { id: "k1", position: { x: 0, y: 0 }, data: { kind: "keyword", words: ["عروض", "Offers"], anythingElse: false } },
+      { id: "m1", position: { x: 0, y: 0 }, data: { kind: "message", body: { ar: "عرض اليوم 🎁", en: "Today's offer 🎁" }, buttons: [{ id: "b1", title: { ar: "حسابي", en: "My account" } }], media: null } },
+      { id: "a1", position: { x: 0, y: 0 }, data: { kind: "account", body: { ar: "حسابك 👇", en: "Your account 👇" }, button: { ar: "افتح", en: "Open" } } },
+    ],
+    edges: [
+      { id: "e1", source: "k1", sourceHandle: "next", target: "m1" },
+      { id: "e2", source: "m1", sourceHandle: "b1", target: "a1" },
+    ],
+  };
+
+  it("answers a word from a custom “Viewer sends” card and follows its buttons", async () => {
+    const f = fakeDeps({ shared: custom });
+    await handleInbound(text("  offers! "), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "buttons", body: "عرض اليوم 🎁", buttons: [{ id: "s:m1:b1", title: "حسابي" }] });
+    await tapButton(f, 0);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", body: "حسابك 👇", url: "https://watchat.test/w/token-account" });
+  });
+
+  it("STOP and data deletion still work when the shared flow has no card for them", async () => {
+    const f = fakeDeps({ shared: custom });
+    await handleInbound(text("STOP"), f.deps);
+    expect(f.getOptIn()).toBe("out");
+    await handleInbound(text("Delete my data"), f.deps);
+    expect(f.events).toContain("data_deletion_requested");
+  });
+
+  it("anything else opens the menu list; its rows lead to the account link before a series, the player link after", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("hello?"), f.deps);
+    expect(f.sent.at(-2)).toMatchObject({ kind: "text", body: COPY.needSeriesFirst.ar });
+    const menu = f.sent.at(-1) as Extract<OutMessage, { kind: "list" }>;
+    expect(menu).toMatchObject({ kind: "list", body: COPY.menuBody.ar });
+    const linkRow = menu.sections[0].rows[0];
+    expect(linkRow.id).toBe("s:menu:link");
+    await handleInbound(tap(linkRow.id), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", body: COPY.accountBody.ar });
+
+    await handleInbound(text("SECRETS01"), f.deps); // now following a series
+    await handleInbound(text("رابط"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "cta_url", url: "https://watchat.test/w/token-ep4" });
+  });
+
+  it("a tap on a card that was removed since falls back to the built-in menu", async () => {
+    const f = fakeDeps({ shared: custom });
+    await handleInbound(tap("s:gone:x"), f.deps);
+    expect(f.sent.at(-1)).toMatchObject({ kind: "list", body: COPY.menuBody.ar });
+  });
+
+  it("series codes always start the series, whatever the shared flow says", async () => {
+    const f = fakeDeps();
+    await handleInbound(text("SECRETS01"), f.deps);
+    expect(f.getState()).toMatchObject({ seriesId: "s1", step: "flow" });
   });
 });

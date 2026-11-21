@@ -1,4 +1,4 @@
-import { parseButtonReplyId } from "../flows/types";
+import { parseButtonReplyId, parseSharedReplyId } from "../flows/types";
 import type { InboundMessage } from "../whatsapp/inbound";
 
 // Button / list-row ids the bot sends. Keep them short and stable: viewers may tap old messages.
@@ -34,6 +34,7 @@ export type Intent =
   | { type: "confirm_code"; code: string }
   | { type: "watch"; code: string; episode: number | null }
   | { type: "flow_reply"; nodeId: string; port: string }
+  | { type: "shared_reply"; nodeId: string; port: string }
   | { type: "growth_picks"; suggestionId: string }
   | { type: "unknown"; text?: string };
 
@@ -107,6 +108,8 @@ export function intentFromReplyId(id: string): Intent {
   }
   const picks = id.match(/^growth:([0-9a-f-]{36})$/);
   if (picks) return { type: "growth_picks", suggestionId: picks[1] };
+  const shared = parseSharedReplyId(id);
+  if (shared) return { type: "shared_reply", ...shared };
   const flow = parseButtonReplyId(id);
   if (flow) return { type: "flow_reply", ...flow };
   if (id.startsWith(IDS.seriesPrefix)) return { type: "series_code", code: id.slice(IDS.seriesPrefix.length) };
