@@ -116,11 +116,11 @@ export async function copyToCloudflare(url: string, key: string): Promise<{ publ
   const file = await fetch(url);
   if (!file.ok) throw new Error(`Couldn't read ${key} (${file.status})`);
   const { c, aws } = r2Client();
-  const res = await aws.fetch(r2ObjectUrl(c, key), {
-    method: "PUT",
-    body: await file.arrayBuffer(),
-    headers: { "Content-Type": CONTENT_TYPES[ext] ?? "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable" },
-  });
+  // Sign first, then send the bytes ourselves: aws4fetch.fetch would stream the body without a length (R2 answers 411).
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const headers = { "Content-Type": CONTENT_TYPES[ext] ?? "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable" };
+  const signed = await aws.sign(r2ObjectUrl(c, key), { method: "PUT", headers, body: bytes });
+  const res = await fetch(signed.url, { method: "PUT", headers: signed.headers, body: bytes });
   if (!res.ok) throw new Error(`R2 upload failed for ${key} (${res.status})`);
   return { publicUrl: r2Url(c.publicBase, key), path: `r2:${key}` };
 }
