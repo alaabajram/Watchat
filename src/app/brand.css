@@ -215,7 +215,7 @@
 [dir="rtl"] .wc-watch-progress span { margin-inline-start: 0; }
 .wc-watch-hint {
   position: absolute; left: 50%; top: 42%; transform: translateX(-50%); z-index: 7; padding: 12px 18px; border-radius: 999px;
-  background: rgba(20, 16, 26, 0.6); backdrop-filter: blur(10px); font-weight: 600; animation: wc-hint 3.2s ease both; white-space: nowrap;
+  background: rgba(20, 16, 26, 0.6); backdrop-filter: blur(10px); font-weight: 600; animation: wc-hint 3.2s ease both; white-space: nowrap; pointer-events: none;
 }
 .wc-watch-hint span { display: inline-block; animation: wc-hint-arrow 1s ease-in-out infinite; }
 @keyframes wc-hint { 0% { opacity: 0; } 10%, 85% { opacity: 1; } 100% { opacity: 0; } }
