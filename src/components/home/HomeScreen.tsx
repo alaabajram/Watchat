@@ -5,7 +5,8 @@
 import Link from "next/link";
 import { BannerCarousel, type Slide } from "./BannerCarousel";
 import { BottomNav } from "./BottomNav";
-import { ChatIcon, ChevronIcon, GiftIcon, PlayIcon } from "@/components/brand/icons";
+import { ChevronIcon, GiftIcon, PlayIcon } from "@/components/brand/icons";
+import { AgentIcon } from "@/components/assistant/AgentIcon";
 import type { HomeSeries, HomeWatching } from "@/lib/content";
 import { GENRE_LABELS, GENRES } from "@/lib/content-meta";
 import { dirFor, webCopy, type Locale } from "@/lib/web-copy";
@@ -168,10 +169,11 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre, logo =
           )}
         </main>
       </div>
-      {/* The Watchat assistant: find a series, offers, continue watching. */}
+      {/* The Watchat chat agent: find a series, offers, continue watching. */}
       <Link
         href="/assistant"
-        aria-label={locale === "en" ? "Watchat assistant" : "مساعد واتشات"}
+        aria-label={locale === "en" ? "Chat with Watchat" : "شات مع واتشات"}
+        className="wc-agent-float"
         style={{
           position: "fixed",
           insetInlineEnd: 16,
@@ -179,19 +181,19 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre, logo =
           zIndex: 20,
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "12px 16px",
+          gap: 10,
+          padding: "8px 18px 8px 12px",
           borderRadius: 999,
-          background: "var(--wc-ink)",
-          color: "#fff",
-          fontWeight: 600,
-          fontSize: 15,
+          background: "#fff",
+          color: "var(--wc-ink)",
+          fontWeight: 700,
+          fontSize: 16,
           textDecoration: "none",
-          boxShadow: "0 12px 28px rgba(18,16,20,0.28)",
+          boxShadow: "0 12px 28px rgba(18,16,20,0.18)",
         }}
       >
-        <ChatIcon color="var(--wc-mint)" size={20} />
-        {locale === "en" ? "Ask Watchat" : "اسأل واتشات"}
+        <AgentIcon height={38} />
+        {locale === "en" ? "Chat" : "شات"}
       </Link>
       <BottomNav locale={locale} current="home" />
     </div>

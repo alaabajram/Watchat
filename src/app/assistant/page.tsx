@@ -1,5 +1,6 @@
 // The Watchat assistant on the web, and where the home-screen app opens. Signed-in viewers only.
 
+import { AgentIcon } from "@/components/assistant/AgentIcon";
 import { AssistantChat } from "@/components/assistant/AssistantChat";
 import { Splash } from "@/components/brand/Splash";
 import { BottomNav } from "@/components/home/BottomNav";
@@ -33,8 +34,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
       <TopBar locale={locale} balance={balance} />
       <main className="page" style={{ paddingTop: 4, paddingBottom: "calc(110px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 8 }}>
         <header style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0 8px" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/emblem-mint.png" alt="" width={34} height={46} />
+          <AgentIcon height={48} float />
           <div>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{locale === "en" ? "Watchat assistant" : "مساعد واتشات"}</h1>
             <p style={{ margin: 0, color: "var(--wc-muted)", fontSize: 14 }}>{locale === "en" ? "Series, search and offers" : "مسلسلات، بحث، وعروض"}</p>
