@@ -72,3 +72,20 @@ export async function testAiAction() {
   }
   done("/admin/ai", `Connected ✓ ${account.model} answered.`);
 }
+
+/** The viewer assistant on the web: on/off and its own daily AI limit (it answers without AI when off or over). */
+export async function saveAssistantSettingsAction(fd: FormData) {
+  const admin = await requireAdmin("aiAccount");
+  const back = "/admin/ai";
+  const limit = Math.max(0, Math.min(100000, Math.round(Number(fd.get("assistant_daily_limit") ?? 300)) || 0));
+  const enabled = fd.get("assistant_enabled") === "on";
+  const { data, error } = await db()
+    .from("tenant_ai_settings")
+    .update({ assistant_enabled: enabled, assistant_daily_limit: limit, updated_at: new Date().toISOString() })
+    .eq("tenant_id", admin.tenantId)
+    .select("tenant_id");
+  if (error) done(back, `Not saved: ${error.message}`, "err");
+  if (!data?.length) done(back, "Connect an AI account first. Until then the assistant still answers its buttons and searches without AI.", "err");
+  await audit(admin, "assistant.settings_saved", "tenant_ai_settings", null, { enabled, limit });
+  done(back, `Viewer assistant ${enabled ? "on" : "off"} · up to ${limit} AI answers a day.`);
+}

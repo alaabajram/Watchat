@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { BannerCarousel, type Slide } from "./BannerCarousel";
 import { BottomNav } from "./BottomNav";
-import { ChevronIcon, GiftIcon, PlayIcon } from "@/components/brand/icons";
+import { ChatIcon, ChevronIcon, GiftIcon, PlayIcon } from "@/components/brand/icons";
 import type { HomeSeries, HomeWatching } from "@/lib/content";
 import { GENRE_LABELS, GENRES } from "@/lib/content-meta";
 import { dirFor, webCopy, type Locale } from "@/lib/web-copy";
@@ -168,6 +168,31 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre, logo =
           )}
         </main>
       </div>
+      {/* The Watchat assistant: find a series, offers, continue watching. */}
+      <Link
+        href="/assistant"
+        aria-label={locale === "en" ? "Watchat assistant" : "مساعد واتشات"}
+        style={{
+          position: "fixed",
+          insetInlineEnd: 16,
+          bottom: "calc(96px + env(safe-area-inset-bottom))",
+          zIndex: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "12px 16px",
+          borderRadius: 999,
+          background: "var(--wc-ink)",
+          color: "#fff",
+          fontWeight: 600,
+          fontSize: 15,
+          textDecoration: "none",
+          boxShadow: "0 12px 28px rgba(18,16,20,0.28)",
+        }}
+      >
+        <ChatIcon color="var(--wc-mint)" size={20} />
+        {locale === "en" ? "Ask Watchat" : "اسأل واتشات"}
+      </Link>
       <BottomNav locale={locale} current="home" />
     </div>
   );

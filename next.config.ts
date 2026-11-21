@@ -44,6 +44,8 @@ const nextConfig: NextConfig = {
       // Keep the admin and personal links out of search engines and caches.
       { source: "/admin/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }, { key: "Cache-Control", value: "no-store" }] },
       { source: "/w/:path*", headers: [{ key: "Cache-Control", value: "no-store" }, { key: "Referrer-Policy", value: "no-referrer" }] },
+      // The service worker must always be fresh so alert fixes reach phones right away.
+      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }, { key: "Service-Worker-Allowed", value: "/" }] },
     ];
   },
 };

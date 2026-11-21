@@ -13,7 +13,10 @@ export async function generateMetadata(): Promise<Metadata> {
     title: `${site.nameEn} · ${site.nameAr}`,
     description: "Real drama, in the chat · دراما حقيقية في الشات",
     robots: { index: false, follow: false },
-    icons: { icon: site.icon, apple: site.icon },
+    icons: { icon: site.icon, apple: "/brand/apple-touch-icon.png" },
+    // Saved to the home screen, Watchat opens as its own app on the assistant (and can receive alerts on iPhone).
+    manifest: "/manifest.webmanifest",
+    appleWebApp: { capable: true, title: site.nameEn, statusBarStyle: "default" },
   };
 }
 

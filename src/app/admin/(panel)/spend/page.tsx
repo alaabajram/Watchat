@@ -3,9 +3,10 @@
 import { Flash } from "@/components/admin/Flash";
 import { SpendMeter } from "@/components/admin/SpendMeter";
 import { can, requireAdmin } from "@/lib/admin/auth";
-import { CATEGORIES, DEFAULT_RATES, MARKET_LABELS, MARKETS } from "@/lib/spend/meter";
+import { CATEGORIES, DEFAULT_RATES, gulfMonth, MARKET_LABELS, MARKETS, type Market } from "@/lib/spend/meter";
+import { db } from "@/lib/supabase";
 import { loadMonthSpend } from "@/lib/spend/store";
-import { saveSpendSettingsAction } from "../../spend-actions";
+import { savePushFirstAction, saveSpendSettingsAction } from "../../spend-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,18 @@ export default async function SpendPage({ searchParams }: { searchParams: Promis
   const [m, ...previous] = await Promise.all([loadMonthSpend(admin.tenantId, offset), ...[-1, -2].map((o) => loadMonthSpend(admin.tenantId, offset + o))]);
   const editable = can(admin, "pricing");
   const s = m.settings;
+
+  // Web push: viewers who turned alerts on in the web app, and the WhatsApp marketing it replaced this month.
+  const month = gulfMonth(new Date(), offset);
+  const [{ data: subs }, { data: pushes }, { data: cfg }] = await Promise.all([
+    db().from("push_subscriptions").select("viewer_id, installed").eq("tenant_id", admin.tenantId).is("revoked_at", null),
+    db().from("push_messages").select("market").eq("tenant_id", admin.tenantId).eq("status", "sent").eq("category", "marketing").gte("created_at", month.start.toISOString()).lt("created_at", month.end.toISOString()),
+    db().from("push_config").select("push_first").eq("tenant_id", admin.tenantId).maybeSingle(),
+  ]);
+  const pushViewers = new Set((subs ?? []).map((x) => x.viewer_id)).size;
+  const installedViewers = new Set((subs ?? []).filter((x) => x.installed).map((x) => x.viewer_id)).size;
+  const saved = (pushes ?? []).reduce((sum, p) => sum + (s.rates[(p.market as Market) ?? "OTHER"]?.marketing ?? s.rates.OTHER.marketing), 0);
+  const pushFirst = cfg?.push_first ?? true;
 
   return (
     <>
@@ -39,6 +52,39 @@ export default async function SpendPage({ searchParams }: { searchParams: Promis
       </form>
 
       <SpendMeter m={m} />
+
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Web push instead of WhatsApp</h2>
+        <p style={{ marginTop: 0 }}>
+          Viewers can turn on new-episode alerts in the web app (watchat.pro/assistant, saved to their home screen). With web push first on, every marketing
+          template to them goes as a free notification instead, and falls back to WhatsApp only if their phone doesn&apos;t accept it. The 20-hour gap, quiet hours and
+          opt-in still apply.
+        </p>
+        <div className="row" style={{ gap: 24, flexWrap: "wrap" }}>
+          <div>
+            <div className="muted">Viewers with alerts on</div>
+            <strong style={{ fontSize: 24 }}>{pushViewers}</strong>
+            <div className="muted" style={{ fontSize: 12 }}>{installedViewers} from the home-screen app</div>
+          </div>
+          <div>
+            <div className="muted">Sent by push · {month.label}</div>
+            <strong style={{ fontSize: 24 }}>{pushes?.length ?? 0}</strong>
+          </div>
+          <div>
+            <div className="muted">WhatsApp spend saved</div>
+            <strong style={{ fontSize: 24 }}>${saved.toFixed(2)}</strong>
+            <div className="muted" style={{ fontSize: 12 }}>at your marketing rates</div>
+          </div>
+        </div>
+        <form action={savePushFirstAction} className="row" style={{ marginTop: 12, alignItems: "center", gap: 12 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" name="push_first" defaultChecked={pushFirst} /> Send marketing by web push first
+          </label>
+          <button type="submit" className="secondary">
+            Save
+          </button>
+        </form>
+      </div>
 
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Month by month</h2>

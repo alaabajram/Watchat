@@ -41,3 +41,15 @@ export async function saveSpendSettingsAction(fd: FormData) {
   await audit(admin, "spend_settings.saved", "spend_settings", null, { budget, alertPct, overrides: Object.keys(overrides).length });
   done(back, "Saved.");
 }
+
+/** Web push first: marketing messages go free by web push to viewers who turned alerts on in the web app. */
+export async function savePushFirstAction(fd: FormData) {
+  const admin = await requireAdmin("spend");
+  const on = fd.get("push_first") === "on";
+  const { pushKeys } = await import("@/lib/push/push");
+  await pushKeys(admin.tenantId); // creates the keys if this label has none yet
+  const { error } = await db().from("push_config").update({ push_first: on, updated_at: new Date().toISOString() }).eq("tenant_id", admin.tenantId);
+  if (error) done("/admin/spend", `Not saved: ${error.message}`, "err");
+  await audit(admin, "push.push_first_saved", "push_config", null, { on });
+  done("/admin/spend", on ? "Marketing messages now go by web push first to viewers who turned alerts on." : "Web push first is off: marketing goes by WhatsApp.");
+}
