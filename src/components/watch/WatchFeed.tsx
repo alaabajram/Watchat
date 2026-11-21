@@ -3,7 +3,8 @@
 // Full-screen vertical watch feed: every episode of the series is one full-screen slide; scroll (swipe) up for
 // the next episode and down for the previous one. Only the episode on screen plays (one video at a time, so data
 // isn't wasted). Title, episode number, back, coins, and the Share / Info buttons float over the video and fade
-// out a few seconds after the last touch; tap the video to pause / play and bring them back.
+// out a few seconds after the last touch. Tap the screen to show them, tap again to hide them; pause / play is the
+// button in the middle that comes with them.
 // The address bar follows the episode on screen, so refreshing, sharing the page or unlocking stays on it.
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -51,16 +52,26 @@ export function WatchFeed(p: Props) {
   const idx = p.episodes.findIndex((e) => e.number === active);
 
   // Overlays: show now, fade out a few seconds later while the video plays.
+  const playingRef = useRef(false);
+  playingRef.current = playing;
   const poke = useCallback(() => {
     setShown(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setShown(false), HIDE_AFTER_MS);
+    // While paused they stay until the viewer taps them away.
+    if (playingRef.current) hideTimer.current = setTimeout(() => setShown(false), HIDE_AFTER_MS);
   }, []);
+  const hide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    setShown(false);
+  }, []);
+  /** A tap on the screen: show the overlays, or hide them if they're showing. */
+  const tapScreen = useCallback(() => (shown ? hide() : poke()), [shown, hide, poke]);
   useEffect(() => {
-    if (!playing || info) {
+    if (info) {
       if (hideTimer.current) clearTimeout(hideTimer.current);
       setShown(true);
-    } else poke();
+    } else if (playing) poke();
+    else if (hideTimer.current) clearTimeout(hideTimer.current); // paused: leave them as they are
   }, [playing, info, poke]);
 
   // Start on the episode from the address, then follow whichever slide is on screen.
@@ -118,7 +129,7 @@ export function WatchFeed(p: Props) {
     <div className="wc wc-dark wc-watch" dir={p.locale === "ar" ? "rtl" : "ltr"} lang={p.locale}>
       <div ref={feed} className="wc-feed" aria-label={p.title}>
         {p.episodes.map((ep) => (
-          <section key={ep.id} data-n={ep.number} className="wc-slide" aria-label={t.episode(ep.number)}>
+          <section key={ep.id} data-n={ep.number} className="wc-slide" aria-label={t.episode(ep.number)} onClick={ep.number === active && ep.allowed && ep.hls ? undefined : tapScreen}>
             {ep.number === active && ep.allowed && ep.hls ? (
               <EpisodeVideo
                 key={ep.id}
@@ -128,7 +139,9 @@ export function WatchFeed(p: Props) {
                 label={`${p.title} · ${t.episode(ep.number)}`}
                 onPlaying={setPlaying}
                 onProgress={setProgress}
-                onTap={poke}
+                onTap={tapScreen}
+                onControl={poke}
+                controlsShown={shown}
                 onEnded={() => go(1)}
                 hasNext={idx < p.episodes.length - 1}
                 locale={p.locale}
@@ -261,6 +274,9 @@ function EpisodeVideo(p: {
   onPlaying: (b: boolean) => void;
   onProgress: (f: number) => void;
   onTap: () => void;
+  /** Pressing the play / pause button keeps the overlays up a little longer. */
+  onControl: () => void;
+  controlsShown: boolean;
   onEnded: () => void;
   hasNext: boolean;
   locale: Locale;
@@ -270,6 +286,7 @@ function EpisodeVideo(p: {
   const lastSent = useRef(0);
   const [needsTap, setNeedsTap] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [paused, setPaused] = useState(true);
   const { onPlaying, onProgress, onEnded } = p;
 
   const report = useCallback(
@@ -321,8 +338,8 @@ function EpisodeVideo(p: {
       if (Number.isFinite(v.duration) && v.duration > 0) onProgress(v.currentTime / v.duration);
       if (Date.now() - lastSent.current > HEARTBEAT_MS) report();
     };
-    const onPlay = () => (onPlaying(true), setNeedsTap(false));
-    const onPause = () => (onPlaying(false), report());
+    const onPlay = () => (onPlaying(true), setPaused(false), setNeedsTap(false));
+    const onPause = () => (onPlaying(false), setPaused(true), report());
     const onEnd = () => {
       report(true);
       setEnded(true);
@@ -353,7 +370,7 @@ function EpisodeVideo(p: {
 
   const toggle = () => {
     const v = video.current;
-    p.onTap();
+    p.onControl();
     if (!v) return;
     if (v.paused) v.play().catch(() => setNeedsTap(true));
     else v.pause();
@@ -361,10 +378,16 @@ function EpisodeVideo(p: {
 
   return (
     <>
-      <video ref={video} playsInline preload="auto" poster={p.ep.poster ?? undefined} onClick={toggle} aria-label={p.label} className="wc-slide-video" />
-      {needsTap && !ended && (
-        <button className="wc-play-btn" type="button" onClick={toggle} aria-label="Play">
-          ▶
+      <video ref={video} playsInline preload="auto" poster={p.ep.poster ?? undefined} onClick={p.onTap} aria-label={p.label} className="wc-slide-video" />
+      {(needsTap || p.controlsShown) && !ended && (
+        <button
+          className="wc-play-btn"
+          type="button"
+          onClick={toggle}
+          aria-label={paused ? "Play" : "Pause"}
+          style={{ transition: "opacity 0.35s ease" }}
+        >
+          {paused ? "▶" : "❚❚"}
         </button>
       )}
       {ended && (
