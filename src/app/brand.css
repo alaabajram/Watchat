@@ -166,7 +166,12 @@
 
 /* ---------------- Full-screen watch feed ----------------
    One full-screen slide per episode, snapping as you scroll; overlays float above and fade out. */
-.wc-watch { position: fixed; inset: 0; background: #000; color: #fff; overflow: hidden; min-height: 0; }
+/* The watch feed is always a 9:16 frame, like Reels: full screen on phones, a centred column on wider screens
+   (the black around it comes from the shadow). Videos fill the frame, so they're never stretched or zoomed to 16:9. */
+.wc-watch {
+  position: fixed; inset: 0; margin-inline: auto; width: min(100vw, calc(100dvh * 9 / 16));
+  background: #000; color: #fff; overflow: hidden; min-height: 0; box-shadow: 0 0 0 100vmax #000;
+}
 /* Watch feed: no long-press "Save image / video" sheet, no text selection, no dragging the video out. */
 .wc-watch, .wc-watch * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .wc-slide-video, .wc-slide-poster { -webkit-user-drag: none; pointer-events: auto; }
