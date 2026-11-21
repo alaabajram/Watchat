@@ -143,3 +143,13 @@ describe("Mini App sign-in", () => {
     expect(startTarget(null)).toBe("/");
   });
 });
+
+describe("framed Mini App (Telegram Web / Desktop)", () => {
+  it("uses a SameSite=None, partitioned, secure session cookie only inside a frame", async () => {
+    const { sessionCookieOptions, loadedInFrame } = await import("../session-cookie");
+    expect(sessionCookieOptions(true, false)).toMatchObject({ sameSite: "none", partitioned: true, secure: true, httpOnly: true });
+    expect(sessionCookieOptions(false, true)).toEqual({ httpOnly: true, secure: true, sameSite: "lax", path: "/" });
+    expect(loadedInFrame(new Headers({ "sec-fetch-dest": "iframe" }))).toBe(true);
+    expect(loadedInFrame(new Headers({ "sec-fetch-dest": "document" }))).toBe(false);
+  });
+});

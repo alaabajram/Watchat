@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { businessPath, isBusinessHost } from "@/lib/business-host";
-import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/session-cookie";
+import { loadedInFrame, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S, sessionCookieOptions } from "@/lib/session-cookie";
 
 export default function proxy(req: NextRequest) {
   if (isBusinessHost(req.headers.get("host"))) {
@@ -18,10 +18,7 @@ export default function proxy(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (token && req.method === "GET") {
     res.cookies.set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: req.nextUrl.protocol === "https:",
-      sameSite: "lax",
-      path: "/",
+      ...sessionCookieOptions(loadedInFrame(req.headers), req.nextUrl.protocol === "https:"),
       maxAge: SESSION_COOKIE_MAX_AGE_S,
     });
   }

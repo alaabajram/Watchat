@@ -6,6 +6,15 @@
 
 import { useEffect, useState } from "react";
 
+/** Telegram Web / Desktop show the Mini App inside a frame (the session cookie must then be framed-friendly). */
+function inFrame(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
 
 const INIT_KEY = "wc_tg_init";
 
@@ -21,7 +30,7 @@ export function telegramInitData(): string | null {
 }
 
 export async function signInWithTelegram(initData: string, to: string | null): Promise<string | null> {
-  const r = await fetch("/api/telegram/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initData, to }) });
+  const r = await fetch("/api/telegram/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initData, to, framed: inFrame() }) });
   const j = (await r.json().catch(() => ({}))) as { ok?: boolean; to?: string };
   return j.ok && j.to ? j.to : null;
 }
