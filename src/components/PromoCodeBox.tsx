@@ -43,7 +43,7 @@ export function PromoCodeBox({ locale }: { locale: Locale }) {
           autoComplete="off"
           maxLength={20}
           placeholder={t.promoPlaceholder}
-          style={{ flex: 1, minWidth: 0, minHeight: 46, borderRadius: 12, border: "1px solid var(--wc-line, #e5e5e5)", padding: "0 12px", fontSize: 16, textTransform: "uppercase" }}
+          style={{ flex: 1, minWidth: 0, minHeight: 46, borderRadius: 12, border: "1px solid var(--wc-line, #e5e5e5)", background: "var(--wc-card-2, #fff)", color: "var(--wc-ink)", padding: "0 12px", fontSize: 16, textTransform: "uppercase" }}
         />
         <button className="btn secondary" type="submit" disabled={busy} style={{ minWidth: 88 }}>
           {t.apply}

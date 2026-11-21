@@ -28,6 +28,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   }
 
   const [{ catalogue, watching }, balance, site] = await Promise.all([getHome(viewer.id), getBalance(viewer.id), getSiteSafe()]);
-  const logo = site.logoOnLight === DEFAULT_SITE.logoOnLight ? null : site.logoOnLight; // a label's own logo, else the Arabic/English Watchat wordmark
+  const logo = site.logoOnDark === DEFAULT_SITE.logoOnDark ? null : site.logoOnDark; // a label's own logo (dark version), else the white Watchat wordmark
   return <HomeScreen locale={viewer.uiLocale} balance={balance} catalogue={catalogue} watching={watching} genre={params.genre ?? null} logo={logo} />;
 }

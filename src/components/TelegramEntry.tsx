@@ -31,11 +31,11 @@ export function TelegramEntry({ to, botHref, locale }: { to: string | null; botH
   }, [to]);
 
   return (
-    <div className="wc" dir={dirFor(locale)} lang={locale} style={{ background: "#fff" }}>
+    <div className="wc" dir={dirFor(locale)} lang={locale}>
       <main style={{ minHeight: "100dvh", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "24px 24px calc(32px + env(safe-area-inset-bottom))", maxWidth: 520, margin: "0 auto" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, textAlign: "center" }}>
           <AnimatedLogo />
-          <p role="status" style={{ fontSize: 17, color: "#4e4943", margin: 0 }}>
+          <p role="status" style={{ fontSize: 17, color: "var(--wc-muted)", margin: 0 }}>
             {state === "working" ? x.working : state === "outside" ? x.outside : x.failed}
           </p>
           {state === "working" && <span className="wc-tg-spinner" aria-hidden="true" />}

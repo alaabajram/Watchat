@@ -130,7 +130,7 @@ export function AlertsOptIn({ locale, compact = false }: { locale: Locale; compa
   if (state === "on" && compact) return null;
 
   return (
-    <section aria-label={t.title} className="wc-card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "#fff" }}>
+    <section aria-label={t.title} className="wc-card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 14, background: "rgba(49,229,160,0.18)", display: "grid", placeItems: "center", fontSize: 20, flex: "none" }}>
           🔔
@@ -166,7 +166,7 @@ export function AlertsOptIn({ locale, compact = false }: { locale: Locale; compa
         <p style={{ margin: 0, fontSize: 15 }}>{t.blocked}</p>
       ) : state === "on" ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ flex: 1, fontWeight: 600, color: "#0b7a52" }}>{t.on}</span>
+          <span style={{ flex: 1, fontWeight: 600, color: "var(--wc-mint-text)" }}>{t.on}</span>
           <button type="button" className="wc-pill" onClick={turnOff} style={{ cursor: "pointer" }}>
             {t.off}
           </button>
@@ -174,7 +174,7 @@ export function AlertsOptIn({ locale, compact = false }: { locale: Locale; compa
       ) : (
         <>
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5 }}>{t.body}</p>
-          {state === "error" && <p style={{ margin: 0, color: "#c0352b", fontSize: 14 }}>{t.error}</p>}
+          {state === "error" && <p style={{ margin: 0, color: "var(--wc-coral-text)", fontSize: 14 }}>{t.error}</p>}
           <button type="button" className="wc-btn" disabled={state === "busy"} onClick={turnOn}>
             🔔 {t.turnOn}
           </button>
@@ -184,7 +184,7 @@ export function AlertsOptIn({ locale, compact = false }: { locale: Locale; compa
         <button
           type="button"
           className="wc-btn"
-          style={{ background: "var(--wc-ink, #1f1b24)", color: "#fff" }}
+          style={{ background: "var(--wc-mint)", color: "var(--wc-mint-ink)" }}
           onClick={async () => {
             await install.prompt();
             await install.userChoice;

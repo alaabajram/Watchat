@@ -1,10 +1,11 @@
-// Bottom bar from the design team's screens, on every viewer page: Home · My List · (get coins) · Wallet · Profile.
+// Bottom bar on every viewer page: Home · Explore · (Rewards, the raised coral button) · My List · Profile.
+// The wallet isn't here: the Ping balance is in the top bar and the wallet opens from it and from Profile.
 
 import Link from "next/link";
-import { BookmarkIcon, GiftIcon, HomeIcon, UserIcon, WalletIcon } from "@/components/brand/icons";
+import { BookmarkIcon, ExploreIcon, GiftIcon, HomeIcon, UserIcon } from "@/components/brand/icons";
 import { webCopy, type Locale } from "@/lib/web-copy";
 
-export type NavKey = "home" | "list" | "coins" | "wallet" | "profile" | null;
+export type NavKey = "home" | "explore" | "rewards" | "list" | "profile" | null;
 
 export function BottomNav({ locale, current }: { locale: Locale; current: NavKey }) {
   const t = webCopy(locale);
@@ -21,23 +22,23 @@ export function BottomNav({ locale, current }: { locale: Locale; current: NavKey
           </Link>
         </li>
         <li>
-          <Link href="/list" aria-current={cur("list")}>
-            <BookmarkIcon color={on("list") ? coral : "currentColor"} />
-            {t.myList}
+          <Link href="/explore" aria-current={cur("explore")}>
+            <ExploreIcon fill={on("explore") ? coral : "none"} color={on("explore") ? coral : "currentColor"} />
+            {t.explore}
           </Link>
         </li>
         <li>
-          <Link href="/store" aria-current={cur("coins")} style={{ color: "var(--wc-ink)" }}>
+          <Link href="/rewards" aria-current={cur("rewards")} style={{ color: on("rewards") ? coral : "var(--wc-ink)" }}>
             <span className="wc-fab">
-              <GiftIcon color="#fff" size={22} />
+              <GiftIcon color="#fff" size={26} />
             </span>
-            {t.getCoins}
+            {t.rewardsNav}
           </Link>
         </li>
         <li>
-          <Link href="/wallet" aria-current={cur("wallet")}>
-            <WalletIcon color={on("wallet") ? coral : "currentColor"} />
-            {t.wallet}
+          <Link href="/list" aria-current={cur("list")}>
+            <BookmarkIcon fill={on("list") ? coral : "none"} color={on("list") ? coral : "currentColor"} />
+            {t.myList}
           </Link>
         </li>
         <li>

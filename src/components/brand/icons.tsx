@@ -24,8 +24,8 @@ export const HomeIcon = ({ size = 22, color = "currentColor", fill = "none" }: P
     <path d="M4 10l8-6 8 6v10h-5v-6H9v6H4z" />
   </svg>
 );
-export const BookmarkIcon = ({ size = 22, color = "currentColor" }: P) => (
-  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round">
+export const BookmarkIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={2} strokeLinejoin="round">
     <path d="M6 3h12v18l-6-4-6 4z" />
   </svg>
 );
@@ -92,3 +92,26 @@ export const ShareIcon = ({ size = 20, color = "currentColor" }: P) => (
     <path d="M21 3L3 10.5l7 3 3 7z" />
   </svg>
 );
+export const ExploreIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M15.5 8.5l-2 5-5 2 2-5z" fill={fill === "none" ? "none" : color} />
+  </svg>
+);
+export const SearchIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round">
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="M16 16l4.5 4.5" />
+  </svg>
+);
+export const FlameIcon = ({ size = 14, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill={color}>
+    <path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-4-1-6 1-9.5z" />
+  </svg>
+);
+export const TranslateIcon = ({ size = 14, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 5h9M8.5 3v2M6 5c.5 3 2.5 6 6 7.5M11 5c-.5 3-3 6.5-6.5 8M13 20l4-9 4 9M14.5 17h5" />
+  </svg>
+);
+

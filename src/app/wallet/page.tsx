@@ -108,7 +108,7 @@ export default async function WalletPage() {
               {(passes as unknown as { series: { code: string; title_ar: string; title_en: string } }[]).map((p) => (
                 <li key={p.series.code}>
                   <Link href={`/series/${p.series.code}`}>{locale === "en" ? p.series.title_en : p.series.title_ar}</Link>
-                  <span className="tag" style={{ background: "#e3fbf1", color: "var(--wc-mint-text)" }}>{t.seasonPass}</span>
+                  <span className="tag" style={{ background: "var(--wc-mint-soft)", color: "var(--wc-mint-text)" }}>{t.seasonPass}</span>
                 </li>
               ))}
             </ul>
@@ -138,7 +138,7 @@ export default async function WalletPage() {
           )}
         </section>
       </div>
-      <BottomNav locale={locale} current="wallet" />
+      <BottomNav locale={locale} current="profile" />
     </div>
   );
 }
