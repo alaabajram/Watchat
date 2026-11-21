@@ -69,12 +69,15 @@ export default async function SitePage({ searchParams }: { searchParams: Promise
               {tg.pending > 0 && ` · ${tg.pending} waiting`}
             </p>
             {tg.lastError && <p className="muted" style={{ margin: "0 0 8px" }}>Last error from Telegram: {tg.lastError}</p>}
+            {tg.webhookOk && !tg.paymentsReady && (
+              <p style={{ margin: "0 0 8px", color: "var(--err, #b91c1c)" }}>Press Reconnect once to turn on Telegram Stars payments.</p>
+            )}
             <form action={connectTelegramAction}>
               <button type="submit">{tg.webhookOk ? "Reconnect" : "Connect Telegram"}</button>
             </form>
             <p className="muted" style={{ marginBottom: 0 }}>
-              Connecting sets the webhook, the bot&apos;s menu button «شاهد» (opens Watchat inside Telegram, signed in) and its commands. Payments
-              inside Telegram use Telegram Stars and come next; until then Telegram viewers watch free episodes and spend their free Ping.
+              Connecting sets the webhook, the bot&apos;s menu button «شاهد» (opens Watchat inside Telegram, signed in) and its commands. Telegram
+              viewers pay in Telegram Stars ⭐ (prices in Pricing &amp; Ping).
             </p>
           </>
         )}

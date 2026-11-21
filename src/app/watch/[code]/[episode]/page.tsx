@@ -8,7 +8,7 @@ import { WatchFeed, type FeedEpisode } from "@/components/watch/WatchFeed";
 import { canWatch, getEpisodes, getPosition, getSeriesByCode, getUnlocked, streamUrls } from "@/lib/content";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
-import { storeOffers, viewerMarket } from "@/lib/economy/store";
+import { payingMarket, storeOffers } from "@/lib/economy/store";
 import { getSessionViewer } from "@/lib/session";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, formatMoney, webCopy } from "@/lib/web-copy";
@@ -60,7 +60,7 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
   });
 
   // Paywall offers in the viewer's market: the series pass (fixed fee) and the weekly pass (every series).
-  const shop = allowed ? null : await storeOffers(viewer.id, await viewerMarket(viewer));
+  const shop = allowed ? null : await storeOffers(viewer.id, await payingMarket(viewer));
   // Every episode is a slide in the full-screen feed; only the one on screen loads its video.
   const feed: FeedEpisode[] = episodes.map((e) => {
     const { hls, poster } = streamUrls(e.streamUid, env.streamCustomerCode);

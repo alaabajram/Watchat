@@ -8,6 +8,7 @@ import { chargeSavedCard, tapConfigured } from "../payments/tap";
 import { verifyAndFulfil } from "../wallet";
 import { loadEconomy } from "./store";
 import { afterFailedAttempt, roundMoney, vatOf } from "./pricing";
+import { setStarsRenewal } from "../telegram/payments";
 
 export const RENEW_AHEAD_MS = 60 * 60 * 1000; // try up to 1 hour before the pass ends
 
@@ -32,6 +33,7 @@ export async function runBilling(): Promise<{ renewed: number; failed: number; e
     .select("id, viewer_id, plan, country, currency, amount, tap_customer_id, tap_card_id, tap_agreement_id, renew_attempts, next_attempt_at")
     .in("status", ["active", "past_due"])
     .eq("auto_renew", true)
+    .is("tg_charge_id", null) // Telegram Stars passes are renewed by Telegram, not here
     .lte("current_period_end", new Date(now + RENEW_AHEAD_MS).toISOString())
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
     .limit(50);
@@ -105,11 +107,13 @@ export async function runBilling(): Promise<{ renewed: number; failed: number; e
 export async function setAutoRenew(viewerId: string, on: boolean): Promise<boolean> {
   const { data: sub } = await db()
     .from("subscriptions")
-    .select("id, tap_card_id")
+    .select("id, tap_card_id, tg_charge_id, tg_user_id")
     .eq("viewer_id", viewerId)
     .in("status", ["active", "past_due"])
     .maybeSingle();
-  if (!sub || (on && !sub.tap_card_id)) return false;
+  if (!sub || (on && !sub.tap_card_id && !sub.tg_charge_id)) return false;
+  // Telegram Stars subscription: Telegram renews it, so ask Telegram to stop / restart.
+  if (sub.tg_charge_id && !(await setStarsRenewal(sub, on))) return false;
   await db()
     .from("subscriptions")
     .update({ auto_renew: on, cancelled_at: on ? null : new Date().toISOString(), renew_attempts: 0, next_attempt_at: null, updated_at: new Date().toISOString() })
@@ -117,22 +121,22 @@ export async function setAutoRenew(viewerId: string, on: boolean): Promise<boole
   return true;
 }
 
-export type ViewerPass = { plan: "weekly" | "yearly"; endsAt: string; autoRenew: boolean; canRenew: boolean; last4: string | null; pastDue: boolean };
+export type ViewerPass = { plan: "weekly" | "monthly" | "yearly"; endsAt: string; autoRenew: boolean; canRenew: boolean; last4: string | null; pastDue: boolean };
 
 export async function viewerPass(viewerId: string): Promise<ViewerPass | null> {
   const { data } = await db()
     .from("subscriptions")
-    .select("plan, status, current_period_end, auto_renew, tap_card_id, card_last4")
+    .select("plan, status, current_period_end, auto_renew, tap_card_id, card_last4, tg_charge_id")
     .eq("viewer_id", viewerId)
     .in("status", ["active", "past_due"])
     .gt("current_period_end", new Date().toISOString())
     .maybeSingle();
   if (!data) return null;
   return {
-    plan: data.plan as "weekly" | "yearly",
+    plan: data.plan as ViewerPass["plan"],
     endsAt: data.current_period_end,
     autoRenew: data.auto_renew,
-    canRenew: Boolean(data.tap_card_id),
+    canRenew: Boolean(data.tap_card_id || data.tg_charge_id),
     last4: data.card_last4,
     pastDue: data.status === "past_due",
   };

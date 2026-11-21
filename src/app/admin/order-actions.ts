@@ -2,6 +2,7 @@
 
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done, opt, str, uuid } from "@/lib/admin/forms";
+import { refundStarsOrder } from "@/lib/telegram/payments";
 import { approveCashOrder, cancelCashOrder } from "@/lib/wallet";
 
 export async function approveOrderAction(fd: FormData) {
@@ -27,4 +28,14 @@ export async function cancelOrderAction(fd: FormData) {
   await cancelCashOrder(id, admin.id, opt(fd, "note", 300));
   await audit(admin, "order.cash_cancelled", "order", id, { note: opt(fd, "note", 300) });
   done(back, "Order cancelled. Nothing was added to the wallet.");
+}
+
+/** Telegram Stars order: Telegram gives the Stars back, and the Ping / pass it gave is taken back. */
+export async function refundStarsAction(fd: FormData) {
+  const admin = await requireAdmin("orders");
+  const id = uuid(fd, "id");
+  if (!id) done("/admin/orders", "Bad request.", "err");
+  const r = await refundStarsOrder(id);
+  await audit(admin, "order.stars_refunded", "order", id, { ok: r.ok, error: r.error ?? null });
+  done("/admin/orders", r.ok ? "Refunded: the Stars went back to the viewer and the purchase was taken back." : `Refund failed: ${r.error}`, r.ok ? "ok" : "err");
 }

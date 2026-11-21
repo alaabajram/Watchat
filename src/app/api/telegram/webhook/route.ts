@@ -10,6 +10,7 @@ import { safeEqual } from "@/lib/crypto";
 import { siteUrl } from "@/lib/site/store";
 import { db } from "@/lib/supabase";
 import { tgCall } from "@/lib/telegram/client";
+import { answerPreCheckout, fulfilStarsPayment, type SuccessfulPayment } from "@/lib/telegram/payments";
 import { parseUpdate, webhookSecret, type PageCommand } from "@/lib/telegram/telegram";
 
 export const runtime = "nodejs";
@@ -35,7 +36,31 @@ export async function POST(req: NextRequest) {
   const parsed = parseUpdate(update);
   if (!parsed) return NextResponse.json({ ok: true });
 
+  // Telegram waits up to 10 seconds for the payment confirmation: answer it before anything else.
+  if (parsed.preCheckout) {
+    await answerPreCheckout(parsed.preCheckout);
+    return NextResponse.json({ ok: true });
+  }
+
   after(async () => {
+    if (parsed.payment) {
+      const p = parsed.payment.data as unknown as SuccessfulPayment;
+      try {
+        const r = await fulfilStarsPayment(parsed.payment.chatId, p);
+        if (r === "ok") {
+          const en = (update as { message?: { from?: { language_code?: string } } }).message?.from?.language_code?.startsWith("en");
+          const site = (await siteUrl()).replace(/\/$/, "");
+          await tgCall("sendMessage", {
+            chat_id: parsed.payment.chatId,
+            text: en ? "Payment received ✅ Your purchase is in your wallet. Enjoy watching! 🍿" : "تم الدفع ✅ أضفنا مشترياتك لمحفظتك. مشاهدة ممتعة 🍿",
+            reply_markup: { inline_keyboard: [[{ text: en ? "Open Watchat" : "افتح واتشات", web_app: { url: `${site}/tg?to=%2Fwallet` } }]] },
+          });
+        }
+      } catch (err) {
+        console.error("[telegram] payment failed to fulfil", { err });
+      }
+      return;
+    }
     // Stop the button's spinner right away.
     if (parsed.callbackQueryId) await tgCall("answerCallbackQuery", { callback_query_id: parsed.callbackQueryId });
     // De-duplicate: Telegram retries updates it thinks failed.

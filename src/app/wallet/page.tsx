@@ -62,7 +62,7 @@ export default async function WalletPage() {
         {pass && (
           <section className="wc-card wc-plan wc-plan-on" style={{ gap: 8 }}>
             <strong>⭐ {t.yourPass}</strong>
-            <span>{t.passUntil(pass.plan === "weekly" ? t.weeklyPass : t.yearlyPass, fmt.format(new Date(pass.endsAt)))}</span>
+            <span>{t.passUntil(pass.plan === "weekly" ? t.weeklyPass : pass.plan === "monthly" ? t.monthlyPass : t.yearlyPass, fmt.format(new Date(pass.endsAt)))}</span>
             {pass.pastDue && <span style={{ color: "var(--wc-coral-text)" }}>{t.pastDue}</span>}
             {pass.canRenew && (
               <>

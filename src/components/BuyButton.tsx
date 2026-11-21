@@ -3,7 +3,9 @@
 // Starts a checkout for a Ping pack, a series pass or a weekly / yearly pass. A discount code typed in the store's
 // code box (#promo-code) travels with it; the server decides whether it applies.
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { openTelegramInvoice } from "./TelegramSignIn";
 import { formatMoney, webCopy, type Locale } from "@/lib/web-copy";
 import { ConfirmDevice } from "./ConfirmDevice";
 
@@ -17,12 +19,13 @@ export function BuyButton({
 }: {
   locale: Locale;
   type: "coin_pack" | "season_pass" | "subscription";
-  id: string;
+  id: string; // pack / series id, or "weekly" | "monthly" | "yearly"
   label: string;
   returnTo: string;
   secondary?: boolean;
 }) {
   const t = webCopy(locale);
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,6 +40,7 @@ export function BuyButton({
     });
     const j = (await res.json().catch(() => ({}))) as {
       url?: string;
+      invoice?: string;
       error?: string;
       pending?: boolean;
       reference?: string;
@@ -46,6 +50,16 @@ export function BuyButton({
     if (j.pending && j.reference) {
       setBusy(false);
       setMessage(t.cashRequested(j.reference, formatMoney(j.amount ?? 0, j.currency ?? "AED", locale)));
+      return;
+    }
+    if (j.invoice) {
+      // Telegram viewers: Telegram's own payment sheet (Stars). The webhook adds the purchase to the wallet.
+      const status = await openTelegramInvoice(j.invoice);
+      setBusy(false);
+      if (status === "paid") {
+        setMessage(t.starsPaid);
+        window.setTimeout(() => router.refresh(), 1500);
+      } else if (status === "failed") setMessage(t.error);
       return;
     }
     if (j.url) {
