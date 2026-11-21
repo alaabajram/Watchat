@@ -32,7 +32,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <h1>Spend</h1>
+      <h1>WhatsApp costs</h1>
       <Flash ok={sp.ok} err={sp.err} />
       <form className="row card" method="get">
         <label>

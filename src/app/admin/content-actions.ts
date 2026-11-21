@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done, int, num, opt, str, uuid } from "@/lib/admin/forms";
 import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
+import { readiness } from "@/lib/admin/readiness";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
 import { uploadTarget } from "@/lib/storage/cloudflare";
@@ -117,10 +118,19 @@ export async function setSeriesStatusAction(fd: FormData) {
     ]);
     if (!licences) done(back, "Add the licence before publishing.", "err");
     if (review?.decision !== "approved") done(back, "The series needs an approved content review before publishing.", "err");
+    // Same checklist as the series page and the launch wizard.
+    const [{ data: s }, { data: eps }] = await Promise.all([
+      db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
+      db().from("episodes").select("number, status, stream_uid, wa_video_url_ar").eq("series_id", id),
+    ]);
+    if (!s) done("/admin/series", "Series not found.", "err");
+    const r = readiness(s, eps ?? [], licences ?? 0, review?.decision ?? null);
+    if (!r.ready) done(back, `Not published yet. Still needed: ${r.items.filter((i) => i.required && !i.done).map((i) => `${i.label} (${i.detail})`).join(" · ")}.`, "err");
   }
 
   await db().from("series").update({ status }).eq("id", id).eq("tenant_id", admin.tenantId);
-  if (status === "live") await db().from("episodes").update({ status: "live" }).eq("series_id", id).eq("status", "in_review");
+  // Ready episodes with a video go live with the series; one without a video stays hidden until it has one.
+  if (status === "live") await db().from("episodes").update({ status: "live" }).eq("series_id", id).eq("status", "in_review").not("stream_uid", "is", null);
   await audit(admin, `series.status.${status}`, "series", id);
   done(back, `Status set to ${status}.`);
 }

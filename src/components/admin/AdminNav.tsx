@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /** `also`: other paths that belong to this entry (e.g. the Flow builder's Sequence flows and Shared replies tabs). */
-export type NavItem = { href: string; label: string; icon: IconName; group: string; also?: string[] };
+export type NavItem = { href: string; label: string; icon: IconName; group: string; also?: string[]; hint?: string };
 export type IconName =
   | "dashboard" | "spend" | "cms" | "flow" | "replies" | "template" | "sequence" | "campaign"
   | "growth" | "viewers" | "orders" | "pricing" | "offers" | "team" | "ai" | "audit" | "brand";
@@ -46,24 +46,43 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-export function AdminNavLinks({ items }: { items: NavItem[] }) {
+/**
+ * `folded`: groups shown as a fold-out (true = starts closed). A folded group always opens when you're on one of
+ * its pages. Groups with an empty name have no heading.
+ */
+export function AdminNavLinks({ items, folded = {} }: { items: NavItem[]; folded?: Record<string, boolean> }) {
   const path = usePathname();
   const under = (href: string) => path === href || path.startsWith(`${href}/`);
   const isCurrent = (href: string, also: string[] = []) => (href === "/admin" ? path === "/admin" : under(href) || also.some(under));
-  let lastGroup = "";
+  const groups: { name: string; items: NavItem[] }[] = [];
+  for (const n of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === n.group) last.items.push(n);
+    else groups.push({ name: n.group, items: [n] });
+  }
+  const link = (n: NavItem) => (
+    <Link key={n.href} href={n.href} title={n.hint} aria-current={isCurrent(n.href, n.also) ? "page" : undefined}>
+      <Icon name={n.icon} />
+      {n.label}
+    </Link>
+  );
   return (
     <>
-      {items.map((n) => {
-        const header = n.group !== lastGroup ? n.group : null;
-        lastGroup = n.group;
+      {groups.map((g) => {
+        if (!(g.name in folded)) {
+          return (
+            <div key={g.name || "main"} style={{ display: "contents" }}>
+              {g.name && <div className="section">{g.name}</div>}
+              {g.items.map(link)}
+            </div>
+          );
+        }
+        const open = !folded[g.name] || g.items.some((n) => isCurrent(n.href, n.also));
         return (
-          <div key={n.href} style={{ display: "contents" }}>
-            {header && <div className="section">{header}</div>}
-            <Link href={n.href} aria-current={isCurrent(n.href, n.also) ? "page" : undefined}>
-              <Icon name={n.icon} />
-              {n.label}
-            </Link>
-          </div>
+          <details key={g.name} className="fold" open={open}>
+            <summary className="section">{g.name}</summary>
+            {g.items.map(link)}
+          </details>
         );
       })}
     </>

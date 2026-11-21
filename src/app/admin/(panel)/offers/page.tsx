@@ -51,7 +51,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <h1>Offers &amp; promotions</h1>
+      <h1>Offers &amp; rewards</h1>
       <Flash ok={sp.ok} err={sp.err} />
 
       <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>

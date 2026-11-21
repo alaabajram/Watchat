@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
+import { readiness } from "@/lib/admin/readiness";
 import { db } from "@/lib/supabase";
-import { createSeriesAction } from "../../content-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -11,70 +11,89 @@ export default async function SeriesList({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const { data: series } = await db()
     .from("series")
-    .select("id, code, title_ar, title_en, status, created_at, episodes(count)")
+    .select(
+      "id, code, title_ar, title_en, status, created_at, poster_url, synopsis_ar, tagline_ar, genres, banner_wa_url, trailer_video_url, wa_episode_count, free_web_until_ep, coins_per_episode, episodes(number, status, stream_uid, wa_video_url_ar), licences(count), content_reviews(decision, created_at)",
+    )
     .eq("tenant_id", admin.tenantId)
     .order("created_at", { ascending: false });
 
   return (
     <>
-      <h1>CMS</h1>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h1 style={{ margin: 0 }}>Series</h1>
+        <Link href="/admin/series/new" className="abtn">
+          ＋ Launch a new series
+        </Link>
+      </div>
+      <p className="muted">Every series you sell. Open one to edit it, or follow its checklist to get it live.</p>
       <Flash ok={sp.ok} err={sp.err} />
       <table className="card">
         <thead>
           <tr>
-            <th>Code</th>
-            <th>Title</th>
+            <th>Series</th>
+            <th>Chat code</th>
             <th>Episodes</th>
             <th>Status</th>
-            <th>WhatsApp link</th>
+            <th>Next step</th>
           </tr>
         </thead>
         <tbody>
-          {(series ?? []).map((s) => (
-            <tr key={s.id}>
-              <td>
-                <Link href={`/admin/series/${s.id}`}>{s.code}</Link>
+          {(series ?? []).map((s) => {
+            const eps = (s.episodes ?? []) as { number: number; status: string; stream_uid: string | null; wa_video_url_ar: string | null }[];
+            const reviews = ((s.content_reviews ?? []) as { decision: string; created_at: string }[]).sort((a, b) => b.created_at.localeCompare(a.created_at));
+            const r = readiness(s, eps, (s.licences as unknown as { count: number }[])?.[0]?.count ?? 0, reviews[0]?.decision ?? null);
+            const firstGap = r.items.find((i) => i.required && !i.done);
+            return (
+              <tr key={s.id}>
+                <td>
+                  <Link href={`/admin/series/${s.id}`} style={{ display: "flex", gap: 10, alignItems: "center", textDecoration: "none", color: "inherit" }}>
+                    {s.poster_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.poster_url} alt="" width={36} height={54} style={{ objectFit: "cover", borderRadius: 6 }} />
+                    ) : (
+                      <span style={{ width: 36, height: 54, borderRadius: 6, background: "#eee", display: "inline-block" }} />
+                    )}
+                    <span>
+                      <strong>{s.title_en}</strong>
+                      <div className="muted" dir="rtl">
+                        {s.title_ar}
+                      </div>
+                    </span>
+                  </Link>
+                </td>
+                <td>
+                  <code>{s.code}</code>
+                </td>
+                <td>
+                  {eps.filter((e) => e.stream_uid).length}/{eps.length}
+                  <div className="muted" style={{ fontSize: 12 }}>with video</div>
+                </td>
+                <td>
+                  <span className={`badge ${s.status}`}>{s.status === "live" ? "live" : s.status}</span>
+                </td>
+                <td>
+                  {s.status === "live" ? (
+                    <span className="muted">Live ✓</span>
+                  ) : r.ready ? (
+                    <Link href={`/admin/series/${s.id}/launch?step=5`}>Ready · publish →</Link>
+                  ) : (
+                    <Link href={`/admin/series/${s.id}/launch?step=${firstGap?.step ?? 2}`}>
+                      {firstGap?.label}: {firstGap?.detail} →
+                    </Link>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {(series ?? []).length === 0 && (
+            <tr>
+              <td colSpan={5} className="muted">
+                No series yet. <Link href="/admin/series/new">Launch your first one →</Link>
               </td>
-              <td>
-                {s.title_en}
-                <div className="muted" dir="rtl">
-                  {s.title_ar}
-                </div>
-              </td>
-              <td>{(s.episodes as unknown as { count: number }[])?.[0]?.count ?? 0}</td>
-              <td>
-                <span className={`badge ${s.status}`}>{s.status}</span>
-              </td>
-              <td className="muted">wa.me/&lt;number&gt;?text={s.code}</td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
-
-      <form action={createSeriesAction} className="card">
-        <h2 style={{ marginTop: 0 }}>New series</h2>
-        <div className="grid3">
-          <label>
-            Code (sent in WhatsApp)
-            <input name="code" placeholder="DESERT02" required pattern="[A-Za-z]{3,}[0-9]{1,3}" />
-          </label>
-          <label>
-            Title (Arabic)
-            <input name="title_ar" dir="rtl" required />
-          </label>
-          <label>
-            Title (English)
-            <input name="title_en" required />
-          </label>
-          <label>
-            Number of episodes
-            <input name="episodes" type="number" min={1} max={100} defaultValue={30} />
-          </label>
-        </div>
-        <p>
-          <button type="submit">Create series</button>
-        </p>
-      </form>
     </>
   );
 }

@@ -1,4 +1,4 @@
-// Series editor: details, chat episodes, pricing, media, episodes, licence, review & publish. The chat itself is in the Flow builder.
+// Series page: the ready-to-publish checklist, then details, price, artwork, episodes, media library and licence. The chat itself is in Chat flows.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,6 +10,8 @@ import { WhatsAppVersion } from "@/components/admin/WhatsAppVersion";
 import { SeriesMediaLibrary } from "@/components/flow/SeriesMediaLibrary";
 import { AGE_RATINGS, GENRES, GENRE_LABELS, type CastMember } from "@/lib/content-meta";
 import { requireAdmin } from "@/lib/admin/auth";
+import { readiness } from "@/lib/admin/readiness";
+import { ReadinessChecklist } from "@/components/admin/ReadinessChecklist";
 import { countryName } from "@/lib/economy/countries";
 import { saveLicenseAction } from "../../../economy-actions";
 import { db } from "@/lib/supabase";
@@ -44,45 +46,30 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const cast = (s?.cast_members ?? []) as CastMember[];
   const castRows = Array.from({ length: Math.min(12, Math.max(3, cast.length + 2)) }, (_, i) => cast[i] ?? { name_ar: "", name_en: "", role: "" });
   const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
+  const ready = readiness(s, eps, licences?.length ?? 0, lastReview?.decision ?? null);
   const gulfInput = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 16) : "");
 
   return (
     <>
       <p>
-        <Link href="/admin/series">← All series</Link> · <Link href={`/admin/flows/${s.id}`}>Open this series&apos; chat flow builder →</Link>
+        <Link href="/admin/series">← All series</Link> · <Link href={`/admin/flows/${s.id}`}>Edit what the chat sends (Chat flows) →</Link>
       </p>
       <h1>
         {s.code} · {s.title_en} <span className={`badge ${s.status}`}>{s.status}</span>
       </h1>
       <Flash ok={sp.ok} err={sp.err} />
 
-      {/* Publish workflow */}
-      <div className="card row" style={{ justifyContent: "space-between" }}>
-        <div>
-          <strong>Publishing</strong>
-          <div className="muted">
-            Licence: {licences?.length ? "✓ on record" : "✗ missing"} · Review:{" "}
-            {lastReview ? `${lastReview.decision} by ${lastReview.reviewer}` : "not reviewed"}
-          </div>
-        </div>
-        <div className="row">
-          <form action={reviewSeriesAction} className="row">
+      {/* Ready to publish? One checklist (same as the launch wizard); fixes link to the wizard step. */}
+      <div className="card" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "start" }}>
+        <ReadinessChecklist r={ready} seriesId={s.id} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", minWidth: 200 }}>
+          {s.status !== "live" && (
+            <Link href={`/admin/series/${s.id}/launch?step=${ready.items.find((i) => i.required && !i.done)?.step ?? 5}`} className="abtn">
+              {ready.ready ? "Publish →" : "Continue setup →"}
+            </Link>
+          )}
+          <form action={setSeriesStatusAction} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input type="hidden" name="id" value={s.id} />
-            <input name="notes" placeholder="Review notes (optional)" />
-            <button name="decision" value="approved" type="submit">
-              Approve as family-safe
-            </button>
-            <button name="decision" value="rejected" type="submit" className="secondary">
-              Reject
-            </button>
-          </form>
-          <form action={setSeriesStatusAction} className="row">
-            <input type="hidden" name="id" value={s.id} />
-            {s.status !== "live" && (
-              <button name="status" value="live" type="submit">
-                Publish
-              </button>
-            )}
             {s.status === "live" && (
               <button name="status" value="draft" type="submit" className="secondary">
                 Unpublish
@@ -94,11 +81,22 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
               </button>
             )}
           </form>
+          {lastReview && (
+            <span className="muted" style={{ fontSize: 13 }}>
+              Last check: {lastReview.decision} by {lastReview.reviewer}
+            </span>
+          )}
+          <form action={reviewSeriesAction} className="row" style={{ gap: 6 }}>
+            <input type="hidden" name="id" value={s.id} />
+            <button name="decision" value="rejected" type="submit" className="secondary" style={{ fontSize: 13, padding: "4px 10px" }}>
+              Mark content as not OK
+            </button>
+          </form>
         </div>
       </div>
 
       {/* Details, scenario and pricing */}
-      <form action={updateSeriesAction} className="card">
+      <form action={updateSeriesAction} className="card" id="details">
         <input type="hidden" name="id" value={s.id} />
         <h2 style={{ marginTop: 0 }}>Details</h2>
         <div className="grid2">
@@ -200,7 +198,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
         </div>
         <p className="muted" style={{ margin: "4px 0 0" }}>
           The series pass (whole series, one payment) and the weekly / yearly passes have one price per country in{" "}
-          <Link href="/admin/pricing">Pricing &amp; Ping</Link>.
+          <Link href="/admin/pricing">Prices &amp; Ping</Link>.
         </p>
         <p>
           <button type="submit">Save series</button>
@@ -264,13 +262,23 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                     <input type="hidden" name="series_id" value={s.id} />
                     <input name="title_ar" dir="rtl" defaultValue={e.title_ar ?? ""} placeholder="العنوان" />
                     <input name="title_en" defaultValue={e.title_en ?? ""} placeholder="Title" />
-                    <input name="stream_uid" defaultValue={e.stream_uid ?? ""} placeholder="Stream video id" />
-                    {e.number <= s.free_web_until_ep && (
-                      <>
-                        <input name="wa_video_url_ar" defaultValue={e.wa_video_url_ar ?? ""} placeholder="WhatsApp clip URL (Arabic)" />
-                        <input name="wa_video_url_en" defaultValue={e.wa_video_url_en ?? ""} placeholder="WhatsApp clip URL (English subs)" />
-                      </>
-                    )}
+                    <span className="muted" style={{ alignSelf: "center", fontSize: 13 }}>
+                      {e.stream_uid ? "✓ web video" : "✗ no web video yet (hidden)"}
+                      {e.number <= s.wa_episode_count ? (e.wa_video_url_ar ? " · ✓ chat version" : " · ✗ chat version") : ""}
+                    </span>
+                    {/* Filled in by the uploads; open only to paste ids / links by hand. */}
+                    <details style={{ gridColumn: "1 / -1" }}>
+                      <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>Video ids and links (advanced)</summary>
+                      <div className="grid3" style={{ marginTop: 6 }}>
+                        <input name="stream_uid" defaultValue={e.stream_uid ?? ""} placeholder="Stream video id" />
+                        {e.number <= s.free_web_until_ep && (
+                          <>
+                            <input name="wa_video_url_ar" defaultValue={e.wa_video_url_ar ?? ""} placeholder="WhatsApp clip URL (Arabic)" />
+                            <input name="wa_video_url_en" defaultValue={e.wa_video_url_en ?? ""} placeholder="WhatsApp clip URL (English subs)" />
+                          </>
+                        )}
+                      </div>
+                    </details>
                     <input name="coin_price_override" type="number" min={1} defaultValue={e.coin_price_override ?? ""} placeholder={`Ping (default ${s.coins_per_episode})`} />
                     <select name="ready" defaultValue={e.status === "draft" ? "draft" : "ready"} title="Draft = hidden from viewers">
                       <option value="draft">Draft (hidden)</option>
