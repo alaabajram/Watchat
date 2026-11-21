@@ -1,6 +1,7 @@
 // Loads and saves the shared flow (Flow builder → Shared replies). Server only.
 
 import { COPY, COPY_KEYS, isCopyKey, type CopyKey } from "../bot/copy";
+import { getAiSettings } from "../ai/settings";
 import { listTemplates } from "../messaging/template-store";
 import { db } from "../supabase";
 import { sanitizeGraph } from "./sanitize";
@@ -29,13 +30,14 @@ export type SharedInfo = { seriesCodes: string[]; fixedTexts: CopyKey[]; saved: 
 export const FIXED_TEXT_KEYS: CopyKey[] = ["needSeriesFirst", "seriesNotFound", "notForMeBody", "btnSeeSeries", "seriesSectionTitle", "noOtherSeries", "picksBody", "pinHint"];
 
 export async function loadSharedBuilder(tenantId: string): Promise<BuilderData & { shared: SharedInfo }> {
-  const [{ data: row }, templates, myCards, { data: series }, texts, { data: saved }] = await Promise.all([
+  const [{ data: row }, templates, myCards, { data: series }, texts, { data: saved }, ai] = await Promise.all([
     db().from("shared_flows").select("draft, draft_updated_at, graph, version, published_at").eq("tenant_id", tenantId).maybeSingle(),
     listTemplates(tenantId),
     listMyCards(tenantId),
     db().from("series").select("code, title_ar, title_en, poster_url, status").eq("tenant_id", tenantId).order("created_at"),
     sharedTexts(tenantId),
     db().from("bot_messages").select("key, lang, body").eq("tenant_id", tenantId).is("series_id", null),
+    getAiSettings(tenantId),
   ]);
   const published = row?.graph ? sanitizeGraph(row.graph) : null;
   const draft = sanitizeGraph(row?.draft) ?? published ?? standardSharedFlow(texts);
@@ -60,7 +62,7 @@ export async function loadSharedBuilder(tenantId: string): Promise<BuilderData &
     versions: [],
     assets: [],
     templates,
-    aiReady: false,
+    aiReady: ai.connected && ai.enabled,
     myCards: myCards.filter((c) => c.block.nodes.every((n) => !["episode", "wait", "template", "start", "web", "trigger", "end"].includes(n.data.kind))),
     stats: {},
     shared: {

@@ -8,6 +8,18 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
 import { removeAiKeyAction, saveAiSettingsAction, testAiAction } from "../../ai-actions";
 
+const PURPOSES: Record<string, string> = {
+  scenario_draft: "Scenario draft",
+  flow_draft: "Series flow draft",
+  flow_draft_series: "Series flow draft",
+  flow_draft_sequence: "Sequence draft",
+  flow_draft_shared: "Shared replies draft",
+  flow_lessons: "Learning from your team",
+  growth_run: "Growth agent review",
+  test: "Connection test",
+  connection_test: "Connection test",
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function AiAccountPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
@@ -106,7 +118,7 @@ export default async function AiAccountPage({ searchParams }: { searchParams: Pr
               {recent.map((r, i) => (
                 <tr key={i}>
                   <td>{new Date(r.created_at).toLocaleString("en-GB", { timeZone: "Asia/Dubai" })}</td>
-                  <td>{r.purpose === "scenario_draft" ? "Scenario draft" : "Connection test"}</td>
+                  <td>{PURPOSES[r.purpose as string] ?? r.purpose}</td>
                   <td>{r.model}</td>
                   <td>
                     {r.input_tokens.toLocaleString()} / {r.output_tokens.toLocaleString()}

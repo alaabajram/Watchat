@@ -4,7 +4,9 @@
 // replies, and the few texts the bot still sends on its own (not on any card).
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { audit, requireAdmin } from "@/lib/admin/auth";
+import { learnLessons, recordPublished } from "@/lib/ai/flow-agent";
 import { COPY, type CopyKey } from "@/lib/bot/copy";
 import { sanitizeGraph } from "@/lib/flows/sanitize";
 import { standardSharedFlow } from "@/lib/flows/shared";
@@ -58,6 +60,10 @@ export async function publishShared(
   if (error) return { ok: false, issues, error: error.message };
   await audit(admin, "shared_flow.published", "shared_flows", null, { version, cards: clean.nodes.length, note: note.slice(0, 300) || null });
   revalidatePath("/admin/bot");
+  // Build with AI learns from what the team changed in its draft before publishing.
+  after(async () => {
+    if (await recordPublished(admin.tenantId, "shared", "shared", clean)) await learnLessons(admin.tenantId, admin.id, "shared");
+  });
   return { ok: true, version, versionId: "shared", issues };
 }
 

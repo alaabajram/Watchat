@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COPY, COPY_KEYS, type CopyKey } from "../bot/copy";
 import { defaultFlow } from "../flows/defaults";
-import { FLOW_TOOL, flowSystemPrompt, graphToSteps, scriptIssues, stepsToGraph, type AgentContext, type Step } from "./flow-draft";
+import { FLOW_TOOL, flowSystemPrompt, flowTool, graphToSteps, scriptIssues, stepsToGraph, type AgentContext, type Step } from "./flow-draft";
 
 const texts = Object.fromEntries(COPY_KEYS.map((k) => [k, { ar: COPY[k].ar, en: COPY[k].en }])) as Record<CopyKey, { ar: string; en: string }>;
 const ctx: AgentContext = {
@@ -83,5 +83,49 @@ describe("AI flow drafts", () => {
     };
     expect(walk(FLOW_TOOL.input_schema)).toBe(0);
     expect(flowSystemPrompt(ctx)).toContain("come_back (approved)");
+  });
+});
+
+describe("AI drafts on sequence and shared-replies canvases", () => {
+  it("round-trips the standard shared replies through steps, valid and unchanged", async () => {
+    const { standardSharedFlow } = await import("../flows/shared");
+    const g = standardSharedFlow();
+    const sctx: AgentContext = { ...ctx, mode: "shared", seriesCodes: ["SECRETS01"] };
+    const back = stepsToGraph(graphToSteps(g), sctx, g);
+    expect(back.nodes.map((n) => [n.id, n.data])).toEqual(g.nodes.map((n) => [n.id, n.data]));
+    expect(scriptIssues(back, sctx).filter((i) => i.level === "error")).toEqual([]);
+  });
+
+  it("round-trips a sequence and keeps it template-only", async () => {
+    const { starterSequence } = await import("../flows/sequence-store");
+    const g = starterSequence();
+    g.nodes.forEach((n) => n.data.kind === "template" && (n.data.name = "come_back"));
+    const qctx: AgentContext = { ...ctx, mode: "sequence", seriesCodes: ["SECRETS01"] };
+    const back = stepsToGraph(graphToSteps(g), qctx, g);
+    expect(back.nodes.map((n) => n.data.kind)).toEqual(g.nodes.map((n) => n.data.kind));
+    expect(scriptIssues(back, qctx).filter((i) => i.level === "error")).toEqual([]);
+    // A message step can't appear in a sequence; a missing trigger is added.
+    const bad = stepsToGraph([step({ id: "m", kind: "message", ar: "hi" }), step({ id: "t", kind: "template", template: "come_back" })], qctx, null);
+    expect(bad.nodes.map((n) => n.data.kind)).toEqual(["trigger", "template"]);
+  });
+
+  it("turns written shared replies into keyword, menu and action cards", () => {
+    const sctx: AgentContext = { ...ctx, mode: "shared", seriesCodes: ["SECRETS01"] };
+    const g = stepsToGraph(
+      [
+        step({ id: "k", kind: "keyword", words: ["عروض", "OFFERS", "عروض"], next: "l" }),
+        step({ id: "l", kind: "list", ar: "اختر:", en: "Pick:", extra_ar: "العروض", extra_en: "Offers", buttons: [{ ar: "حسابي", en: "Account", goto: "a" }, { ar: "إيقاف", en: "Stop", goto: "x" }] }),
+        step({ id: "a", kind: "account", ar: "حسابك", en: "Account", buttons: [{ ar: "افتح", en: "Open", goto: "" }] }),
+        step({ id: "x", kind: "action", action: "opt_out", next: "" }),
+        step({ id: "e", kind: "episode", episode: 1 }), // not allowed in shared replies: dropped
+      ],
+      sctx,
+      null,
+    );
+    expect(g.nodes.map((n) => n.data.kind)).toEqual(["keyword", "list", "account", "action"]);
+    expect(g.nodes[0].data).toEqual({ kind: "keyword", words: ["عروض", "OFFERS"], anythingElse: false });
+    expect(g.nodes[1].data).toMatchObject({ kind: "list", button: { ar: "العروض", en: "Offers" }, rows: [{ title: { ar: "حسابي" } }, { title: { ar: "إيقاف" } }] });
+    expect(g.edges.filter((e) => e.source === "l")).toHaveLength(2);
+    expect(flowTool("shared").input_schema).toMatchObject({ properties: { steps: { items: { properties: { kind: { enum: expect.arrayContaining(["keyword", "list", "action"]) } } } } } });
   });
 });

@@ -1,5 +1,6 @@
 // Loads a sequence flow for the builder, and the starter canvas a new sequence opens with.
 
+import { getAiSettings } from "../ai/settings";
 import { listTemplates } from "../messaging/template-store";
 import { db } from "../supabase";
 import { newId } from "./defaults";
@@ -43,11 +44,12 @@ export async function loadSequenceBuilder(tenantId: string, id: string): Promise
     .eq("id", id)
     .maybeSingle();
   if (!s) return null;
-  const [templates, myCards, { data: series }, { data: runs }] = await Promise.all([
+  const [templates, myCards, { data: series }, { data: runs }, ai] = await Promise.all([
     listTemplates(tenantId),
     listMyCards(tenantId),
     db().from("series").select("code, title_ar, title_en, poster_url, status").eq("tenant_id", tenantId).order("created_at"),
     db().from("sequence_runs").select("status").eq("sequence_id", id).in("status", ["wait", "running"]),
+    getAiSettings(tenantId),
   ]);
   const sample = (series ?? []).find((x) => x.status === "live") ?? (series ?? [])[0];
   const draft = sanitizeGraph(s.draft) ?? sanitizeGraph(s.graph) ?? starterSequence();
@@ -72,7 +74,7 @@ export async function loadSequenceBuilder(tenantId: string, id: string): Promise
     versions: [],
     assets: [],
     templates,
-    aiReady: false,
+    aiReady: ai.connected && ai.enabled,
     myCards: myCards.filter((c) => c.block.nodes.every((n) => ["wait", "condition", "template", "end"].includes(n.data.kind))),
     stats: {},
     sequence: {
