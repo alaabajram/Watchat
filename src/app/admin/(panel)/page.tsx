@@ -69,6 +69,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const meter = can(admin, "spend") ? await loadMonthSpend(admin.tenantId).catch(() => null) : null;
   const stages = (funnel ?? []) as { stage: string; viewers: number }[];
   const top = Math.max(1, Number(stages[0]?.viewers ?? 0));
+  const widest = Math.max(1, ...stages.map((s) => Number(s.viewers)));
   const marketing = (msgs ?? []).filter((m) => m.category === "marketing" && m.status !== "failed").length;
   const failed = (msgs ?? []).filter((m) => m.status === "failed").length;
   const ep1 = Number(stages[1]?.viewers ?? 0);
@@ -225,7 +226,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <div className="kpi">
           <KpiIcon d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM10 8.5v7l5.5-3.5z" bg="#e3fbf1" fg="#0e9a6a" />
           <span className="muted">Episode 1 completion</span>
-          <strong>{top ? Math.round((ep1 / top) * 100) : 0}%</strong>
+          <strong>{top ? Math.min(100, Math.round((ep1 / top) * 100)) : 0}%</strong>
         </div>
         <div className="kpi">
           <KpiIcon d="M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5zM12 15v2" bg="#ffece8" fg="#d6402e" />
@@ -246,6 +247,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </h2>
         <table>
           <tbody>
+            {/* Bars are relative to the biggest stage: a later stage can be bigger than an earlier one (viewers who
+                arrive by a shared or web link skip "Chat started"), and a bar must never spill out of the card. */}
             {stages.map((s, i) => {
               const v = Number(s.viewers);
               const prev = i > 0 ? Number(stages[i - 1].viewers) : v;
@@ -257,11 +260,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   </td>
                   <td>
                     <div style={{ height: 10, borderRadius: 999, background: "var(--a-line)" }}>
-                      <div className="bar" style={{ width: `${Math.max(1, (v / top) * 100)}%`, opacity: v === 0 ? 0.35 : 1 }} />
+                      <div className="bar" style={{ width: `${Math.min(100, Math.max(1, (v / widest) * 100))}%`, opacity: v === 0 ? 0.35 : 1 }} />
                     </div>
                   </td>
-                  <td className="muted" style={{ width: 150, whiteSpace: "nowrap" }}>
-                    {i > 0 && prev > 0 ? `${Math.round((v / prev) * 100)}% of previous` : ""}
+                  <td className="muted" style={{ width: 170, whiteSpace: "nowrap" }}>
+                    {i === 0 || prev === 0 ? "" : v > prev ? `+${v - prev} joined at this step` : `${Math.round((v / prev) * 100)}% of previous`}
                   </td>
                 </tr>
               );
