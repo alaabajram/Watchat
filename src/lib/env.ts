@@ -27,6 +27,10 @@ export const env = {
     if (vercel) return `https://${vercel.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
     return required("APP_URL");
   },
+  /** Telegram bot token from @BotFather (optional: the Telegram channel stays off without it). */
+  get telegramBotToken() {
+    return process.env.TELEGRAM_BOT_TOKEN ?? "";
+  },
   get tenantSlug() {
     return process.env.TENANT_SLUG || "watchat";
   },

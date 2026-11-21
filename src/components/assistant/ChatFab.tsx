@@ -9,7 +9,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AgentIcon } from "./AgentIcon";
 
-const HIDDEN = [/^\/watch(\/|$)/, /^\/assistant(\/|$)/, /^\/admin(\/|$)/, /^\/business(\/|$)/, /^\/w\//, /^\/payment(\/|$)/, /^\/link-expired/, /^\/data-deletion/];
+const HIDDEN = [/^\/watch(\/|$)/, /^\/assistant(\/|$)/, /^\/admin(\/|$)/, /^\/business(\/|$)/, /^\/w\//, /^\/payment(\/|$)/, /^\/link-expired/, /^\/data-deletion/, /^\/tg(\/|$)/];
 
 export function chatFabHidden(path: string): boolean {
   return HIDDEN.some((r) => r.test(path));
@@ -17,7 +17,7 @@ export function chatFabHidden(path: string): boolean {
 
 export function ChatFab() {
   const path = usePathname() ?? "/";
-  const [layout, setLayout] = useState<{ en: boolean; nav: boolean } | null>(null);
+  const [layout, setLayout] = useState<{ en: boolean; nav: boolean; off: boolean } | null>(null);
 
   useEffect(() => {
     // Read after the page has rendered: its language and whether it has the bottom nav.
@@ -25,13 +25,14 @@ export function ChatFab() {
       setLayout({
         en: document.querySelector("[lang]:not(html)")?.getAttribute("lang") === "en",
         nav: Boolean(document.querySelector(".wc-nav")),
+        off: Boolean(document.querySelector("[data-no-chat]")), // sign-in screens: the assistant needs an account
       });
     read();
     const t = window.setTimeout(read, 300);
     return () => window.clearTimeout(t);
   }, [path]);
 
-  if (chatFabHidden(path) || !layout) return null;
+  if (chatFabHidden(path) || !layout || layout.off) return null;
   const back = encodeURIComponent(path);
   return (
     <Link

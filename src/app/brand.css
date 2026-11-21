@@ -225,3 +225,7 @@
 @media (prefers-reduced-motion: reduce) {
   .wc-watch-hint, .wc-watch-hint span { animation: none; }
 }
+
+/* Telegram's way in: Telegram blue, white text, blue glow (instead of WhatsApp mint) */
+.wc-btn.wc-btn-tg { background: #2481CC; color: #fff !important; box-shadow: 0 14px 30px rgba(36, 129, 204, 0.32); }
+.wc-btn.wc-btn-tg:disabled { opacity: 0.75; }

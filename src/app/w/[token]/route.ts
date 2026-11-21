@@ -15,6 +15,7 @@ import { decideLinkOpen, markLinkOpened, peekLink, redeemLink } from "@/lib/link
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { browserViewerId, createSession, getSessionViewer, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/session";
 import { db } from "@/lib/supabase";
+import { isTelegram } from "@/lib/telegram/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   if (decision === "sign_in_first_open" && !firstOpen) decision = "ask_whatsapp";
 
   if (decision === "ask_whatsapp") {
-    const { data: owner } = await db().from("viewers").select("phone_hmac").eq("id", link.viewerId).maybeSingle();
+    const { data: owner } = await db().from("viewers").select("phone_hmac, phone_e164").eq("id", link.viewerId).maybeSingle();
     await trackEvent({
       viewerHmac: owner?.phone_hmac ?? null,
       name: "link_handoff",
@@ -84,6 +85,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       episodeNumber: link.episodeNumber,
       props: { reason: browser ? "other_account_browser" : link.expired ? "expired" : link.usesLeft <= 0 ? "unknown_browser_reopen" : "unknown_browser_late" },
     });
+    // A Telegram viewer's link: sign in with Telegram (the Mini App's launch data survives the redirect), never WhatsApp.
+    if (isTelegram(owner?.phone_e164)) {
+      const path = target.slice(base.replace(/\/$/, "").length) || "/";
+      return noStore(NextResponse.redirect(`${base.replace(/\/$/, "")}/tg?to=${encodeURIComponent(path)}`, 303));
+    }
     return noStore(NextResponse.redirect(askUrl, 303));
   }
 

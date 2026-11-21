@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 import { trackEvent } from "@/lib/events";
 import { allow } from "@/lib/security/rate-limit";
 import { err, readJson, sameOrigin } from "@/lib/security/request";
+import { db } from "@/lib/supabase";
+import { isTelegram } from "@/lib/telegram/telegram";
 import { getSessionViewer } from "@/lib/session";
 import { paymentMode, startCashOrder, startCheckout, type CheckoutItem } from "@/lib/wallet";
 
@@ -25,6 +27,10 @@ export async function POST(req: NextRequest) {
   else if (body?.id && /^[0-9a-f-]{36}$/.test(body.id) && body.type === "coin_pack") item = { type: "coin_pack", packId: body.id };
   else if (body?.id && /^[0-9a-f-]{36}$/.test(body.id) && body.type === "season_pass") item = { type: "season_pass", seriesId: body.id };
   else return err(400, "bad_request");
+  // Inside Telegram, digital goods are paid with Telegram Stars (coming next); card checkout stays off for
+  // Telegram viewers until then.
+  const { data: who } = await db().from("viewers").select("phone_e164").eq("id", viewer.id).maybeSingle();
+  if (isTelegram(who?.phone_e164)) return err(403, "payments_not_configured");
   const code = typeof body.code === "string" && /^[A-Za-z0-9]{3,20}$/.test(body.code.trim()) ? body.code.trim() : null;
   // Only allow returning to our own pages.
   const returnTo = body.returnTo && body.returnTo.startsWith("/") && !body.returnTo.startsWith("//") ? body.returnTo : "/wallet";
