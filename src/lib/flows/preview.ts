@@ -109,6 +109,10 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
           return state.reachedEpisode > 0 || chatEpisode > 0;
         case "watched_within":
           return Boolean(state.watchedRecently) && c.hours >= 1;
+        case "came_back":
+          return Boolean(state.watchedRecently);
+        case "paid_since":
+          return state.paid;
       }
     },
     suggest: async () => {
@@ -154,7 +158,14 @@ export async function previewStart(
   code: string,
   entry: "chat" | "web" = "chat",
 ): Promise<PreviewSession> {
-  const sink = { items: [entry === "web" ? { from: "system", text: "🌐 Viewer starts watching on the web" } : { from: "viewer", text: code }] as PreviewItem[] };
+  const trigger = g.nodes.find((n) => n.data.kind === "trigger");
+  const first: PreviewItem =
+    entry === "web"
+      ? { from: "system", text: "🌐 Viewer starts watching on the web" }
+      : trigger
+        ? { from: "system", text: "⚡ The trigger moment arrives (sequence starts)" }
+        : { from: "viewer", text: code };
+  const sink = { items: [first] as PreviewItem[] };
   const env = previewEnv(series, viewer, templates, sink);
   const result = await startFlow(g, env, entry);
   note(sink.items, result, g);

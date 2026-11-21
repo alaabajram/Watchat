@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { newId } from "@/lib/flows/defaults";
 import type { Asset, TemplateInfo } from "@/lib/flows/store";
-import { CARD_LABELS, type ArtSlot, type Bi, type FlowButton, type MediaRef, type NodeData } from "@/lib/flows/types";
+import { CARD_LABELS, type ArtSlot, type Bi, type FlowButton, type MediaRef, type NodeData, SEQUENCE_TRIGGERS } from "@/lib/flows/types";
 import type { PreviewSeries } from "@/lib/flows/preview";
 import { CARD_STYLE } from "./cards";
 import { EmojiField } from "./EmojiField";
@@ -13,6 +13,9 @@ import { TemplatePanel } from "./TemplatePanel";
 import { ACCEPT, uploadAsset } from "./upload";
 
 type Props = {
+  /** Which kind of flow the card is in: sequence flows offer their own checks and the Trigger card. */
+  mode?: "series" | "sequence";
+  seriesCodes?: string[];
   seriesId: string;
   nodeId: string;
   data: NodeData;
@@ -309,16 +312,32 @@ export function Inspector(p: Props) {
                       ? { check: "reached_episode", episode: 4 }
                       : check === "watched_within"
                         ? { check: "watched_within", hours: 2 }
-                        : { check: check as "opted_in" | "language_en" | "paid" | "started" },
+                        : { check: check as "opted_in" | "language_en" | "paid" | "started" | "came_back" | "paid_since" },
                 });
               }}
             >
-              <option value="opted_in">Turned on alerts</option>
-              <option value="language_en">Watches with English subtitles</option>
-              <option value="paid">Has paid before</option>
-              <option value="reached_episode">Reached an episode on the web</option>
-              <option value="started">Already started this series (chat or web)</option>
-              <option value="watched_within">Watched on the web recently</option>
+              {(p.mode === "sequence"
+                ? [
+                    ["came_back", "Came back since the sequence started (chat or web)"],
+                    ["paid_since", "Paid since the sequence started"],
+                    ["opted_in", "Turned on alerts"],
+                    ["language_en", "Watches with English subtitles"],
+                    ["paid", "Has paid before"],
+                    ["watched_within", "Watched on the web recently"],
+                  ]
+                : [
+                    ["opted_in", "Turned on alerts"],
+                    ["language_en", "Watches with English subtitles"],
+                    ["paid", "Has paid before"],
+                    ["reached_episode", "Reached an episode on the web"],
+                    ["started", "Already started this series (chat or web)"],
+                    ["watched_within", "Watched on the web recently"],
+                  ]
+              ).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
             </select>
           </label>
           {d.condition.check === "watched_within" && (
@@ -386,11 +405,59 @@ export function Inspector(p: Props) {
         </>
       )}
 
+      {d.kind === "trigger" && (
+        <>
+          <label style={{ fontSize: 12 }}>
+            When
+            <select value={d.trigger} onChange={(e) => set({ trigger: e.target.value as typeof d.trigger })}>
+              {SEQUENCE_TRIGGERS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="inline" style={{ fontSize: 12 }}>
+            Start
+            <input
+              type="number"
+              min={1}
+              max={d.delayHours % 24 === 0 ? 90 : 2160}
+              value={d.delayHours % 24 === 0 ? d.delayHours / 24 : d.delayHours}
+              onChange={(e) => {
+                const v = Math.max(1, Number(e.target.value) || 1);
+                set({ delayHours: Math.min(2160, d.delayHours % 24 === 0 ? v * 24 : v) });
+              }}
+              style={{ width: 70 }}
+            />
+            <select value={d.delayHours % 24 === 0 ? "d" : "h"} onChange={(e) => set({ delayHours: e.target.value === "d" ? Math.max(1, Math.round(d.delayHours / 24)) * 24 : Math.max(1, Math.round(d.delayHours / 24)) })}>
+              <option value="h">hours</option>
+              <option value="d">days</option>
+            </select>
+            after that moment
+          </label>
+          <label style={{ fontSize: 12 }}>
+            Series
+            <select value={d.seriesCode ?? ""} onChange={(e) => set({ seriesCode: e.target.value || null })}>
+              <option value="">Any series</option>
+              {(p.seriesCodes ?? []).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            Only viewers who turned on alerts are included. Each viewer enters once per moment (e.g. once per series and episode they stopped at). The scheduler checks every 15 minutes and sends nothing between 22:00 and 09:00 Gulf time.
+          </p>
+        </>
+      )}
+
       {d.kind === "template" && (
         <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
       )}
 
-      {d.kind !== "start" && (
+      {d.kind !== "start" && d.kind !== "trigger" && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" className="secondary" onClick={p.onSaveToMyCards} title="Reuse this card in any series from Add card → My cards">
             ☆ Save to My cards

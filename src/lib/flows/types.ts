@@ -1,5 +1,6 @@
 // The flow format: what the visual builder saves and what the bot runs.
-// One flow per series. Cards (nodes) are linked by arrows (edges) from a card's port to the next card.
+// Two kinds: a series flow (one per series, starts at the Start card when the viewer sends the code) and a
+// sequence flow (starts at a Trigger card when a viewer reaches a moment, e.g. stopped mid-series; template-only). Cards (nodes) are linked by arrows (edges) from a card's port to the next card.
 // Ports: "next" for cards without choices; one port per button; "ar"/"en", "yes"/"no" for built-in choices.
 // Pure types only: imported by the server engine and by the browser editor and preview.
 
@@ -23,7 +24,19 @@ export type Condition =
   | { check: "paid" }
   | { check: "reached_episode"; episode: number }
   | { check: "started" } // watched any episode of this series (chat or web)
-  | { check: "watched_within"; hours: number }; // watched this series on the web in the last N hours
+  | { check: "watched_within"; hours: number } // watched this series on the web in the last N hours
+  // Sequence flows only:
+  | { check: "came_back" } // active again (chat or web) since this sequence started for them
+  | { check: "paid_since" }; // paid since this sequence started for them
+
+/** What starts a sequence flow (the same moments as the sequences table). */
+export type SequenceTrigger = "stopped_mid_series" | "inactive" | "finished_series";
+export const SEQUENCE_TRIGGERS: { value: SequenceTrigger; label: string }[] = [
+  { value: "stopped_mid_series", label: "Stopped in the middle of a series" },
+  { value: "inactive", label: "Inactive (hasn't been back)" },
+  { value: "finished_series", label: "Finished a series" },
+];
+export type FlowKind = "series" | "sequence";
 
 export type NodeData =
   | { kind: "start" }
@@ -40,7 +53,10 @@ export type NodeData =
   | { kind: "template"; name: string }
   | { kind: "suggest" }
   // Up to 3 series as buttons; tapping one starts that series' own flow. "AUTO" = a series the viewer hasn't started.
-  | { kind: "choice"; body: Bi; options: ChoiceOption[]; media: MediaRef | null };
+  | { kind: "choice"; body: Bi; options: ChoiceOption[]; media: MediaRef | null }
+  // Sequence flows: where the sequence begins (the moment, how long after it, which series; null = any) and where it ends.
+  | { kind: "trigger"; trigger: SequenceTrigger; delayHours: number; seriesCode: string | null }
+  | { kind: "end" };
 
 export const AUTO_SERIES = "AUTO";
 export type ChoiceOption = { code: string; label: Bi };
@@ -76,6 +92,7 @@ export function portsOf(data: NodeData): { id: string; label: string }[] {
       ];
     case "suggest":
     case "choice":
+    case "end":
       return [];
     default:
       return [{ id: "next", label: "Then" }];
@@ -83,7 +100,7 @@ export function portsOf(data: NodeData): { id: string; label: string }[] {
 }
 
 /** Entry cards: where a flow begins. Nothing can point into them. */
-export const isEntry = (d: NodeData) => d.kind === "start" || d.kind === "web";
+export const isEntry = (d: NodeData) => d.kind === "start" || d.kind === "web" || d.kind === "trigger";
 
 /** Cards that stop and wait for the viewer to tap a button. */
 export const waitsForInput = (d: NodeData) =>
@@ -105,7 +122,14 @@ export const CARD_LABELS: Record<NodeKind, string> = {
   template: "Template (after 24 h)",
   suggest: "Suggest other series",
   choice: "Series choice (3 titles)",
+  trigger: "Trigger: when the sequence starts",
+  end: "End sequence",
 };
+
+/** Cards that can be added to a sequence flow (all business-initiated: templates only). */
+export const SEQUENCE_CARDS: NodeKind[] = ["trigger", "wait", "condition", "template", "end"];
+/** Checks offered on a Condition card in each kind of flow. */
+export const SEQUENCE_CHECKS: Condition["check"][] = ["came_back", "paid_since", "opted_in", "language_en", "paid", "watched_within"];
 
 export const BUTTON_ID_PREFIX = "f:";
 /** Same id the bot already uses for "pick a series" (IDS.seriesPrefix): a tap starts that series. */

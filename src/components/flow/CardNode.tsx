@@ -5,7 +5,7 @@
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { formatMinutes } from "@/lib/flows/preview";
-import { CARD_LABELS, portsOf, type NodeData } from "@/lib/flows/types";
+import { CARD_LABELS, portsOf, type NodeData, SEQUENCE_TRIGGERS } from "@/lib/flows/types";
 import { CLICKABLE_KINDS, ctr, health, HEALTH_COLOR, HEALTH_LABEL, type CardStat } from "@/lib/ctr/ctr";
 import { CARD_STYLE } from "./cards";
 
@@ -28,6 +28,8 @@ const CONDITION_TEXT = {
   reached_episode: "Viewer reached episode",
   started: "Viewer already started this series?",
   watched_within: "Watched on the web in the last",
+  came_back: "Came back since the sequence started?",
+  paid_since: "Paid since the sequence started?",
 } as const;
 
 function summary(d: NodeData, templateBody?: string | null): { text: string; dir: "rtl" | "ltr" } {
@@ -64,6 +66,10 @@ function summary(d: NodeData, templateBody?: string | null): { text: string; dir
       return { text: "Other series list", dir: "ltr" };
     case "choice":
       return { text: `${d.body.ar}\n${d.options.map((o) => `▢ ${o.label.ar || (o.code === "AUTO" ? "Recommended" : o.code)}`).join("\n")}`, dir: "rtl" };
+    case "trigger":
+      return { text: `${SEQUENCE_TRIGGERS.find((t) => t.value === d.trigger)?.label ?? d.trigger} · after ${formatMinutes(d.delayHours * 60)}${d.seriesCode ? ` · ${d.seriesCode}` : " · any series"}`, dir: "ltr" };
+    case "end":
+      return { text: "The sequence ends here", dir: "ltr" };
   }
 }
 
