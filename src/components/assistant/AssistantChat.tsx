@@ -58,7 +58,9 @@ const T = {
 } as const;
 
 const money = (v: number, currency: string, locale: Locale) =>
-  new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", { style: "currency", currency, maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);
+  currency === "XTR"
+    ? `${Math.round(v).toLocaleString(locale === "ar" ? "ar-AE" : "en-US")} ⭐` // Telegram Stars
+    : new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", { style: "currency", currency, maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);
 
 const STORE_KEY = "wc-assistant";
 

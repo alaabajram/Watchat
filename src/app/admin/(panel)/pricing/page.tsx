@@ -2,6 +2,7 @@
 // market (weekly pass, yearly pass, series pass, Ping packs), the Ping packs themselves, and auto-renew.
 // Rewards, promotions, invites and partners live in Offers & promotions.
 
+import { STAR_PAYOUT_USD } from "@/lib/economy/pricing";
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
@@ -154,7 +155,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
                 <td>
                   <input name={`s:${it.key}`} type="number" step="1" min={1} defaultValue={starsOf.get(it.key) ?? ""} style={{ width: 110 }} aria-label={`${it.label} · Stars`} />
                 </td>
-                <td className="muted">{starsOf.get(it.key) ? `$${(starsOf.get(it.key)! * 0.013).toFixed(2)}` : "—"}</td>
+                <td className="muted">{starsOf.get(it.key) ? `≈ $${(starsOf.get(it.key)! * STAR_PAYOUT_USD).toFixed(2)}` : "—"}</td>
               </tr>
             ))}
           </tbody>

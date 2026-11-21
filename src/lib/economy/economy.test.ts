@@ -222,3 +222,16 @@ describe("Telegram Stars", () => {
     expect(formatMoney(2200, "XTR", "en")).toBe("2,200 ⭐");
   });
 });
+
+describe("adminMoney", () => {
+  it("shows Telegram Stars as whole Stars with the payout in dollars", async () => {
+    const { adminMoney } = await import("./pricing");
+    expect(adminMoney(390, "XTR")).toBe("390 ⭐ (≈ $5.07)");
+    expect(adminMoney("1500.00", "XTR")).toBe("1,500 ⭐ (≈ $19.50)");
+  });
+  it("keeps normal currencies with their decimals", async () => {
+    const { adminMoney } = await import("./pricing");
+    expect(adminMoney(49, "AED")).toBe("AED 49.00");
+    expect(adminMoney(1.5, "KWD")).toBe("KWD 1.500");
+  });
+});

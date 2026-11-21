@@ -17,6 +17,20 @@ export const FALLBACK_COUNTRY = "ZZ"; // everywhere else (international prices)
 export const STARS_MARKET: Market = { country: "XS", currency: "XTR", vatRate: 0, active: true };
 export const isStars = (m: Market) => m.currency === "XTR";
 
+/** What one Telegram Star pays out to us (Telegram's withdrawal rate, USD). Rough guide for the team only. */
+export const STAR_PAYOUT_USD = 0.013;
+
+/**
+ * An amount for the team (admin pages): "AED 49.00", or for Telegram Stars "390 ⭐ (≈ $5.07)".
+ * Stars are whole numbers; the dollar figure is what Telegram pays out, not what the viewer paid.
+ */
+export function adminMoney(amount: number | string, currency: string): string {
+  const n = Number(amount) || 0;
+  if (currency === "XTR") return `${Math.round(n).toLocaleString("en-US")} ⭐ (≈ $${(n * STAR_PAYOUT_USD).toFixed(2)})`;
+  const d = decimalsOf(currency);
+  return `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+}
+
 /** Currencies with 3 decimals (fils / baisa). */
 const THREE_DECIMALS = new Set(["KWD", "BHD", "OMR", "JOD"]);
 export const decimalsOf = (currency: string) => (currency === "XTR" ? 0 : THREE_DECIMALS.has(currency) ? 3 : 2);

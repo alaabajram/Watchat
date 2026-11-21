@@ -1,6 +1,7 @@
 // Dashboard: headline metrics (total / active / paying users, revenue) and the funnel for a date range,
 // filtered by series and traffic source, plus WhatsApp spend.
 
+import { adminMoney } from "@/lib/economy/pricing";
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { SpendMeter } from "@/components/admin/SpendMeter";
@@ -161,12 +162,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <span className="muted">Revenue</span>
           <strong style={{ fontSize: Object.keys(revenue).length > 1 ? 22 : undefined }}>
             {Object.entries(revenue)
-              .map(([c, v]) => `${c} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+              .map(([c, v]) => adminMoney(Number(v), c))
               .join(" · ") || "—"}
           </strong>
           <span className="muted" style={{ fontSize: 13 }}>
             {paying > 0 && Object.keys(revenue).length === 1
-              ? `${Object.keys(revenue)[0]} ${(Number(Object.values(revenue)[0]) / paying).toFixed(2)} per paying user`
+              ? `${adminMoney(Number(Object.values(revenue)[0]) / paying, Object.keys(revenue)[0])} per paying user`
               : "Paid orders in this period"}
           </span>
         </div>
