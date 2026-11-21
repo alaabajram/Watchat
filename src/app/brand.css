@@ -192,7 +192,7 @@
 }
 .wc-watch-top {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center;
-  padding: calc(12px + env(safe-area-inset-top)) 14px 24px; background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
+  padding: calc(12px + max(env(safe-area-inset-top), var(--wc-tg-top, 0px))) 14px 24px; background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
 }
 .wc-watch-rail {
   position: absolute; inset-inline-end: 12px; bottom: calc(150px + env(safe-area-inset-bottom)); z-index: 5;
@@ -232,3 +232,6 @@
 /* Telegram's way in: Telegram blue, white text, blue glow (instead of WhatsApp mint) */
 .wc-btn.wc-btn-tg { background: #2481CC; color: #fff !important; box-shadow: 0 14px 30px rgba(36, 129, 204, 0.32); }
 .wc-btn.wc-btn-tg:disabled { opacity: 0.75; }
+
+/* Telegram Mini App in full screen: keep pages clear of Telegram's Close / ⋯ buttons (set by TelegramMiniApp). */
+html.wc-in-telegram body { padding-top: var(--wc-tg-top, 0px); }

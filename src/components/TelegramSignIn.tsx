@@ -77,17 +77,21 @@ export function TelegramSignIn({ href, label, to }: { href: string | null; label
 type TgWebApp = { initData?: string; openInvoice?: (url: string, cb: (status: string) => void) => void };
 const tgApp = (): TgWebApp | undefined => (window as unknown as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
 
-/** Load Telegram's Mini App script once (only when a Telegram viewer pays). */
-function loadTelegramScript(): Promise<void> {
+/** Load Telegram's Mini App script once (inside Telegram, or when a Telegram viewer pays). */
+let scriptLoading: Promise<void> | null = null;
+export function loadTelegramScript(): Promise<void> {
   if (tgApp()?.openInvoice) return Promise.resolve();
-  return new Promise((resolve) => {
+  if (scriptLoading) return scriptLoading;
+  scriptLoading = new Promise((resolve) => {
     const s = document.createElement("script");
     s.src = "https://telegram.org/js/telegram-web-app.js";
     s.onload = () => resolve();
     s.onerror = () => resolve();
     document.head.appendChild(s);
   });
+  return scriptLoading;
 }
+
 
 /**
  * Open Telegram's payment sheet for a Stars invoice. Inside Telegram it opens over the page and resolves with

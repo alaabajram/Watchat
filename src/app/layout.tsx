@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { ChatFab } from "@/components/assistant/ChatFab";
+import { TelegramMiniApp } from "@/components/TelegramMiniApp";
 import { brandCss } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import "./globals.css";
@@ -41,6 +42,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {children}
         {/* The chat agent on every viewer page (hidden on the watch feed, the assistant and admin). */}
         <ChatFab />
+        {/* Inside Telegram: full screen on phones, no swipe-to-close (does nothing elsewhere). */}
+        <TelegramMiniApp />
       </body>
     </html>
   );
