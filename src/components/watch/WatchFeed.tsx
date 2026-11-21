@@ -128,7 +128,7 @@ export function WatchFeed(p: Props) {
   const fade = { opacity: shown ? 1 : 0, pointerEvents: shown ? "auto" : "none", transition: "opacity 0.35s ease" } as const;
 
   return (
-    <div className="wc wc-dark wc-watch" dir={p.locale === "ar" ? "rtl" : "ltr"} lang={p.locale}>
+    <div className="wc wc-dark wc-watch" onContextMenu={(e) => e.preventDefault()} dir={p.locale === "ar" ? "rtl" : "ltr"} lang={p.locale}>
       <div ref={feed} className="wc-feed" aria-label={p.title}>
         {p.episodes.map((ep) => (
           <section key={ep.id} data-n={ep.number} className="wc-slide" aria-label={t.episode(ep.number)} onClick={ep.number === active && ep.allowed && ep.hls ? undefined : tapScreen}>
@@ -381,7 +381,21 @@ function EpisodeVideo(p: {
 
   return (
     <>
-      <video ref={video} playsInline preload="auto" poster={p.ep.poster ?? undefined} onClick={p.onTap} aria-label={p.label} className="wc-slide-video" />
+      <video
+        ref={video}
+        playsInline
+        preload="auto"
+        poster={p.ep.poster ?? undefined}
+        onClick={p.onTap}
+        aria-label={p.label}
+        className="wc-slide-video"
+        // No "Save video", download, picture-in-picture or casting menus (deterrents; screen capture can't be blocked on the web).
+        controlsList="nodownload noplaybackrate noremoteplayback"
+        disablePictureInPicture
+        disableRemotePlayback
+        onContextMenu={(e) => e.preventDefault()}
+        draggable={false}
+      />
       {(needsTap || p.controlsShown) && !ended && (
         <button
           className="wc-play-btn"
