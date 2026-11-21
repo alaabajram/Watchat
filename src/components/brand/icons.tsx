@@ -53,3 +53,37 @@ export const ChevronIcon = ({ size = 18, color = "currentColor", rtl = true }: P
     <path d={rtl ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
   </svg>
 );
+export const UserIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </svg>
+);
+export const GlobeIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </svg>
+);
+export const HelpIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" />
+  </svg>
+);
+export const ShieldIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />
+    <path d="M9 12l2 2 4-4" />
+  </svg>
+);
+export const DocIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 3h9l4 4v14H6z" />
+    <path d="M9 12h7M9 16h5" />
+  </svg>
+);
+export const LogoutIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 4H6v16h8M10 12h11M17 8l4 4-4 4" />
+  </svg>
+);

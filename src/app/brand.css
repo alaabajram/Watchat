@@ -125,3 +125,22 @@
 .wc-biz details summary { cursor: pointer; list-style: none; }
 .wc-biz details summary::-webkit-details-marker { display: none; }
 .wc-biz :focus-visible { outline: 3px solid #0b6b49; outline-offset: 2px; border-radius: 8px; }
+
+/* Every viewer page: room for the fixed bottom bar. */
+.wc-app { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+.wc-section-title { font-weight: 600; font-size: 19px; margin: 0; }
+/* Watch page: dark, like the player screen in the design. */
+.wc-dark { background: var(--wc-night); color: #fff; color-scheme: dark; }
+.wc-dark .muted { color: #b5afbe; }
+.wc-dark .btn.secondary { background: #241f2e; color: #fff; border-color: #3a3446; }
+.wc-dark .chip { background: #241f2e; color: #fff; }
+/* Profile menu rows */
+.wc-menu { list-style: none; margin: 0; padding: 4px 16px; background: #fff; border-radius: 24px; box-shadow: 0 8px 26px rgba(18, 16, 20, 0.06); }
+.wc-menu li + li { border-top: 1px solid var(--wc-line); }
+.wc-menu a, .wc-menu button {
+  width: 100%; min-height: 64px; display: flex; align-items: center; gap: 14px; padding: 10px 0;
+  background: none; border: 0; font: inherit; font-size: 16px; font-weight: 500; color: var(--wc-ink); cursor: pointer; text-align: start;
+}
+.wc-menu .wc-tile { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0; }
+.wc-menu .wc-grow { flex: 1; }
+.wc-menu .wc-value { font-size: 14px; color: var(--wc-muted); }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { DeviceButtons, LanguageSwitch } from "@/components/SettingsControls";
+import { BottomNav } from "@/components/home/BottomNav";
 import { TopBar } from "@/components/TopBar";
 import { deviceLabel, getSessionViewer, listDevices } from "@/lib/session";
 import { getBalance } from "@/lib/wallet";
@@ -24,16 +25,16 @@ export default async function SettingsPage() {
   const fmt = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", { dateStyle: "medium" });
 
   return (
-    <main dir={dirFor(locale)}>
-      <TopBar locale={locale} balance={balance} />
-      <div className="page" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <h1 style={{ margin: 0 }}>{t.settingsTitle}</h1>
+    <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
+      <TopBar locale={locale} balance={balance} backHref="/me" backLabel={t.profile} />
+      <div className="page" style={{ display: "flex", flexDirection: "column", gap: 22, paddingTop: 8 }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700 }}>{t.settingsTitle}</h1>
         <section>
-          <h2>{t.language}</h2>
+          <h2 className="wc-section-title" style={{ marginBottom: 10 }}>{t.language}</h2>
           <LanguageSwitch locale={locale} />
         </section>
         <section>
-          <h2>{t.devices}</h2>
+          <h2 className="wc-section-title" style={{ marginBottom: 10 }}>{t.devices}</h2>
           <ul className="list" style={{ marginBottom: 12 }}>
             {devices.map((d) => (
               <li key={d.id}>
@@ -48,16 +49,17 @@ export default async function SettingsPage() {
           <DeviceButtons locale={locale} hasOthers={devices.length > 1} />
         </section>
         <section>
-          <h2>{t.alerts}</h2>
-          <p className="muted">{t.alertsHelp}</p>
+          <h2 className="wc-section-title" style={{ marginBottom: 10 }}>{t.alerts}</h2>
+          <p className="wc-card muted" style={{ padding: 16, margin: 0 }}>{t.alertsHelp}</p>
         </section>
         <section>
           <Link href="/data-deletion" className="muted">
             {t.deleteData}
           </Link>{" "}
-          · <Link href="/privacy" className="muted">Privacy</Link>
+          · <Link href="/privacy" className="muted">{t.privacyPolicy}</Link>
         </section>
       </div>
-    </main>
+      <BottomNav locale={locale} current="profile" />
+    </div>
   );
 }

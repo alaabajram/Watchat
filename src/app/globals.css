@@ -1,13 +1,20 @@
-/* Placeholder styling until the design team's system lands. Theme colours are CSS variables so a
-   partner brand can override them. */
+/* Viewer app: the light theme from the design team's screens (warm off-white, white cards, mint actions,
+   coral accents). Colours are CSS variables so a partner brand can override them. The video player stays dark. */
 :root {
-  --bg: #0b0b0f;
-  --surface: #17171f;
-  --text: #f5f5f7;
-  --muted: #a1a1aa;
-  --brand: #e4572e;
-  --radius: 14px;
-  color-scheme: dark;
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --text: #121014;
+  --muted: #5f5a55;
+  --line: #ece8e2;
+  --brand: var(--brand-primary, #31e5a0);
+  --brand-ink: var(--brand-primary-ink, #0b2e20);
+  --brand-text: var(--brand-primary-text, #0b6b49);
+  --accent-coral: var(--brand-accent, #ff5a48);
+  --coral-text: var(--brand-accent-text, #c9341f);
+  --night: #13101a;
+  --radius: 18px;
+  --shadow: 0 8px 26px rgba(18, 16, 20, 0.06);
+  color-scheme: light;
 }
 
 * {
@@ -20,7 +27,7 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", "Tahoma", sans-serif;
+  font-family: "Readex Pro", system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", "Tahoma", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -29,9 +36,9 @@ a {
 }
 
 .page {
-  max-width: 480px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+  padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
 }
 
 .center {
@@ -51,23 +58,31 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
-  padding: 0 20px;
-  border-radius: var(--radius);
-  border: 0;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 22px;
+  border-radius: 16px;
+  border: 1px solid transparent;
   background: var(--brand);
-  color: #fff;
+  color: var(--brand-ink);
+  font: inherit;
   font-weight: 600;
   font-size: 16px;
   text-decoration: none;
   cursor: pointer;
+  box-shadow: 0 10px 24px rgba(49, 229, 160, 0.32);
 }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn.secondary {
   background: var(--surface);
+  color: var(--text);
+  border-color: #e2ddd6;
+  box-shadow: none;
 }
+.btn.danger { background: var(--surface); color: var(--coral-text); border-color: #ffd3cc; box-shadow: none; }
 
-/* Player */
+/* Player (always dark) */
 .player {
   position: relative;
   width: 100%;
@@ -76,6 +91,7 @@ a {
   aspect-ratio: 9 / 16;
   max-height: 100dvh;
   background: #000;
+  color: #fff;
 }
 
 .player iframe {
@@ -91,13 +107,13 @@ a {
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--muted);
+  color: #d9d4e0;
 }
 
 .player-bar {
   max-width: 480px;
   margin: 0 auto;
-  padding: 12px 16px;
+  padding: 14px 16px;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -108,36 +124,42 @@ a {
 .grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 
 .tile {
   aspect-ratio: 1;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--surface);
   text-decoration: none;
   font-weight: 600;
+  box-shadow: 0 4px 14px rgba(18, 16, 20, 0.05);
 }
 
 .tile.locked {
-  opacity: 0.45;
+  background: #ebe7e1;
+  color: #8a847e;
+  box-shadow: none;
 }
 
 .tile.current {
-  outline: 2px solid var(--brand);
+  outline: 3px solid var(--brand);
+  outline-offset: 1px;
 }
 
 .sheet {
   max-width: 480px;
   margin: 0 auto;
-  padding: 20px;
-  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 22px 20px calc(22px + env(safe-area-inset-bottom));
+  border-radius: 28px 28px 0 0;
   background: var(--surface);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-shadow: 0 -10px 30px rgba(18, 16, 20, 0.12);
 }
 
 /* Player overlays */
@@ -149,7 +171,8 @@ a {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(19, 16, 26, 0.72);
+  color: #fff;
   text-align: center;
   padding: 24px;
 }
@@ -162,17 +185,17 @@ a {
   height: 84px;
   border-radius: 50%;
   border: 0;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 32px;
+  background: rgba(246, 241, 234, 0.92);
+  color: var(--night);
+  font-size: 30px;
   cursor: pointer;
 }
 
-/* Top bar */
+/* Top bar (logo or back link · coins · get coins) */
 .topbar {
-  max-width: 480px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 10px 16px;
+  padding: 16px 16px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -183,8 +206,8 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 44px;
+  padding: 0 14px;
   border-radius: 999px;
   background: var(--surface);
   text-decoration: none;
@@ -192,8 +215,8 @@ a {
 }
 
 .tile.done {
-  background: #23232e;
-  color: var(--muted);
+  background: #e3fbf1;
+  color: var(--brand-text);
 }
 
 .list {
@@ -202,35 +225,44 @@ a {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .list li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--surface);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
 }
+.list li:last-child { border-bottom: 0; }
 
 .pack {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 16px;
-  border-radius: var(--radius);
+  padding: 18px;
+  border-radius: 22px;
   background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .tag {
   font-size: 12px;
-  padding: 2px 8px;
+  font-weight: 600;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: var(--brand);
-  color: #fff;
+  background: #ffece8;
+  color: var(--coral-text);
 }
+
+h1, h2 { line-height: 1.3; }
+h2 { font-size: 19px; font-weight: 600; }
 
 /* ------------------------------------------------------------------ */
 /* Admin (plain functional styling until the design system arrives)  */

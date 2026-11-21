@@ -16,7 +16,7 @@ export function SitePageView({ page }: { page: SitePage }) {
           <PageBody text={page.bodyAr} />
         </section>
       )}
-      {page.bodyAr.trim() && page.bodyEn.trim() && <hr style={{ margin: "40px 0", borderColor: "#333" }} />}
+      {page.bodyAr.trim() && page.bodyEn.trim() && <hr style={{ margin: "40px 0", borderColor: "var(--line)" }} />}
       {page.bodyEn.trim() && (
         <section dir="ltr" lang="en">
           <h1>{page.titleEn || PAGE_LABELS[page.slug].en}</h1>

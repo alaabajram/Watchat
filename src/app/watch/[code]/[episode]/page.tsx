@@ -68,8 +68,8 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
   const { hls, poster } = streamUrls(current.streamUid, env.streamCustomerCode);
 
   return (
-    <main dir={dirFor(locale)}>
-      <TopBar locale={locale} balance={balance} backHref={`/series/${series.code}`} backLabel={t.episodes} />
+    <main className="wc wc-dark" dir={dirFor(locale)} lang={locale}>
+      <TopBar locale={locale} balance={balance} backHref={`/series/${series.code}`} backLabel={t.episodes} dark />
 
       {allowed ? (
         <Player
@@ -90,14 +90,14 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
             // eslint-disable-next-line @next/next/no-img-element
             <img src={poster} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(8px) brightness(0.5)" }} />
           )}
-          <div className="placeholder">🔒 {t.locked}</div>
+          <div className="placeholder" style={{ fontWeight: 600 }}>{t.locked}</div>
         </div>
       )}
 
       <div className="player-bar">
-        <div>
-          <strong>{title}</strong>
-          <div className="muted">
+        <div style={{ minWidth: 0 }}>
+          <strong style={{ fontWeight: 600 }}>{title}</strong>
+          <div className="muted" style={{ fontSize: 14 }}>
             {t.episode(number)} · {t.of(number, episodes.length)}
           </div>
         </div>
