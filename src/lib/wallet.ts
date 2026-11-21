@@ -6,7 +6,8 @@ import { env } from "./env";
 import { trackEvent } from "./events";
 import { createCharge, getCharge } from "./payments/tap";
 import { afterPaid } from "./economy/rewards";
-import { economySettings, quoteFor, seriesLicensed, viewerMarket } from "./economy/store";
+import { economySettings, payingMarket, quoteFor, seriesLicensed, storedViewerMarket } from "./economy/store";
+import { createStarsInvoice } from "./telegram/payments";
 import type { PriceItem } from "./economy/pricing";
 import type { TapCharge } from "./payments/tap";
 import { db } from "./supabase";
@@ -43,7 +44,7 @@ export async function unlockEpisode(viewerId: string, seriesId: string, episode:
 export type CheckoutItem =
   | { type: "coin_pack"; packId: string }
   | { type: "season_pass"; seriesId: string }
-  | { type: "subscription"; plan: "weekly" | "yearly" };
+  | { type: "subscription"; plan: "weekly" | "monthly" | "yearly" };
 
 /** "tap" when online payments are configured, otherwise manual cash / transfer approval. */
 export function paymentMode(): "tap" | "cash" {
@@ -68,7 +69,7 @@ type Priced = {
  * Never trusts the browser. Series passes are only sold where the series is licensed.
  */
 async function priceItem(viewer: { id: string; country: string | null }, item: CheckoutItem, code?: string | null): Promise<Priced> {
-  const market = await viewerMarket(viewer);
+  const market = await payingMarket(viewer); // Telegram viewers pay in Stars
   let priceKey: PriceItem;
   let description: string;
   let itemRef: string;
@@ -78,14 +79,14 @@ async function priceItem(viewer: { id: string; country: string | null }, item: C
     description = "Watchat Ping";
   } else if (item.type === "season_pass") {
     const { data: series } = await db().from("series").select("id, title_en, status, license_countries").eq("id", item.seriesId).maybeSingle();
-    if (!series || series.status !== "live" || !seriesLicensed(series.license_countries, market)) throw new Error("No series pass for this series.");
+    if (!series || series.status !== "live" || !seriesLicensed(series.license_countries, market.currency === "XTR" ? await storedViewerMarket(viewer.id) : market)) throw new Error("No series pass for this series.");
     priceKey = "series_pass";
     itemRef = series.id;
     description = `Watchat series pass · ${series.title_en}`;
   } else {
     priceKey = item.plan;
     itemRef = item.plan;
-    description = item.plan === "weekly" ? "Watchat weekly pass" : "Watchat yearly pass";
+    description = item.plan === "weekly" ? "Watchat weekly pass" : item.plan === "monthly" ? "Watchat monthly pass" : "Watchat yearly pass";
   }
   const q = await quoteFor(viewer.id, market, priceKey, code);
   if (!q) throw new Error("This item is not on sale in your country.");
@@ -182,6 +183,30 @@ export async function cancelCashOrder(orderId: string, adminId: string, note: st
 }
 
 /** Create an order at our own price and start a Tap hosted checkout. Returns the URL to send the viewer to. */
+/**
+ * Telegram viewers: a Stars order and a link to Telegram's payment sheet (the store opens it with openInvoice).
+ * The monthly pass is a Stars subscription. Fulfilled by the Telegram webhook (telegram/payments.ts).
+ */
+export async function startStarsCheckout(params: { viewerId: string; item: CheckoutItem; code?: string | null }): Promise<{ invoice: string; orderId: string }> {
+  const priced = await priceItem({ id: params.viewerId, country: null }, params.item, params.code);
+  if (priced.currency !== "XTR") throw new Error("not a Telegram viewer");
+  const monthly = params.item.type === "subscription" && params.item.plan === "monthly";
+  const { data: order, error } = await db()
+    .from("orders")
+    .insert(orderRow(params.viewerId, params.item, priced, { gateway: "telegram", save_card: monthly }))
+    .select("id")
+    .single();
+  if (error || !order) throw new Error(`order failed: ${error?.message}`);
+  const invoice = await createStarsInvoice({
+    orderId: order.id,
+    stars: priced.amount,
+    title: priced.description,
+    description: monthly ? "Every series, renews every 30 days · كل المسلسلات، تتجدد كل 30 يوم" : "Watchat · واتشات",
+    monthly,
+  });
+  return { invoice, orderId: order.id };
+}
+
 export async function startCheckout(params: {
   viewerId: string;
   country: string | null;

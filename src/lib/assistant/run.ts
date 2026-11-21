@@ -5,7 +5,7 @@
 import { assistantAccount, ASSISTANT_PURPOSE, logAiUsage } from "../ai/settings";
 import { AiError, callTool } from "../ai/anthropic";
 import { getHome } from "../content";
-import { storeOffers, viewerMarket } from "../economy/store";
+import { payingMarket, storeOffers } from "../economy/store";
 import { allow } from "../security/rate-limit";
 import { currentTenantId, db } from "../supabase";
 import { HELP, answerChip, answerFromAi, answerLocally, answerWithoutAi, ASSISTANT_TOOL, assistantSystemPrompt, CHIPS, TEXT, type AssistantCtx, type CatalogItem, type Chip, type Offer, type Reply } from "./engine";
@@ -20,7 +20,7 @@ export async function assistantContext(viewer: { id: string; country: string | n
   const [home, { data: meta }, shop] = await Promise.all([
     getHome(viewer.id),
     db().from("series").select("code, tags, cast_members, coins_per_episode").eq("tenant_id", tenantId).eq("status", "live"),
-    viewerMarket(viewer).then((market) => storeOffers(viewer.id, market)),
+    payingMarket(viewer).then((market) => storeOffers(viewer.id, market)),
   ]);
   const byCode = new Map((meta ?? []).map((m) => [m.code as string, m]));
   const catalog: CatalogItem[] = home.catalogue.map((c) => {

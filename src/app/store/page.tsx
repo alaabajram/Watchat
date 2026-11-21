@@ -7,7 +7,8 @@ import { BottomNav } from "@/components/home/BottomNav";
 import { PromoCodeBox } from "@/components/PromoCodeBox";
 import { TopBar } from "@/components/TopBar";
 import { viewerPass } from "@/lib/economy/billing";
-import { storeOffers, viewerMarket } from "@/lib/economy/store";
+import { payingMarket, storeOffers } from "@/lib/economy/store";
+import { isStars } from "@/lib/economy/pricing";
 import { env } from "@/lib/env";
 import { getSessionViewer } from "@/lib/session";
 import { getBalance, paymentMode } from "@/lib/wallet";
@@ -31,9 +32,10 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   }
 
   const returnTo = back && back.startsWith("/") && !back.startsWith("//") ? back : "/wallet";
-  const market = await viewerMarket(viewer);
+  const market = await payingMarket(viewer); // Telegram viewers: Telegram Stars
   const [shop, balance, pass] = await Promise.all([storeOffers(viewer.id, market), getBalance(viewer.id), viewerPass(viewer.id)]);
   const cur = market.currency;
+  const stars = isStars(market);
   const money = (n: number) => formatMoney(n, cur, locale);
   const perPing = (price: number, ping: number) => price / Math.max(1, ping);
   const bestId = shop.packs.reduce<{ id: string; per: number } | null>((best, { pack, quote }) => {
@@ -62,7 +64,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           {pass ? (
             <a href="/wallet" className="wc-card wc-plan wc-plan-on">
               <strong>⭐ {t.yourPass}</strong>
-              <span>{t.passUntil(pass.plan === "weekly" ? t.weeklyPass : t.yearlyPass, fmtDate.format(new Date(pass.endsAt)))}</span>
+              <span>{t.passUntil(pass.plan === "weekly" ? t.weeklyPass : pass.plan === "monthly" ? t.monthlyPass : t.yearlyPass, fmtDate.format(new Date(pass.endsAt)))}</span>
             </a>
           ) : (
             <>
@@ -76,6 +78,14 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
                     <BuyButton locale={locale} type="subscription" id="weekly" label={t.buy} returnTo={returnTo} secondary />
                   </div>
                 )}
+                {shop.monthly && (
+                  <div className="wc-card wc-plan">
+                    <strong>{t.monthlyPass}</strong>
+                    <PriceLine quote={shop.monthly} money={money} />
+                    <span className="muted" style={{ fontSize: 13 }}>{t.perMonth}</span>
+                    <BuyButton locale={locale} type="subscription" id="monthly" label={t.buy} returnTo={returnTo} secondary />
+                  </div>
+                )}
                 {shop.yearly && (
                   <div className="wc-card wc-plan wc-plan-best">
                     {yearlySaving > 0 && <span className="tag wc-plan-badge">{t.yearlySaving(yearlySaving)}</span>}
@@ -86,7 +96,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
                   </div>
                 )}
               </div>
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>{shop.recurring ? t.renewsAuto : t.oneTimePass}</p>
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>{stars ? t.starsRenews : shop.recurring ? t.renewsAuto : t.oneTimePass}</p>
             </>
           )}
         </section>
@@ -115,7 +125,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         <PromoCodeBox locale={locale} />
         <p className="muted" style={{ margin: 0 }}>{t.seriesPassNote(shop.episodePing)}</p>
         <p className="muted" style={{ margin: 0 }}>
-          {paymentMode() === "cash" ? t.storeNoteCash : t.storeNote}
+          {stars ? t.starsNote : paymentMode() === "cash" ? t.storeNoteCash : t.storeNote}
         </p>
       </div>
       <BottomNav locale={locale} current="coins" />

@@ -71,6 +71,14 @@ describe("inbound updates", () => {
     expect(parseUpdate({})).toBeNull();
   });
 
+  it("Stars payments: the confirmation question and the paid message", () => {
+    const q = parseUpdate({ update_id: 9, pre_checkout_query: { id: "pq1", currency: "XTR", total_amount: 700, invoice_payload: "order-1", from: { id: 42 } } })!;
+    expect(q.preCheckout).toEqual({ id: "pq1", currency: "XTR", total_amount: 700, invoice_payload: "order-1" });
+    const paid = parseUpdate({ update_id: 10, message: { chat: { id: 42, type: "private" }, from: { id: 42 }, successful_payment: { currency: "XTR", total_amount: 700, invoice_payload: "order-1", telegram_payment_charge_id: "ch1" } } })!;
+    expect(paid.msg).toBeNull();
+    expect(paid.payment).toMatchObject({ chatId: 42, data: { telegram_payment_charge_id: "ch1" } });
+  });
+
   it("/store and /rewards are answered as pages", () => {
     expect(parseUpdate(msg("/rewards"))).toMatchObject({ msg: null, page: "rewards" });
   });

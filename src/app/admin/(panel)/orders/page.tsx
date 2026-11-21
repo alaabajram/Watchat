@@ -6,7 +6,7 @@ import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
 import { paymentMode } from "@/lib/wallet";
-import { approveOrderAction, cancelOrderAction } from "../../order-actions";
+import { approveOrderAction, cancelOrderAction, refundStarsAction } from "../../order-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -147,11 +147,17 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               </td>
               <td>{o.note ?? o.item_type}</td>
               <td>
-                {o.currency} {Number(o.amount).toFixed(2)}
+                {o.currency === "XTR" ? `${Number(o.amount).toLocaleString("en-US")} ⭐` : `${o.currency} ${Number(o.amount).toFixed(2)}`}
               </td>
-              <td>{o.gateway}</td>
+              <td>{o.gateway === "telegram" ? "Telegram Stars" : o.gateway}</td>
               <td>
                 <span className={`badge ${o.status === "paid" ? "sent" : o.status}`}>{o.status === "failed" && o.gateway === "cash" ? "cancelled" : o.status}</span>
+                {o.gateway === "telegram" && o.status === "paid" && (
+                  <form action={refundStarsAction} style={{ display: "inline", marginInlineStart: 8 }}>
+                    <input type="hidden" name="id" value={o.id} />
+                    <button type="submit" className="secondary" style={{ padding: "2px 10px", fontSize: 12 }}>Refund Stars</button>
+                  </form>
+                )}
               </td>
               <td className="muted">{o.admin_users?.email ?? "—"}</td>
             </tr>

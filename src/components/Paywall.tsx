@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney, webCopy, type Locale } from "@/lib/web-copy";
 import { PingIcon } from "./brand/PingIcon";
+import { openTelegramInvoice } from "./TelegramSignIn";
 import { ConfirmDevice } from "./ConfirmDevice";
 
 type Props = {
@@ -56,6 +57,7 @@ export function Paywall(p: Props) {
     });
     const j = (await res.json().catch(() => ({}))) as {
       url?: string;
+      invoice?: string;
       error?: string;
       pending?: boolean;
       reference?: string;
@@ -70,6 +72,16 @@ export function Paywall(p: Props) {
       setBusy(false);
       return setConfirming(kind);
     }
+    if (j.invoice) {
+      // Telegram viewers pay in Stars on Telegram's own sheet; the episode opens once the webhook adds the pass.
+      const status = await openTelegramInvoice(j.invoice);
+      setBusy(false);
+      if (status === "paid") {
+        setMessage(t.starsPaid);
+        window.setTimeout(() => router.refresh(), 1500);
+      } else if (status === "failed") setMessage(t.error);
+      return;
+    }
     if (j.url) {
       setMessage(t.redirecting);
       window.location.href = j.url;
@@ -77,7 +89,7 @@ export function Paywall(p: Props) {
     }
     setBusy(false);
     setMessage(j.error === "too_many_pending" ? t.tooManyPending : j.error === "payments_not_configured" ? t.paymentsSoon : t.error);
-  }, [p.seriesId, p.returnTo, t]);
+  }, [p.seriesId, p.returnTo, t, router]);
 
   if (confirming) {
     return (

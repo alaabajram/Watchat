@@ -4,15 +4,22 @@
 export const PING = { ar: "بينج", en: "Ping" } as const;
 
 export type Market = { country: string; currency: string; vatRate: number; active: boolean };
-export type PriceItem = `pack:${string}` | "series_pass" | "weekly" | "yearly";
+export type PriceItem = `pack:${string}` | "series_pass" | "weekly" | "monthly" | "yearly";
 /** country → item → price (VAT included, in the market's currency) */
 export type PriceList = Record<string, Partial<Record<PriceItem, number>>>;
 
 export const FALLBACK_COUNTRY = "ZZ"; // everywhere else (international prices)
 
+/**
+ * Telegram viewers pay in Telegram Stars (XTR): one price list, no VAT (Telegram sells the Stars). "XS" is a
+ * user-assigned code, so it can never clash with a real country.
+ */
+export const STARS_MARKET: Market = { country: "XS", currency: "XTR", vatRate: 0, active: true };
+export const isStars = (m: Market) => m.currency === "XTR";
+
 /** Currencies with 3 decimals (fils / baisa). */
 const THREE_DECIMALS = new Set(["KWD", "BHD", "OMR", "JOD"]);
-export const decimalsOf = (currency: string) => (THREE_DECIMALS.has(currency) ? 3 : 2);
+export const decimalsOf = (currency: string) => (currency === "XTR" ? 0 : THREE_DECIMALS.has(currency) ? 3 : 2);
 export const roundMoney = (amount: number, currency: string) => {
   const f = 10 ** decimalsOf(currency);
   return Math.round(amount * f) / f;

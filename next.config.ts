@@ -6,7 +6,7 @@ const csp = [
   "default-src 'self'",
   // React's dev tooling needs eval; production never gets it.
   // wasm-unsafe-eval: lets the admin's in-browser video converter (ffmpeg.wasm) run; it doesn't allow eval().
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://embed.cloudflarestream.com`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://embed.cloudflarestream.com https://telegram.org`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https:",

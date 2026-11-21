@@ -14,6 +14,8 @@ import {
   resolveMarket,
   roundMoney,
   vatOf,
+  isStars,
+  STARS_MARKET,
   type Market,
   type PriceList,
   type Promotion,
@@ -188,5 +190,35 @@ describe("pass renewals", () => {
   it("retries daily and gives up after the last attempt", () => {
     expect(afterFailedAttempt(0, NOW)).toMatchObject({ renew_attempts: 1, status: "past_due" });
     expect(afterFailedAttempt(MAX_RENEW_ATTEMPTS - 1, NOW)).toMatchObject({ status: "expired", auto_renew: false });
+  });
+});
+
+describe("Telegram Stars", () => {
+  it("quotes from the Stars list, in whole Stars, without VAT", () => {
+    const q = quote({
+      item: "monthly",
+      market: STARS_MARKET,
+      prices: { XS: { monthly: 2200, "pack:p1": 390 } },
+      pack: null,
+      promotions: [],
+      viewer: viewer({ paidOrders: 1 }),
+      firstPurchaseBonusPct: 20,
+      now: NOW,
+    })!;
+    expect(q).toMatchObject({ price: 2200, currency: "XTR", vat: 0 });
+    const d = quote({
+      item: "pack:p1",
+      market: STARS_MARKET,
+      prices: { XS: { "pack:p1": 390 } },
+      pack: { coins: 250, bonus: 0 },
+      promotions: [promo({ kind: "discount", value: 15, appliesTo: "all" })],
+      viewer: viewer(),
+      firstPurchaseBonusPct: 20,
+      now: NOW,
+    })!;
+    expect(Number.isInteger(d.price)).toBe(true);
+    expect(d.price).toBe(332);
+    expect(isStars(STARS_MARKET)).toBe(true);
+    expect(formatMoney(2200, "XTR", "en")).toBe("2,200 ⭐");
   });
 });

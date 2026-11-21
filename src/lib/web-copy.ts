@@ -131,6 +131,11 @@ const strings = {
     accountSignedOutBody: "١. اضغط الزر — تنفتح محادثة واتشات والرسالة جاهزة\n٢. اضغط «إرسال» في واتساب\n٣. افتح الرابط اللي يوصلك — وتدخل حسابك مباشرة",
     signInWithWhatsApp: "سجّل الدخول عبر واتساب",
     signInWithTelegram: "الدخول عبر تيليجرام",
+    starsPaid: "تم الدفع ✅ أضفنا مشترياتك لمحفظتك.",
+    monthlyPass: "باقة شهرية",
+    perMonth: "شهريًا",
+    starsNote: "الدفع بنجوم تيليجرام ⭐ داخل تيليجرام. تقدر تشتري النجوم من نفس الشاشة.",
+    starsRenews: "الباقة الشهرية تتجدّد كل 30 يوم · ألغِ متى ما تبي",
     startInTelegram: "ابدأ في تيليجرام",
     telegramHint: "داخل تيليجرام تدخل تلقائيًا بحسابك. افتح بوت واتشات واضغط «شاهد».",
     telegramFreshLink: "افتح واتشات من تيليجرام",
@@ -301,6 +306,11 @@ const strings = {
     accountSignedOutBody: "1. Tap the button — the Watchat chat opens with the message ready\n2. Tap Send in WhatsApp\n3. Open the link we send you — you're in",
     signInWithWhatsApp: "Sign in with WhatsApp",
     signInWithTelegram: "Sign in with Telegram",
+    starsPaid: "Paid ✅ Your purchase is in your wallet.",
+    monthlyPass: "Monthly pass",
+    perMonth: "per month",
+    starsNote: "Pay with Telegram Stars ⭐ inside Telegram. You can buy Stars on the same screen.",
+    starsRenews: "The monthly pass renews every 30 days · cancel any time",
     startInTelegram: "Start in Telegram",
     telegramHint: "Inside Telegram you're signed in automatically. Open the Watchat bot and tap «شاهد».",
     telegramFreshLink: "Open Watchat in Telegram",
@@ -355,6 +365,7 @@ export const dirFor = (locale: Locale) => (locale === "ar" ? "rtl" : "ltr");
 
 /** Any market currency (AED, SAR, KWD, USD…); 3 decimals only where the currency has them and they're used. */
 export function formatMoney(amount: number, currency: string, locale: Locale): string {
+  if (currency === "XTR") return `${Math.round(amount).toLocaleString(locale === "ar" ? "ar-AE" : "en-US")} ⭐`; // Telegram Stars
   const max = ["KWD", "BHD", "OMR", "JOD"].includes(currency) ? 3 : 2;
   const whole = Number.isInteger(amount);
   try {

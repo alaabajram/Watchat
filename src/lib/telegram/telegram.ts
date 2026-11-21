@@ -42,6 +42,10 @@ export type ParsedUpdate = {
   callbackQueryId?: string;
   /** /store or /rewards: open that page. */
   page?: PageCommand;
+  /** Telegram asks to confirm a Stars payment before charging. */
+  preCheckout?: { id: string; currency: string; total_amount: number; invoice_payload: string };
+  /** A Stars payment went through (or a monthly renewal). */
+  payment?: { chatId: number; data: Record<string, unknown> };
 };
 
 /**
@@ -79,6 +83,15 @@ export function parseUpdate(update: unknown): ParsedUpdate | null {
   const updateId = num(u.update_id);
   if (updateId === undefined) return null;
 
+  const pcq = obj(u.pre_checkout_query);
+  if (Object.keys(pcq).length) {
+    return {
+      updateId,
+      msg: null,
+      preCheckout: { id: str(pcq.id) ?? "", currency: str(pcq.currency) ?? "", total_amount: num(pcq.total_amount) ?? 0, invoice_payload: str(pcq.invoice_payload) ?? "" },
+    };
+  }
+
   const cb = obj(u.callback_query);
   if (Object.keys(cb).length) {
     const from = obj(cb.from);
@@ -105,6 +118,8 @@ export function parseUpdate(update: unknown): ParsedUpdate | null {
   // Private chats only: groups and channels never reach the bot's logic.
   if (chatId === undefined || chat.type !== "private") return { updateId, msg: null };
   const from = obj(m.from);
+  const paid = obj(m.successful_payment);
+  if (Object.keys(paid).length) return { updateId, msg: null, payment: { chatId, data: paid } };
   const raw = str(m.text);
   const base = { id: `tg:${updateId}`, from: tgAddress(chatId), timestamp: num(m.date) ?? 0, profileName: str(from.first_name) };
   if (raw === undefined) return { updateId, msg: { ...base, kind: "other" } };

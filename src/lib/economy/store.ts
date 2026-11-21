@@ -6,6 +6,8 @@ import { headers } from "next/headers";
 import { currentTenantId, db } from "../supabase";
 import {
   FALLBACK_COUNTRY,
+  isStars,
+  STARS_MARKET,
   licensedIn,
   promoApplies,
   quote,
@@ -51,6 +53,8 @@ export type Economy = {
   prices: PriceList;
   packs: Pack[];
   promotions: Promotion[];
+  /** Telegram Stars prices (one list for every Telegram viewer). */
+  stars: Partial<Record<PriceItem, number>>;
 };
 
 export const economySettings = cache(async (tenantId?: string): Promise<EconomySettings> => {
@@ -94,13 +98,16 @@ export function toPromotion(r: Record<string, unknown>): Promotion {
 /** Everything pricing needs, read once per request. */
 export const loadEconomy = cache(async (): Promise<Economy> => {
   const tenantId = await currentTenantId();
-  const [settings, { data: markets }, { data: prices }, { data: packs }, { data: promos }] = await Promise.all([
+  const [settings, { data: markets }, { data: prices }, { data: packs }, { data: promos }, { data: stars }] = await Promise.all([
     economySettings(tenantId),
     db().from("markets").select("country, currency, vat_rate, active, sort").eq("tenant_id", tenantId).order("sort"),
     db().from("market_prices").select("country, item, price").eq("tenant_id", tenantId),
     db().from("coin_packs").select("id, coins, bonus_coins, sort, label_ar, label_en").eq("tenant_id", tenantId).eq("active", true).order("sort"),
     db().from("promotions").select("*").eq("tenant_id", tenantId).eq("active", true),
+    db().from("stars_prices").select("item, stars").eq("tenant_id", tenantId),
   ]);
+  const starList: Partial<Record<PriceItem, number>> = {};
+  for (const s of stars ?? []) starList[s.item as PriceItem] = Number(s.stars);
   const list: PriceList = {};
   for (const p of prices ?? []) (list[p.country] ??= {})[p.item as PriceItem] = Number(p.price);
   return {
@@ -108,6 +115,7 @@ export const loadEconomy = cache(async (): Promise<Economy> => {
     settings,
     markets: (markets ?? []).map((m) => ({ country: m.country, currency: m.currency, vatRate: Number(m.vat_rate), active: m.active })),
     prices: list,
+    stars: starList,
     packs: (packs ?? []).map((p) => ({ id: p.id, coins: p.coins, bonus: p.bonus_coins, sort: p.sort, labelAr: p.label_ar, labelEn: p.label_en })),
     promotions: (promos ?? []).map(toPromotion),
   };
@@ -179,7 +187,7 @@ export async function quoteFor(viewerId: string, market: Market, item: PriceItem
   return quote({
     item,
     market,
-    prices: eco.prices,
+    prices: priceListFor(eco, market),
     pack: pack ? { coins: pack.coins, bonus: pack.bonus } : null,
     promotions: eco.promotions,
     code,
@@ -190,6 +198,22 @@ export async function quoteFor(viewerId: string, market: Market, item: PriceItem
 }
 
 /** Store view: every pack and pass with its price for this viewer (one query for the viewer's facts). */
+/** Card prices by country, or the Telegram Stars list for Telegram viewers. */
+export function priceListFor(eco: Economy, market: Market): PriceList {
+  return isStars(market) ? { [STARS_MARKET.country]: eco.stars } : eco.prices;
+}
+
+/** Is this viewer a Telegram viewer ("+tg:<id>")? They pay in Telegram Stars. */
+export async function isTelegramViewer(viewerId: string): Promise<boolean> {
+  const { data } = await db().from("viewers").select("phone_e164").eq("id", viewerId).maybeSingle();
+  return String(data?.phone_e164 ?? "").startsWith("+tg:");
+}
+
+/** The market a viewer pays in: Telegram Stars for Telegram viewers, otherwise their country's card prices. */
+export async function payingMarket(viewer: { id: string; country: string | null }): Promise<Market> {
+  return (await isTelegramViewer(viewer.id)) ? STARS_MARKET : viewerMarket(viewer);
+}
+
 export async function storeOffers(viewerId: string, market: Market) {
   const eco = await loadEconomy();
   const facts = await viewerFacts(viewerId);
@@ -198,7 +222,7 @@ export async function storeOffers(viewerId: string, market: Market) {
     quote({
       item,
       market,
-      prices: eco.prices,
+      prices: priceListFor(eco, market),
       pack: pack ? { coins: pack.coins, bonus: pack.bonus } : null,
       promotions: eco.promotions,
       viewer: facts,
@@ -211,6 +235,7 @@ export async function storeOffers(viewerId: string, market: Market) {
     market,
     packs,
     weekly: q("weekly"),
+    monthly: isStars(market) ? q("monthly") : null, // a Telegram Stars subscription (renews every 30 days)
     yearly: q("yearly"),
     seriesPass: q("series_pass"),
     episodePing: eco.settings.episodePing,

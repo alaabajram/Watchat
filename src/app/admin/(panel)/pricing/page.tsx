@@ -9,19 +9,21 @@ import { countryName } from "@/lib/economy/countries";
 import { economySettings } from "@/lib/economy/store";
 import { tapConfigured } from "@/lib/payments/tap";
 import { db } from "@/lib/supabase";
-import { saveMarketAction, savePingPackAction, savePriceGridAction, savePricingSettingsAction } from "../../economy-actions";
+import { saveMarketAction, savePingPackAction, savePriceGridAction, savePricingSettingsAction, saveStarsPricesAction } from "../../economy-actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function PricingPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("pricing");
   const sp = await searchParams;
-  const [settings, { data: markets }, { data: prices }, { data: packs }] = await Promise.all([
+  const [settings, { data: markets }, { data: prices }, { data: packs }, { data: starRows }] = await Promise.all([
     economySettings(admin.tenantId),
     db().from("markets").select("country, currency, vat_rate, active, sort").eq("tenant_id", admin.tenantId).order("sort"),
     db().from("market_prices").select("country, item, price").eq("tenant_id", admin.tenantId),
     db().from("coin_packs").select("id, coins, bonus_coins, sort, active, label_ar, label_en").eq("tenant_id", admin.tenantId).order("sort"),
+    db().from("stars_prices").select("item, stars").eq("tenant_id", admin.tenantId),
   ]);
+  const starsOf = new Map((starRows ?? []).map((r) => [r.item as string, Number(r.stars)]));
   const marketList = markets ?? [];
   const priceOf = new Map((prices ?? []).map((p) => [`${p.country}:${p.item}`, Number(p.price)]));
   const livePacks = (packs ?? []).filter((p) => p.active);
@@ -125,6 +127,39 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
           </tbody>
         </table>
         <button type="submit" style={{ marginTop: 10 }}>Save prices</button>
+      </form>
+
+      <h2>Telegram Stars ⭐</h2>
+      <p className="muted">
+        Telegram viewers pay in Telegram Stars inside Telegram (Telegram&apos;s rule for digital goods). One price list, no VAT. You receive about
+        0.013 USD per Star, paid out through Telegram&apos;s Fragment platform: at least 1,000 Stars, 21 days after each payment. The monthly pass is a
+        Stars subscription (Telegram renews it every 30 days); weekly and yearly passes are single payments on Telegram. Empty = not sold on Telegram.
+      </p>
+      <form action={saveStarsPricesAction} className="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Stars</th>
+              <th className="muted">≈ you receive</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[{ key: "monthly", label: "Monthly pass", hint: "every series, renews every 30 days" }, ...items].map((it) => (
+              <tr key={it.key}>
+                <td>
+                  <strong>{it.label}</strong>
+                  {it.hint && <span className="muted" style={{ display: "block", fontSize: 12 }}>{it.hint}</span>}
+                </td>
+                <td>
+                  <input name={`s:${it.key}`} type="number" step="1" min={1} defaultValue={starsOf.get(it.key) ?? ""} style={{ width: 110 }} aria-label={`${it.label} · Stars`} />
+                </td>
+                <td className="muted">{starsOf.get(it.key) ? `$${(starsOf.get(it.key)! * 0.013).toFixed(2)}` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button type="submit" style={{ marginTop: 10 }}>Save Stars prices</button>
       </form>
 
       <h2>Countries</h2>

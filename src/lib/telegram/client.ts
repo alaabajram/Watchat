@@ -86,13 +86,15 @@ export type TelegramStatus = {
   webhookOk: boolean;
   pending: number;
   lastError: string | null;
+  /** The webhook receives payment confirmations (connected after Stars payments were added). */
+  paymentsReady: boolean;
 };
 
 export async function telegramStatus(): Promise<TelegramStatus> {
-  if (!telegramConfigured()) return { configured: false, username: null, webhookUrl: null, webhookOk: false, pending: 0, lastError: null };
+  if (!telegramConfigured()) return { configured: false, username: null, webhookUrl: null, webhookOk: false, pending: 0, lastError: null, paymentsReady: false };
   const [me, hook] = await Promise.all([
     tgCall<{ username?: string }>("getMe"),
-    tgCall<{ url?: string; pending_update_count?: number; last_error_message?: string }>("getWebhookInfo"),
+    tgCall<{ url?: string; pending_update_count?: number; last_error_message?: string; allowed_updates?: string[] }>("getWebhookInfo"),
   ]);
   const site = (await siteUrl()).replace(/\/$/, "");
   const url = hook.result?.url || null;
@@ -103,6 +105,7 @@ export async function telegramStatus(): Promise<TelegramStatus> {
     webhookOk: url === `${site}/api/telegram/webhook`,
     pending: hook.result?.pending_update_count ?? 0,
     lastError: hook.result?.last_error_message ?? (me.ok ? null : (me.description ?? null)),
+    paymentsReady: Boolean(hook.result?.allowed_updates?.includes("pre_checkout_query")),
   };
 }
 
@@ -138,7 +141,7 @@ export async function connectTelegram(): Promise<{ ok: boolean; errors: string[]
       {
         url: `${site}/api/telegram/webhook`,
         secret_token: webhookSecret(env.telegramBotToken),
-        allowed_updates: ["message", "callback_query"],
+        allowed_updates: ["message", "callback_query", "pre_checkout_query"],
         drop_pending_updates: false,
       },
     ],

@@ -78,6 +78,33 @@ export async function savePriceGridAction(fd: FormData) {
   done(PRICING, `Prices saved (${upserts.length}).`);
 }
 
+/** Telegram Stars prices: one list for every Telegram viewer ("s:<item>"). Empty = not sold on Telegram. */
+export async function saveStarsPricesAction(fd: FormData) {
+  const admin = await requireAdmin("pricing");
+  const upserts: { tenant_id: string; item: string; stars: number }[] = [];
+  const removals: string[] = [];
+  for (const [key, raw] of fd.entries()) {
+    const m = /^s:(pack:[0-9a-f-]{36}|series_pass|weekly|monthly|yearly)$/.exec(key);
+    if (!m) continue;
+    const v = String(raw).trim();
+    if (!v) {
+      removals.push(m[1]);
+      continue;
+    }
+    const stars = Number(v);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 100000) done(PRICING, `Stars must be a whole number from 1 to 100,000 (${m[1]}).`, "err");
+    upserts.push({ tenant_id: admin.tenantId, item: m[1], stars });
+  }
+  if (upserts.length) {
+    const { error } = await db().from("stars_prices").upsert(upserts);
+    if (error) done(PRICING, `Save failed: ${error.message}`, "err");
+  }
+  for (const item of removals) await db().from("stars_prices").delete().eq("tenant_id", admin.tenantId).eq("item", item);
+  await audit(admin, "economy.stars_prices_saved", "stars_prices", null, { prices: upserts.length, removed: removals.length });
+  revalidatePath("/store");
+  done(PRICING, `Telegram Stars prices saved (${upserts.length}).`);
+}
+
 export async function savePingPackAction(fd: FormData) {
   const admin = await requireAdmin("pricing");
   const id = uuid(fd, "id");
