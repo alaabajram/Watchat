@@ -12,6 +12,7 @@ import { ACCOUNT_WORD } from "@/lib/links";
 import { getSessionViewer } from "@/lib/session";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
+import { botLink, visitorChannel } from "@/lib/telegram/channel";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,8 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
     const locale = (await searchParams).lang === "en" ? "en" : "ar";
     const t = webCopy(locale);
     const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}` : null;
-    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/assistant" />;
+    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
+    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/assistant" telegram={tg} />;
   }
   const locale = viewer.uiLocale;
   // Opened from the chat button on another page: the back arrow returns there.

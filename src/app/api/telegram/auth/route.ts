@@ -12,6 +12,7 @@ import { createSession, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/s
 import { siteUrl } from "@/lib/site/store";
 import { currentTenantId, db } from "@/lib/supabase";
 import { startTarget, tgAddress, verifyInitData } from "@/lib/telegram/telegram";
+import { CHANNEL_COOKIE } from "@/lib/telegram/channel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest) {
   const base = await siteUrl();
   const res = NextResponse.json({ ok: true, to: asked ?? startTarget(user.startParam) });
   res.cookies.set(SESSION_COOKIE, session, { httpOnly: true, secure: base.startsWith("https://"), sameSite: "lax", path: "/", maxAge: SESSION_COOKIE_MAX_AGE_S });
+  // Remember this browser came from Telegram, so signed-out screens offer Telegram (not WhatsApp).
+  res.cookies.set(CHANNEL_COOKIE, "tg", { httpOnly: false, secure: base.startsWith("https://"), sameSite: "lax", path: "/", maxAge: 365 * 86400 });
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

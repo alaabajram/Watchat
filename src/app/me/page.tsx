@@ -20,6 +20,7 @@ import { db } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
+import { botLink, visitorChannel } from "@/lib/telegram/channel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Watchat · حسابي" };
@@ -31,7 +32,8 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
     const locale = (await searchParams).lang === "en" ? "en" : "ar";
     const t = webCopy(locale);
     const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}` : null;
-    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/me" />;
+    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
+    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/me" telegram={tg} />;
   }
 
   const locale = viewer.uiLocale;

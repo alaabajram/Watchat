@@ -6,6 +6,7 @@
 import { Splash } from "@/components/brand/Splash";
 import { env } from "@/lib/env";
 import { webCopy } from "@/lib/web-copy";
+import { botLink, visitorChannel } from "@/lib/telegram/channel";
 
 export const dynamic = "force-dynamic";
 
@@ -18,5 +19,7 @@ export default async function ContinuePage({ searchParams }: { searchParams: Pro
   const message = code ? `شاهد ${code}${ep ? ` ${ep}` : ""}` : "LINK";
   const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(message)}` : null;
   const path = code ? `/continue?s=${encodeURIComponent(code)}${ep ? `&e=${ep}` : ""}` : "/continue";
-  return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.continueBody : t.continueManual(message)} path={path} />;
+  // From Telegram: sign in with Telegram and land straight on the episode (or open the bot at that series).
+  const tg = (await visitorChannel()) === "telegram" ? { href: await botLink(code), to: code ? `/watch/${code}/${ep ?? 1}` : "/" } : null;
+  return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.continueBody : t.continueManual(message)} path={path} telegram={tg} />;
 }

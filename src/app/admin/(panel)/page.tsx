@@ -26,6 +26,8 @@ type SP = { range?: string; from?: string; to?: string; days?: string; series?: 
 const fmt = (n: number) => n.toLocaleString("en-US");
 const pct = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "—");
 
+const CHANNEL_COLOR = { whatsapp: "#25a35a", telegram: "#2481CC" } as const;
+
 export default async function Dashboard({ searchParams }: { searchParams: Promise<SP> }) {
   const admin = await requireAdmin("dashboard");
   const sp = await searchParams;
@@ -35,12 +37,16 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const from = range.from.toISOString();
   const to = range.to.toISOString();
 
-  const [{ data: funnel }, { data: seriesList }, { data: metricsRows }, { data: msgs }] = await Promise.all([
+  const [{ data: funnel }, { data: seriesList }, { data: metricsRows }, { data: msgs }, { data: channelRows }] = await Promise.all([
     db().rpc("admin_funnel_range", { p_tenant: admin.tenantId, p_from: from, p_to: to, p_series: series, p_source: source }),
     db().from("series").select("id, code, title_en").eq("tenant_id", admin.tenantId).order("created_at"),
     db().rpc("admin_dashboard_metrics", { p_tenant: admin.tenantId, p_from: from, p_to: to, p_series: series, p_source: source }),
     db().from("wa_messages").select("category, status").eq("direction", "out").gte("created_at", from).lt("created_at", to),
+    db().rpc("admin_channel_split", { p_tenant: admin.tenantId, p_from: from, p_to: to }),
   ]);
+  type ChannelRow = { channel: "whatsapp" | "telegram"; total_users: number; new_users: number; active_users: number; paying_users: number; revenue: Record<string, number> };
+  const channels = ((channelRows ?? []) as ChannelRow[]).map((c) => ({ ...c, total: Number(c.total_users) }));
+  const channelTotal = channels.reduce((n, c) => n + c.total, 0);
   const m = ((metricsRows ?? []) as { total_users: number; new_users: number; active_users: number; paying_users: number; revenue: Record<string, number> }[])[0] ?? {
     total_users: 0,
     new_users: 0,
@@ -164,6 +170,54 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </span>
         </div>
       </div>
+
+      {channels.length > 0 && (
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>
+            Users by chat app <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>· WhatsApp vs Telegram, all series and sources</span>
+          </h2>
+          <div aria-hidden="true" style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: "#f4f2ee", marginBottom: 14 }}>
+            {channels.map((c) => (
+              <span key={c.channel} style={{ width: `${channelTotal ? (c.total / channelTotal) * 100 : 0}%`, background: CHANNEL_COLOR[c.channel] }} />
+            ))}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Chat app</th>
+                <th>Total users</th>
+                <th>Share</th>
+                <th>New in period</th>
+                <th>Active in period</th>
+                <th>Paying in period</th>
+                <th>Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {channels.map((c) => (
+                <tr key={c.channel}>
+                  <td>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "50%", background: CHANNEL_COLOR[c.channel] }} />
+                      {c.channel === "telegram" ? "Telegram" : "WhatsApp"}
+                    </span>
+                  </td>
+                  <td>{fmt(c.total)}</td>
+                  <td>{pct(c.total, channelTotal)}</td>
+                  <td>+{fmt(Number(c.new_users))}</td>
+                  <td>{fmt(Number(c.active_users))}</td>
+                  <td>{fmt(Number(c.paying_users))}</td>
+                  <td>
+                    {Object.entries(c.revenue ?? {})
+                      .map(([cur, v]) => `${cur} ${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+                      .join(" · ") || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {meter && <SpendMeter m={meter} compact />}
 

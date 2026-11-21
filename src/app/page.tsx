@@ -12,6 +12,7 @@ import { getSessionViewer } from "@/lib/session";
 import { DEFAULT_SITE } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import { getBalance } from "@/lib/wallet";
+import { botLink, visitorChannel } from "@/lib/telegram/channel";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   if (!viewer) {
     const locale = params.lang === "en" ? "en" : "ar";
     const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(locale === "en" ? "START" : "ابدأ")}` : null;
-    return <Splash locale={locale} waHref={wa} />;
+    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
+    return <Splash locale={locale} waHref={wa} telegram={tg} />;
   }
 
   const [{ catalogue, watching }, balance, site] = await Promise.all([getHome(viewer.id), getBalance(viewer.id), getSiteSafe()]);
