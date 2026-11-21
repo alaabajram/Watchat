@@ -48,7 +48,7 @@ export function Splash({ locale, waHref, cta, hint, path = "/" }: { locale: Loca
             {cta ?? t.startInWhatsApp}
           </a>
         )}
-        <p style={{ fontSize: 13, color: "var(--wc-muted)", textAlign: "center" }}>{hint ?? t.splashHint}</p>
+        <p style={{ fontSize: 15, lineHeight: 1.9, color: "#4e4943", textAlign: "start", whiteSpace: "pre-line", background: "var(--wc-bg)", borderRadius: 16, padding: "12px 16px" }}>{hint ?? t.splashHint}</p>
       </div>
     </main>
     </div>
