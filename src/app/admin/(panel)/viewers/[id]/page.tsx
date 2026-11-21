@@ -1,5 +1,6 @@
 // Viewer detail for support: progress, wallet, purchases, consent history, devices, messages.
 
+import { adminMoney } from "@/lib/economy/pricing";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
@@ -166,7 +167,7 @@ export default async function ViewerDetail({ params, searchParams }: { params: P
                   <td>{fmt.format(new Date(o.created_at))}</td>
                   <td>{o.item_type}</td>
                   <td>
-                    {o.currency} {Number(o.amount).toFixed(2)}
+                    {adminMoney(o.amount, o.currency)}
                   </td>
                   <td>
                     <span className={`badge ${o.status === "paid" ? "sent" : o.status}`}>{o.status}</span>

@@ -1,6 +1,7 @@
 // Orders & payments. While online payments are off, viewers request packs and get a reference (WC-XXXXX);
 // the team collects cash or a transfer, then marks the order paid here — only then are coins added.
 
+import { adminMoney } from "@/lib/economy/pricing";
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
@@ -71,7 +72,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
       <h2>
         Waiting for payment ({(pending ?? []).length})
-        {Object.keys(totals).length > 0 && <span className="muted"> · {Object.entries(totals).map(([c, v]) => `${c} ${v.toFixed(2)}`).join(" · ")}</span>}
+        {Object.keys(totals).length > 0 && <span className="muted"> · {Object.entries(totals).map(([c, v]) => adminMoney(v, c)).join(" · ")}</span>}
       </h2>
       <table className="card">
         <thead>
@@ -95,7 +96,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               </td>
               <td>{o.note ?? o.item_type}</td>
               <td>
-                {o.currency} {Number(o.amount).toFixed(2)}
+                {adminMoney(o.amount, o.currency)}
               </td>
               <td>{fmt.format(new Date(o.created_at))}</td>
               <td>
@@ -147,7 +148,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               </td>
               <td>{o.note ?? o.item_type}</td>
               <td>
-                {o.currency === "XTR" ? `${Number(o.amount).toLocaleString("en-US")} ⭐` : `${o.currency} ${Number(o.amount).toFixed(2)}`}
+                {adminMoney(o.amount, o.currency)}
               </td>
               <td>{o.gateway === "telegram" ? "Telegram Stars" : o.gateway}</td>
               <td>

@@ -2,6 +2,7 @@
 // bonus Ping, free-Ping codes, with audience, countries, dates and limits), invites (double-sided referrals) and
 // partners (affiliate links with commission on paid orders).
 
+import { adminMoney } from "@/lib/economy/pricing";
 import { Flash } from "@/components/admin/Flash";
 import { can, requireAdmin } from "@/lib/admin/auth";
 import { countryName } from "@/lib/economy/countries";
@@ -234,7 +235,7 @@ function moneyByCurrency(rows: { currency: string; commission: number | string; 
   const by: Record<string, number> = {};
   for (const r of rows) by[r.currency] = (by[r.currency] ?? 0) + Number(r[field]);
   return Object.entries(by)
-    .map(([c, v]) => `${Math.round(v * 100) / 100} ${c}`)
+    .map(([c, v]) => adminMoney(v, c))
     .join(" · ");
 }
 
