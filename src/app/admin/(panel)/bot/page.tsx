@@ -1,11 +1,12 @@
-// Shared replies: bot texts used outside series flows (menu, language change, alerts, links, support,
-// data deletion), on a canvas that links what a viewer sends to the reply. Series chats are edited in Series flows.
+// Shared replies: what the bot answers outside a series' chat (menu, links, my account, STOP, …), built on the
+// flow builder canvas like series and sequence flows. Series chats are edited in Series flows.
 
 import { Flash } from "@/components/admin/Flash";
 import { FlowTabs } from "@/components/admin/FlowTabs";
 import { requireAdmin } from "@/lib/admin/auth";
-import { SharedRepliesCanvas } from "@/components/flow/SharedRepliesCanvas";
-import { db } from "@/lib/supabase";
+import { FixedTexts } from "@/components/flow/FixedTexts";
+import { FlowBuilder } from "@/components/flow/FlowBuilder";
+import { loadSharedBuilder } from "@/lib/flows/shared-store";
 import { siteUrl } from "@/lib/site/store";
 import { getBusinessProfile, type BusinessProfile } from "@/lib/whatsapp/profile";
 import { setAccountLinkOnProfileAction } from "../../bot-actions";
@@ -15,8 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function SharedRepliesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("bot");
   const sp = await searchParams;
-  const { data: rows } = await db().from("bot_messages").select("key, lang, body").eq("tenant_id", admin.tenantId).is("series_id", null);
-  const current = Object.fromEntries((rows ?? []).map((r) => [`${r.key}.${r.lang}`, r.body as string]));
+  const builder = await loadSharedBuilder(admin.tenantId);
   const accountUrl = `${await siteUrl()}/me`;
   // The profile box is a nice-to-have: whatever Meta does, the replies below must still load.
   let profile: BusinessProfile | string;
@@ -31,11 +31,8 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
     <>
       <FlowTabs current="replies" />
       <Flash ok={sp.ok} err={sp.err} />
-      <p className="muted" style={{ margin: "-6px 0 12px" }}>
-        What the bot answers outside a series&apos; own chat, the same for every series. Each green bubble is what a viewer sends; the card next to it is
-        the reply. Click a card to edit it.
-      </p>
-      <SharedRepliesCanvas current={current} />
+      <FlowBuilder {...builder} canPublish />
+      <FixedTexts keys={builder.shared.fixedTexts} saved={builder.shared.saved} />
 
       <details className="card" style={{ marginTop: 16 }}>
         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 16 }}>
@@ -58,7 +55,7 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
           <button type="submit">{onProfile ? "Set it again" : "Add the account link to the profile"}</button>
         </form>
         <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
-          The first link each viewer gets also carries a one-time tip: “📌 Pin this message” plus the account address (the Pin tip card above).
+          The first link each viewer gets also carries a one-time tip: “📌 Pin this message” plus the account address (edit it under “Texts the bot sends by itself”).
         </p>
       </details>
     </>

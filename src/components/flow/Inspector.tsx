@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { newId } from "@/lib/flows/defaults";
 import type { Asset, TemplateInfo } from "@/lib/flows/store";
-import { CARD_LABELS, type ArtSlot, type Bi, type FlowButton, type MediaRef, type NodeData, SEQUENCE_TRIGGERS } from "@/lib/flows/types";
+import { CARD_LABELS, normaliseWord, SHARED_ACTIONS, type ArtSlot, type Bi, type FlowButton, type ListRow, type MediaRef, type NodeData, SEQUENCE_TRIGGERS } from "@/lib/flows/types";
 import type { PreviewSeries } from "@/lib/flows/preview";
 import { CARD_STYLE } from "./cards";
 import { EmojiField } from "./EmojiField";
@@ -14,7 +14,7 @@ import { ACCEPT, uploadAsset } from "./upload";
 
 type Props = {
   /** Which kind of flow the card is in: sequence flows offer their own checks and the Trigger card. */
-  mode?: "series" | "sequence";
+  mode?: "series" | "sequence" | "shared";
   seriesCodes?: string[];
   seriesId: string;
   nodeId: string;
@@ -195,18 +195,21 @@ export function Inspector(p: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ background: style.color, color: "#fff", borderRadius: 6, padding: "2px 8px" }}>
-          {style.icon} {CARD_LABELS[d.kind]}
-        </span>
-        <span style={{ flex: 1 }} />
-        <button type="button" className="secondary" style={{ padding: "2px 8px" }} onClick={p.onClose}>
-          Close
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <span style={{ width: 34, height: 34, flex: "none", borderRadius: 11, background: `${style.color}1f`, color: style.color, display: "grid", placeItems: "center", fontSize: 17 }}>{style.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: "#6b6474", textTransform: "uppercase" }}>Editing</div>
+          <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.2 }} dir="auto">
+            {p.name || CARD_LABELS[d.kind].split(":")[0]}
+          </div>
+        </div>
+        <button type="button" aria-label="Close" onClick={p.onClose} style={{ background: "#f4f2ee", color: "#1f1b24", borderRadius: 10, padding: "4px 10px", boxShadow: "none" }}>
+          ✕
         </button>
       </div>
-      <p className="muted" style={{ margin: 0, fontSize: 12 }}>{style.help}</p>
+      <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>{style.help}</p>
       {d.kind !== "start" && (
-        <label style={{ fontSize: 12 }}>
+        <label style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 3 }}>
           Card name (optional, shown on the canvas)
           <input value={p.name} maxLength={60} dir="auto" placeholder={`e.g. ${d.kind === "message" ? "Hook after episode 2" : d.kind === "wait" ? "Wait 2 hours" : "Cliffhanger link"}`} onChange={(e) => p.onRename(e.target.value)} />
         </label>
@@ -219,7 +222,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "message" && (
         <>
-          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
+          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
           <BiText label={d.media && !d.buttons.length ? "Caption" : "Message"} value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
           <Buttons value={d.buttons} onChange={(buttons) => set({ buttons })} />
         </>
@@ -227,7 +230,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "language" && (
         <>
-          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
+          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
           <Text label="Message (everyone sees this one; write it in Arabic and English)" value={d.body.ar} onChange={(ar) => set({ body: { ar, en: ar } })} max={1024} rows={5} dir="rtl" />
           <Text label="Arabic button" value={d.btnAr} onChange={(btnAr) => set({ btnAr })} max={20} rows={1} dir="rtl" />
           <Text label="English subtitles button" value={d.btnEn} onChange={(btnEn) => set({ btnEn })} max={20} rows={1} dir="ltr" />
@@ -262,6 +265,12 @@ export function Inspector(p: Props) {
 
       {d.kind === "link" && (
         <>
+          {p.mode === "shared" ? (
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+              Opens the viewer&apos;s current series where they left off. Put a Condition “Following a series?” before it: viewers with no series yet get the
+              account link instead.
+            </p>
+          ) : (
           <label style={{ fontSize: 12 }}>
             Opens{" "}
             <select value={String(d.episode)} onChange={(e) => set({ episode: e.target.value === "resume" ? "resume" : Number(e.target.value) })}>
@@ -273,14 +282,15 @@ export function Inspector(p: Props) {
               ))}
             </select>
           </label>
-          {d.episode !== "resume" && (
+          )}
+          {d.episode !== "resume" && p.mode !== "shared" && (
             <label className="inline" style={{ fontSize: 12 }}>
               <input type="checkbox" checked={d.resumeIfFurther} onChange={(e) => set({ resumeIfFurther: e.target.checked })} /> Open where the viewer left off if
               they&apos;re further ahead
             </label>
           )}
-          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} imageOnly />
-          <BiText label="Message ({next} = episode)" value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
+          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} imageOnly />}
+          <BiText label="Message ({title} = series, {n} = episode)" value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
           <BiText label="Button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
         </>
       )}
@@ -312,11 +322,18 @@ export function Inspector(p: Props) {
                       ? { check: "reached_episode", episode: 4 }
                       : check === "watched_within"
                         ? { check: "watched_within", hours: 2 }
-                        : { check: check as "opted_in" | "language_en" | "paid" | "started" | "came_back" | "paid_since" },
+                        : { check: check as "opted_in" | "language_en" | "paid" | "started" | "came_back" | "paid_since" | "has_series" },
                 });
               }}
             >
-              {(p.mode === "sequence"
+              {(p.mode === "shared"
+                ? [
+                    ["has_series", "Following a series (has a place to continue)"],
+                    ["opted_in", "Turned on alerts"],
+                    ["language_en", "Watches with English subtitles"],
+                    ["paid", "Has paid before"],
+                  ]
+                : p.mode === "sequence"
                 ? [
                     ["came_back", "Came back since the sequence started (chat or web)"],
                     ["paid_since", "Paid since the sequence started"],
@@ -364,7 +381,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "choice" && (
         <>
-          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
+          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
           <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
           <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
             <legend style={{ fontSize: 12 }}>Series ({d.options.length}/3) · a tap starts that series&apos; own flow</legend>
@@ -453,6 +470,42 @@ export function Inspector(p: Props) {
         </>
       )}
 
+      {d.kind === "keyword" && <KeywordEditor words={d.words} anythingElse={d.anythingElse} onChange={(patch) => set(patch)} />}
+
+      {d.kind === "list" && (
+        <>
+          <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
+          <BiText label="Menu button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
+          <BiText label="List heading" value={d.section} onChange={(section) => set({ section })} max={24} rows={1} />
+          <Rows value={d.rows} onChange={(rows) => set({ rows })} />
+        </>
+      )}
+
+      {d.kind === "account" && (
+        <>
+          <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
+          <BiText label="Button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            The button is the viewer&apos;s own sign-in link: it opens their account page on this phone. The very first link a viewer gets also carries the pin tip
+            (edit it under “Texts the bot sends by itself”).
+          </p>
+        </>
+      )}
+
+      {d.kind === "action" && (
+        <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+          {SHARED_ACTIONS.map((a) => (
+            <label key={a.value} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 12, background: d.action === a.value ? "#e9fbf3" : "#f7f5f2", cursor: "pointer", fontSize: 13 }}>
+              <input type="radio" name="action" checked={d.action === a.value} onChange={() => set({ action: a.value })} style={{ marginTop: 3 }} />
+              <span>
+                <strong>{a.label}</strong>
+                <span className="muted" style={{ display: "block", fontSize: 12 }}>{a.help}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
       {d.kind === "template" && (
         <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
       )}
@@ -483,5 +536,78 @@ function WaitField({ minutes, onChange }: { minutes: number; onChange: (m: numbe
         <option value={1440}>days</option>
       </select>
     </label>
+  );
+}
+
+function KeywordEditor({ words, anythingElse, onChange }: { words: string[]; anythingElse: boolean; onChange: (p: { words?: string[]; anythingElse?: boolean }) => void }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const parts = draft.split(/[,،\n]/).map((w) => w.trim()).filter(Boolean);
+    const next = [...words];
+    for (const w of parts) if (!next.some((x) => normaliseWord(x) === normaliseWord(w))) next.push(w);
+    onChange({ words: next.slice(0, 30) });
+    setDraft("");
+  };
+  return (
+    <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+      <legend style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Words the viewer sends</legend>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {words.map((w) => (
+          <span key={w} dir="auto" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#d9fdd3", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: 13, fontWeight: 600 }}>
+            {w}
+            <button type="button" aria-label={`Remove ${w}`} onClick={() => onChange({ words: words.filter((x) => x !== w) })} style={{ background: "transparent", color: "#1f1b24", padding: "0 6px", boxShadow: "none", fontSize: 12 }}>
+              ✕
+            </button>
+          </span>
+        ))}
+        {!words.length && <span className="muted" style={{ fontSize: 12 }}>No words yet.</span>}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          value={draft}
+          dir="auto"
+          placeholder="e.g. عروض, OFFERS"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          style={{ flex: 1 }}
+        />
+        <button type="button" onClick={add} disabled={!draft.trim()}>
+          Add
+        </button>
+      </div>
+      <span className="muted" style={{ fontSize: 11 }}>Separate several with commas. Capitals, spaces and punctuation don&apos;t matter. Series codes always start their series.</span>
+      <label className="inline" style={{ fontSize: 12, alignItems: "flex-start" }}>
+        <input type="checkbox" checked={anythingElse} onChange={(e) => onChange({ anythingElse: e.target.checked })} /> Also answer anything else (messages no other card
+        matches). Viewers with no series yet first get “No series yet”.
+      </label>
+    </fieldset>
+  );
+}
+
+function Rows({ value, onChange }: { value: ListRow[]; onChange: (r: ListRow[]) => void }) {
+  return (
+    <fieldset style={{ border: "1px solid #ece8e2", borderRadius: 12, padding: 10 }}>
+      <legend style={{ fontSize: 12 }}>Rows ({value.length}/10) · each one leads to its own card</legend>
+      {value.map((r, i) => (
+        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) auto", gap: 4, marginBottom: 4 }}>
+          <EmojiField compact dir="rtl" placeholder="عربي" maxLength={40} value={r.title.ar} invalid={count(r.title.ar) > 24} onChange={(v) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, ar: v } } : x)))} />
+          <EmojiField compact placeholder="English" maxLength={40} value={r.title.en} invalid={count(r.title.en) > 24} onChange={(v) => onChange(value.map((x, j) => (j === i ? { ...x, title: { ...x.title, en: v } } : x)))} />
+          <button type="button" className="secondary" style={{ padding: "0 8px" }} onClick={() => onChange(value.filter((_, j) => j !== i))} title="Remove row">
+            ✕
+          </button>
+        </div>
+      ))}
+      {value.length < 10 && (
+        <button type="button" className="secondary" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => onChange([...value, { id: newId(), title: { ar: "", en: "" } }])}>
+          + Add row
+        </button>
+      )}
+      <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Max 24 characters each.</div>
+    </fieldset>
   );
 }

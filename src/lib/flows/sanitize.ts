@@ -1,7 +1,7 @@
 // Rebuilds a flow from untrusted JSON (the browser), keeping only known fields with safe sizes.
 // Anything unrecognised is dropped; the result is always a well-formed FlowGraph or null.
 
-import type { Bi, Condition, FlowButton, FlowEdge, FlowGraph, FlowNode, MediaRef, NodeData } from "./types";
+import type { Bi, Condition, FlowButton, FlowEdge, FlowGraph, FlowNode, ListRow, MediaRef, NodeData } from "./types";
 
 const MAX_NODES = 200;
 const MAX_EDGES = 600;
@@ -40,11 +40,29 @@ function buttons(v: unknown): FlowButton[] {
   return out;
 }
 
+function rows(v: unknown): ListRow[] {
+  const out: ListRow[] = [];
+  for (const r of Array.isArray(v) ? v.slice(0, 10) : []) {
+    const rid = id(obj(r).id);
+    if (rid && !out.some((x) => x.id === rid)) out.push({ id: rid, title: bi(obj(r).title, 40) });
+  }
+  return out;
+}
+
+function words(v: unknown): string[] {
+  const out: string[] = [];
+  for (const w of Array.isArray(v) ? v.slice(0, 30) : []) {
+    const t = str(w, 40).trim();
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
 function condition(v: unknown): Condition {
   const c = obj(v);
   if (c.check === "reached_episode") return { check: "reached_episode", episode: num(c.episode, 1, 999, 1) };
   if (c.check === "watched_within") return { check: "watched_within", hours: num(c.hours, 1, 720, 24) };
-  if (c.check === "language_en" || c.check === "paid" || c.check === "started" || c.check === "came_back" || c.check === "paid_since") return { check: c.check };
+  if (c.check === "language_en" || c.check === "paid" || c.check === "started" || c.check === "came_back" || c.check === "paid_since" || c.check === "has_series") return { check: c.check };
   return { check: "opted_in" };
 }
 
@@ -89,6 +107,14 @@ function data(v: unknown): NodeData | null {
     }
     case "end":
       return { kind: "end" };
+    case "keyword":
+      return { kind: "keyword", words: words(d.words), anythingElse: bool(d.anythingElse, false) };
+    case "list":
+      return { kind: "list", body: bi(d.body), button: bi(d.button, 40), section: bi(d.section, 40), rows: rows(d.rows) };
+    case "account":
+      return { kind: "account", body: bi(d.body), button: bi(d.button, 40) };
+    case "action":
+      return { kind: "action", action: d.action === "opt_in" || d.action === "delete_data" ? d.action : "opt_out" };
     default:
       return null;
   }
@@ -127,7 +153,7 @@ export function sanitizeGraph(input: unknown): FlowGraph | null {
 export function sanitizeBlock(input: unknown): FlowGraph | null {
   const g = sanitizeGraph(input);
   if (!g) return null;
-  const nodes = g.nodes.filter((n) => n.data.kind !== "start" && n.data.kind !== "web" && n.data.kind !== "trigger").slice(0, 30);
+  const nodes = g.nodes.filter((n) => n.data.kind !== "start" && n.data.kind !== "web" && n.data.kind !== "trigger" && n.data.kind !== "keyword").slice(0, 30);
   if (!nodes.length) return null;
   const ids = new Set(nodes.map((n) => n.id));
   const minX = Math.min(...nodes.map((n) => n.position.x));

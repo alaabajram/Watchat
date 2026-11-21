@@ -1,5 +1,6 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import { publishedSharedFlow } from "../flows/shared-store";
 import { siteUrl } from "../site/store";
 import { ensurePublishedFlow } from "../flows/standard";
 import type { SeriesProgress } from "../flows/engine";
@@ -243,6 +244,10 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       await db().from("opt_ins").insert({ viewer_id: viewerId, topic: "new_episodes", status, source });
     },
 
+    async getSharedFlow() {
+      return publishedSharedFlow(await currentTenantId());
+    },
+
     async getCopyOverrides(seriesId: string | null, lang: CopyLang): Promise<CopyOverrides> {
       const tenantId = await currentTenantId();
       let query = db().from("bot_messages").select("key, body, series_id").eq("tenant_id", tenantId).eq("lang", lang);
@@ -391,6 +396,8 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
         case "came_back":
         case "paid_since":
           return false; // sequence flows only (lib/messaging/sequence-flows)
+        case "has_series":
+          return true; // a series flow always has its series (Shared replies answer it in sharedEnvFor)
         case "reached_episode": {
           const { count } = await db()
             .from("progress")

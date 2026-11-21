@@ -18,10 +18,12 @@ type Props = {
   code: string;
   selectedNodeId: string | null;
   onSelectNode: (id: string) => void;
+  /** Shared replies: the preview starts at a “Viewer sends” card the team picks. */
+  shared?: boolean;
 };
 
-async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string, path: Tap[], entry: "chat" | "web") {
-  let s = await previewStart(g, series, viewer, templates, code, entry);
+async function replay(g: FlowGraph, series: PreviewSeries, viewer: SampleViewer, templates: PreviewTemplates, code: string, path: Tap[], entry: "chat" | "web", startAt?: string) {
+  let s = await previewStart(g, series, viewer, templates, code, entry, startAt);
   const kept: Tap[] = [];
   for (const t of path) {
     if (s.result.status === "wait") s = await previewSkipWait(g, s);
@@ -80,12 +82,33 @@ function Bubble({ item, current, selected, onTap, onSelect, lang }: { item: Extr
         )}
       {m.kind === "cta_url" && <div style={{ borderTop: "1px solid #eef0f2", padding: 7, color: "#027eb5", textAlign: "center", fontSize: 14 }}>🔗 {m.buttonText}</div>}
       {m.kind === "list" && <div style={{ borderTop: "1px solid #eef0f2", padding: 7, color: "#027eb5", textAlign: "center", fontSize: 14 }}>☰ {m.buttonText}</div>}
+      {m.kind === "list" &&
+        m.sections.flatMap((sec) => sec.rows).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            disabled={!current}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTap(r.id, r.title);
+            }}
+            dir={lang === "ar" ? "rtl" : "ltr"}
+            style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", background: "#f7f5f2", border: 0, borderTop: "1px solid #eef0f2", padding: "6px 10px", color: current ? "#111" : "#8aa4b3", cursor: current ? "pointer" : "default", fontSize: 13, textAlign: "start" }}
+          >
+            <span style={{ width: 11, height: 11, borderRadius: 6, border: "2px solid #c5cbd0", flex: "none" }} />
+            {r.title}
+          </button>
+        ))}
     </div>
   );
 }
 
 export function ChatPreview(p: Props) {
-  const [viewer, setViewer] = useState<SampleViewer>({ language: null, optIn: null, paid: false, reachedEpisode: 0, withinWindow: true, watchedRecently: false });
+  const [viewer, setViewer] = useState<SampleViewer>({ language: null, optIn: null, paid: false, reachedEpisode: 0, withinWindow: true, watchedRecently: false, hasSeries: false });
+  const keywords = p.shared ? p.graph.nodes.filter((n) => n.data.kind === "keyword") : [];
+  const [startPick, setStartPick] = useState<string | null>(null);
+  const startAt = p.shared ? (keywords.find((k) => k.id === startPick) ?? keywords[0])?.id : undefined;
+  const kwLabel = (n: (typeof keywords)[number]) => (n.data.kind === "keyword" ? (n.data.anythingElse ? "Anything else" : n.data.words.slice(0, 3).join(" · ") || "(no words yet)") : "");
   const [entry, setEntry] = useState<"chat" | "web">("chat");
   const hasWeb = p.graph.nodes.some((n) => n.data.kind === "web");
   const [path, setPath] = useState<Tap[]>([]);
@@ -97,7 +120,7 @@ export function ChatPreview(p: Props) {
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(async () => {
-      const { s, kept } = await replay(graphRef.current, p.series, viewer, p.templates, p.code, path, hasWeb ? entry : "chat");
+      const { s, kept } = await replay(graphRef.current, p.series, viewer, p.templates, p.code, path, hasWeb ? entry : "chat", startAt);
       if (cancelled) return;
       setSession(s);
       if (kept.length !== path.length) setPath(kept);
@@ -107,7 +130,7 @@ export function ChatPreview(p: Props) {
       clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.logicKey, viewer, path, p.series, p.templates, p.code, entry, hasWeb]);
+  }, [p.logicKey, viewer, path, p.series, p.templates, p.code, entry, hasWeb, startAt]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -130,6 +153,29 @@ export function ChatPreview(p: Props) {
             ↺ Restart
           </button>
         </div>
+        {p.shared ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <select value={startAt ?? ""} onChange={(e) => (setStartPick(e.target.value), setPath([]))} style={{ fontSize: 12, maxWidth: "100%" }} aria-label="Viewer sends">
+              {keywords.map((k) => (
+                <option key={k.id} value={k.id}>
+                  Viewer sends: {kwLabel(k)}
+                </option>
+              ))}
+            </select>
+            <select value={viewer.language ?? ""} onChange={(e) => (setViewer({ ...viewer, language: (e.target.value || null) as Lang | null }), setPath([]))} style={{ fontSize: 12 }}>
+              <option value="">Arabic viewer</option>
+              <option value="en">English-subtitles viewer</option>
+            </select>
+            <select value={viewer.optIn ?? ""} onChange={(e) => setViewer({ ...viewer, optIn: (e.target.value || null) as SampleViewer["optIn"] })} style={{ fontSize: 12 }}>
+              <option value="">Alerts: not asked</option>
+              <option value="in">Alerts: on</option>
+              <option value="out">Alerts: off</option>
+            </select>
+            <label className="inline" title="The viewer is following a series (has a place to continue from)">
+              <input type="checkbox" checked={Boolean(viewer.hasSeries)} onChange={(e) => setViewer({ ...viewer, hasSeries: e.target.checked })} /> Following a series
+            </label>
+          </div>
+        ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {hasWeb && (
             <select value={entry} onChange={(e) => (setEntry(e.target.value as "chat" | "web"), setPath([]))} style={{ fontSize: 12 }}>
@@ -161,9 +207,10 @@ export function ChatPreview(p: Props) {
             <input type="checkbox" checked={!viewer.withinWindow} onChange={(e) => setViewer({ ...viewer, withinWindow: !e.target.checked })} /> 24 h passed
           </label>
         </div>
+        )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", background: "#efeae2", padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ alignSelf: "center", background: "#fff8", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>Watchat · {p.code}</div>
+        <div style={{ alignSelf: "center", background: "#fff8", borderRadius: 6, padding: "2px 8px", fontSize: 11 }}>{p.shared ? "Watchat · Shared replies" : `Watchat · ${p.code}`}</div>
         {items.map((it, i) =>
           it.from === "viewer" ? (
             <div key={i} style={{ alignSelf: "flex-end", background: "#d9fdd3", borderRadius: 8, padding: "6px 9px", maxWidth: "80%", fontSize: 14 }} dir="auto">

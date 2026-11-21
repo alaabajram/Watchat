@@ -1,7 +1,7 @@
 // In-memory FlowEnv for the editor's live chat preview (and tests). Nothing is sent or saved.
 
 import type { OutMessage } from "../whatsapp/messages";
-import { answer, resumeAfterWait, startFlow, type FlowEnv, type RunResult } from "./engine";
+import { answer, resumeAfterWait, runFrom, startFlow, type FlowEnv, type RunResult } from "./engine";
 import { artUrl, metaVars, type SeriesMeta } from "./meta";
 import type { Condition, FlowGraph, Lang, MediaRef } from "./types";
 
@@ -28,7 +28,7 @@ export type PreviewTemplate = { approved: boolean; ar: { body: string; button: s
 export type PreviewTemplates = Record<string, PreviewTemplate>;
 
 /** reachedEpisode: furthest episode watched on the web. watchedRecently: watched on the web in the last hour. */
-export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean; watchedRecently?: boolean };
+export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean; watchedRecently?: boolean; hasSeries?: boolean };
 
 /** `items` is a fresh array after every step (handy for React state); the env writes to `sink`. */
 export type PreviewSession = {
@@ -113,6 +113,8 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
           return Boolean(state.watchedRecently);
         case "paid_since":
           return state.paid;
+        case "has_series":
+          return state.hasSeries ?? true;
       }
     },
     suggest: async () => {
@@ -126,6 +128,13 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
     canSendFreeform: () => state.withinWindow,
     track: async () => {},
     now: () => clock,
+    accountLink: async () => "https://watchat.pro/w/your-account-link",
+    action: async (a) => {
+      if (a === "opt_out" || a === "delete_data") state.optIn = "out";
+      if (a === "opt_in") state.optIn = "in";
+      const text = { opt_out: "⚙ Alerts turned off", opt_in: "⚙ Alerts turned on", delete_data: "⚙ Data deletion request logged for the team; alerts off" }[a];
+      sink.items.push({ from: "system", text });
+    },
   };
   // Waits are skipped in the preview; move the clock so resumeAt stays meaningful.
   (env as FlowEnv & { advance: (ms: number) => void }).advance = (ms) => {
@@ -157,7 +166,18 @@ export async function previewStart(
   templates: PreviewTemplates,
   code: string,
   entry: "chat" | "web" = "chat",
+  /** Shared replies: start at this “Viewer sends” card. */
+  startAt?: string,
 ): Promise<PreviewSession> {
+  const kw = startAt ? g.nodes.find((n) => n.id === startAt) : undefined;
+  if (kw && kw.data.kind === "keyword") {
+    const said = kw.data.words[0] ?? (kw.data.anythingElse ? "…" : "");
+    const sink = { items: [{ from: "viewer", text: said } as PreviewItem] };
+    const env = previewEnv(series, viewer, templates, sink);
+    const result = await runFrom(g, kw.id, env);
+    note(sink.items, result, g);
+    return { items: [...sink.items], result, env, sink };
+  }
   const trigger = g.nodes.find((n) => n.data.kind === "trigger");
   const first: PreviewItem =
     entry === "web"

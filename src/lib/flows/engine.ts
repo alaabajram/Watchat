@@ -3,7 +3,7 @@
 
 import { renderCopy, type CopyVars } from "../bot/copy";
 import type { OutMessage } from "../whatsapp/messages";
-import { AUTO_SERIES, SERIES_BUTTON_PREFIX, buttonReplyId, isFreeform, waitsForInput, type Condition, type FlowGraph, type FlowNode, type Lang, type MediaRef } from "./types";
+import { AUTO_SERIES, SERIES_BUTTON_PREFIX, buttonReplyId, isFreeform, waitsForInput, type Condition, type FlowGraph, type FlowNode, type Lang, type MediaRef, type SharedAction } from "./types";
 
 export interface FlowEnv {
   lang: Lang;
@@ -33,6 +33,12 @@ export interface FlowEnv {
   canSendFreeform(): boolean;
   track(name: string, data?: { episode?: number; props?: Record<string, unknown> }): Promise<void>;
   now(): number;
+  /** Shared flow: button / row ids carry this prefix scheme (default: series flow ids). */
+  replyId?(nodeId: string, port: string): string;
+  /** Shared flow: a personal sign-in link to the account page. */
+  accountLink?(): Promise<string>;
+  /** Shared flow: a built-in action. */
+  action?(a: SharedAction): Promise<void>;
 }
 
 export type SeriesProgress = { maxStarted: number; maxCompleted: number; lastWatchedAt: number | null };
@@ -83,11 +89,39 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
   const vars: CopyVars = { title: env.title(lang), total: env.totalEpisodes, ...env.meta(lang) };
   const next = (port = "next") => ({ next: nextOf(g, node.id, port) });
   const input = { next: null, stop: { status: "input", nodeId: node.id } as RunResult };
+  const rid = (port: string): string => (env.replyId ? env.replyId(node.id, port) : buttonReplyId(node.id, port));
 
   switch (d.kind) {
     case "start":
     case "web":
     case "trigger":
+    case "keyword":
+      return next();
+
+    case "list": {
+      if (!d.rows.length) return { next: null, stop: { status: "done" } };
+      await env.send(
+        {
+          kind: "list",
+          body: renderCopy(pick(d.body, lang), vars),
+          buttonText: pick(d.button, lang),
+          sections: [{ title: pick(d.section, lang), rows: d.rows.map((r) => ({ id: rid(r.id), title: pick(r.title, lang) })) }],
+        },
+        node.id,
+      );
+      return input;
+    }
+
+    case "account": {
+      const url = env.accountLink ? await env.accountLink() : null;
+      if (!url) return next();
+      await env.send({ kind: "cta_url", body: renderCopy(pick(d.body, lang), vars), buttonText: pick(d.button, lang), url }, node.id);
+      await env.track("link_sent", { props: { purpose: "account" } });
+      return next();
+    }
+
+    case "action":
+      if (env.action) await env.action(d.action);
       return next();
 
     case "end":
@@ -98,7 +132,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
       const h = await header(env, d.media);
       if (d.buttons.length) {
         await env.send(
-          { kind: "buttons", body, buttons: d.buttons.map((b) => ({ id: buttonReplyId(node.id, b.id), title: pick(b.title, lang) })), ...(h ? { header: h } : {}) },
+          { kind: "buttons", body, buttons: d.buttons.map((b) => ({ id: rid(b.id), title: pick(b.title, lang) })), ...(h ? { header: h } : {}) },
           node.id,
         );
         return input;
@@ -116,8 +150,8 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
           kind: "buttons",
           body: renderCopy(d.body.ar, { ...vars, title: `${env.title("ar")} · ${env.title("en")}` }),
           buttons: [
-            { id: buttonReplyId(node.id, "ar"), title: d.btnAr },
-            { id: buttonReplyId(node.id, "en"), title: d.btnEn },
+            { id: rid("ar"), title: d.btnAr },
+            { id: rid("en"), title: d.btnEn },
           ],
           ...(h ? { header: h } : {}),
         },
@@ -137,7 +171,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
           {
             kind: "buttons",
             body: caption,
-            buttons: d.buttons.map((b) => ({ id: buttonReplyId(node.id, b.id), title: pick(b.title, lang) })),
+            buttons: d.buttons.map((b) => ({ id: rid(b.id), title: pick(b.title, lang) })),
             ...(clip.url ? { header: { type: "video" as const, link: clip.url } } : {}),
           },
           node.id,
@@ -177,8 +211,8 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
           kind: "buttons",
           body: renderCopy(pick(d.body, lang), vars),
           buttons: [
-            { id: buttonReplyId(node.id, "yes"), title: pick(d.yes, lang) },
-            { id: buttonReplyId(node.id, "no"), title: pick(d.no, lang) },
+            { id: rid("yes"), title: pick(d.yes, lang) },
+            { id: rid("no"), title: pick(d.no, lang) },
           ],
         },
         node.id,

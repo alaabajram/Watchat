@@ -23,21 +23,25 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkFlow, deleteMyCard, loadVersion, publishFlow, renameMyCard, saveFlowDraft, saveMyCards, standardFlow } from "@/app/admin/flow-actions";
 import { checkSequence, publishSequence, saveSequenceDraft } from "@/app/admin/sequence-actions";
+import { checkShared, publishShared, saveSharedDraft, standardShared } from "@/app/admin/shared-flow-actions";
+import type { SharedInfo } from "@/lib/flows/shared-store";
 import type { SequenceInfo } from "@/lib/flows/sequence-store";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData, SavedCard } from "@/lib/flows/store";
 import { artUrl } from "@/lib/flows/meta";
 import { CARD_LABELS, portsOf, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
-import { validateFlow, validateSequence, type Issue } from "@/lib/flows/validate";
+import { validateFlow, validateSequence, validateShared, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
-import { ADDABLE, CARD_STYLE, newCard, SEQUENCE_ADDABLE } from "./cards";
+import { ADDABLE, CARD_STYLE, newCard, SEQUENCE_ADDABLE, SHARED_ADDABLE } from "./cards";
 import { CardNode, type CardFlowNode } from "./CardNode";
 import { ChatPreview } from "./ChatPreview";
 import { Inspector } from "./Inspector";
 import { MediaLibrary } from "./MediaLibrary";
 
 const nodeTypes = { card: CardNode };
-const edgeDefaults = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed, color: "#64748b" }, style: { stroke: "#64748b", strokeWidth: 2 } };
+const edgeDefaults = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed, color: "#9aa3ad" }, style: { stroke: "#9aa3ad", strokeWidth: 2 } };
+const PANEL = { background: "#fff", borderRadius: 22, boxShadow: "var(--a-shadow)" } as const;
+const MINT = "#31e5a0";
 
 function toFlow(g: FlowGraph): { nodes: CardFlowNode[]; edges: Edge[] } {
   return {
@@ -54,8 +58,11 @@ function toGraph(nodes: CardFlowNode[], edges: Edge[]): FlowGraph {
   };
 }
 
-/** A series flow, or (with `sequence`) a sequence flow: Trigger → Wait / Condition / Template → End. */
-type Props = BuilderData & { canPublish: boolean; sequence?: SequenceInfo };
+/**
+ * A series flow, or (with `sequence`) a sequence flow: Trigger → Wait / Condition / Template → End,
+ * or (with `shared`) the Shared replies flow: “Viewer sends” words → replies.
+ */
+type Props = BuilderData & { canPublish: boolean; sequence?: SequenceInfo; shared?: SharedInfo };
 
 export function FlowBuilder(props: Props) {
   return (
@@ -67,6 +74,8 @@ export function FlowBuilder(props: Props) {
 
 function Builder(props: Props) {
   const seq = props.sequence ?? null;
+  const shared = props.shared ?? null;
+  const mode: "series" | "sequence" | "shared" = seq ? "sequence" : shared ? "shared" : "series";
   const initial = useMemo(() => toFlow(props.draft), [props.draft]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CardFlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -108,7 +117,9 @@ function Builder(props: Props) {
     () =>
       seq
         ? validateSequence(graph, { templates: templates.map((t) => ({ name: t.name, approved: t.approved })), seriesCodes: seq.seriesCodes })
-        : validateFlow(graph, {
+        : shared
+          ? validateShared(graph, { seriesCodes: shared.seriesCodes })
+          : validateFlow(graph, {
             episodeCount: props.series.episodeCount,
             templates: templates.map((t) => ({ name: t.name, approved: t.approved })),
             seriesCodes: (props.series.others ?? []).map((o) => o.code),
@@ -168,14 +179,14 @@ function Builder(props: Props) {
     const t = setTimeout(async () => {
       setSaveState((s) => ({ ...s, busy: true }));
       const snapshot = fullKey;
-      const r = seq ? await saveSequenceDraft(seq.id, JSON.parse(snapshot)) : await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
+      const r = seq ? await saveSequenceDraft(seq.id, JSON.parse(snapshot)) : shared ? await saveSharedDraft(JSON.parse(snapshot)) : await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
       if (r.ok) {
         savedKey.current = snapshot;
         setSaveState({ at: r.savedAt, busy: false });
       } else setSaveState((s) => ({ ...s, busy: false, error: r.error }));
     }, 2000);
     return () => clearTimeout(t);
-  }, [fullKey, dirty, props.seriesId, seq]);
+  }, [fullKey, dirty, props.seriesId, seq, shared]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -204,7 +215,7 @@ function Builder(props: Props) {
     const id = newId();
     setNodes((ns) => [
       ...ns.map((n) => ({ ...n, selected: false })),
-      { id, type: "card", position: { x: center.x + (ns.length % 5) * 20, y: center.y + (ns.length % 5) * 20 }, selected: true, data: { card: newCard(kind, props.series.episodeCount), thumb: null, errors: 0, warnings: 0 } },
+      { id, type: "card", position: { x: center.x + (ns.length % 5) * 20, y: center.y + (ns.length % 5) * 20 }, selected: true, data: { card: newCard(kind, props.series.episodeCount, mode), thumb: null, errors: 0, warnings: 0 } },
     ]);
     setSelected(id);
   };
@@ -261,7 +272,7 @@ function Builder(props: Props) {
 
   async function onPublish() {
     setMessage(null);
-    const r = seq ? await publishSequence(seq.id, graph, note) : await publishFlow(props.seriesId, graph, note);
+    const r = seq ? await publishSequence(seq.id, graph, note) : shared ? await publishShared(graph, note) : await publishFlow(props.seriesId, graph, note);
     if (!r.ok) {
       setShowIssues(true);
       setMessage({ kind: "err", text: r.error ?? `Fix ${r.issues.filter((i) => i.level === "error").length} problem(s) before publishing.` });
@@ -276,7 +287,9 @@ function Builder(props: Props) {
       kind: "ok",
       text: seq
         ? `Published version ${r.version} and turned the sequence on. It starts viewers once every template in it is approved by Meta.`
-        : `Published version ${r.version}. New chats for ${props.code} follow this flow now.`,
+        : shared
+          ? `Published version ${r.version}. The bot answers with these replies now, for every series.`
+          : `Published version ${r.version}. New chats for ${props.code} follow this flow now.`,
     });
   }
 
@@ -284,29 +297,35 @@ function Builder(props: Props) {
   const publishedDiffers = published && JSON.stringify({ n: published.graph.nodes.map((n) => [n.id, n.data]), e: published.graph.edges }) !== logicKey;
 
   return (
-    <div className="flow-builder" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 24px)", gap: 8 }}>
+    <div className="flow-builder" style={{ display: "flex", flexDirection: "column", height: shared ? "calc(100vh - 150px)" : "calc(100vh - 24px)", minHeight: 560, gap: 12 }}>
       {/* Toolbar */}
-      <div className="card" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 12px", margin: 0 }}>
+      <div style={{ ...PANEL, borderRadius: 18, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "10px 14px" }}>
         {seq ? (
           <>
             <a href="/admin/sequences" className="secondary" style={{ fontSize: 13 }}>
               ← Sequences
             </a>
             <strong dir="auto">⚡ {seq.name}</strong>
-            <span className="muted" style={{ fontSize: 13 }}>
-              {published
-                ? `Version ${published.version} · ${seq.active ? "on" : "paused"}${publishedDiffers ? " · draft has unpublished changes" : ""} · ${seq.waiting} viewer(s) waiting`
-                : "Not published yet · publish to turn it on"}
-            </span>
+            <StatusPill
+              live={Boolean(published) && seq.active}
+              text={
+                published
+                  ? `v${published.version} · ${seq.active ? "on" : "paused"}${publishedDiffers ? " · unpublished changes" : ""} · ${seq.waiting} waiting`
+                  : "Not published · publish to turn it on"
+              }
+            />
+          </>
+        ) : shared ? (
+          <>
+            <strong>💬 Shared replies</strong>
+            <StatusPill live={Boolean(published)} text={published ? `Live · v${published.version}${publishedDiffers ? " · unpublished changes" : ""}` : "Standard replies are live · publish to use yours"} />
           </>
         ) : (
           <>
             <strong>
               {props.code} · {props.series.titleEn}
             </strong>
-            <span className="muted" style={{ fontSize: 13 }}>
-              {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published yet · new chats get the standard flow"}
-            </span>
+            <StatusPill live={Boolean(published)} text={published ? `Live · v${published.version}${publishedDiffers ? " · unpublished changes" : ""}` : "Not published · new chats get the standard flow"} />
           </>
         )}
         <span className="muted" style={{ fontSize: 13 }}>
@@ -327,7 +346,19 @@ function Builder(props: Props) {
         <button type="button" className="secondary" onClick={() => setShowIssues(!showIssues)} style={{ color: errors.length ? "#b91c1c" : undefined }}>
           {errors.length ? `⛔ ${errors.length}` : "✓"} {warnings.length ? `⚠️ ${warnings.length}` : ""} Checks
         </button>
-        {!seq && (
+        {shared && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={async () => {
+              if (!confirm("Replace the draft with the standard replies (menu, link, my account, STOP, data deletion) and your saved texts? Nothing changes for viewers until you publish.")) return;
+              replaceGraph(await standardShared());
+            }}
+          >
+            Start from the standard replies
+          </button>
+        )}
+        {mode === "series" && (
         <select
           value=""
           onChange={async (e) => {
@@ -357,31 +388,31 @@ function Builder(props: Props) {
         {props.canPublish && (
           <>
             <input placeholder="What changed? (optional)" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 180 }} />
-            <button type="button" onClick={onPublish} disabled={errors.length > 0} title={errors.length ? "Fix the problems first" : seq ? "Publish and turn the sequence on" : "Make this flow live"}>
+            <button type="button" onClick={onPublish} disabled={errors.length > 0} title={errors.length ? "Fix the problems first" : seq ? "Publish and turn the sequence on" : "Make this flow live"} style={{ background: MINT, color: "#0b2b1f", fontWeight: 700 }}>
               {seq ? "Publish & turn on" : "Publish"}
             </button>
           </>
         )}
       </div>
       {message && (
-        <div className="card" style={{ margin: 0, padding: "6px 12px", color: message.kind === "ok" ? "#166534" : "#b91c1c" }}>
+        <div role="status" style={{ ...PANEL, borderRadius: 14, padding: "8px 14px", color: message.kind === "ok" ? "#166534" : "#b42318", background: message.kind === "ok" ? "#e9fbf3" : "#fde4e1", boxShadow: "none" }}>
           {message.text}
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "250px 1fr 370px", gap: 8 }}>
+      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "250px minmax(0,1fr) 360px", gap: 12 }}>
         {/* Left: add cards / media library */}
-        <div className="card" style={{ margin: 0, padding: 8, overflowY: "auto" }}>
-          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            <button type="button" className={tab === "cards" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("cards")}>
+        <div style={{ ...PANEL, padding: 12, overflowY: "auto" }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 10, background: "#f4f2ee", borderRadius: 12, padding: 3 }}>
+            <button type="button" style={tabStyle(tab === "cards")} onClick={() => setTab("cards")}>
               Add card
             </button>
-            {!seq && (
+            {mode === "series" && (
             <>
-            <button type="button" className={tab === "media" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("media")}>
+            <button type="button" style={tabStyle(tab === "media")} onClick={() => setTab("media")}>
               Media ({assets.length})
             </button>
-            <button type="button" className={tab === "ai" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("ai")}>
+            <button type="button" style={tabStyle(tab === "ai")} onClick={() => setTab("ai")}>
               ✨ AI
             </button>
             </>
@@ -404,21 +435,27 @@ function Builder(props: Props) {
             />
           ) : tab === "cards" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {shared && (
+                <p className="muted" style={{ fontSize: 12, margin: "0 0 4px", lineHeight: 1.45 }}>
+                  What the bot answers outside a series&apos; own chat, the same for every series. Start each reply with a “Viewer sends” card (the words),
+                  then link the cards. Series codes always start their series; STOP always turns alerts off.
+                </p>
+              )}
               {seq && (
                 <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
                   Sequences message viewers first, so WhatsApp only allows approved templates. Create a template right on its card: it&apos;s saved to WhatsApp templates and sent to Meta for approval.
                 </p>
               )}
-              {(seq ? SEQUENCE_ADDABLE : ADDABLE).map((k) => (
+              {(seq ? SEQUENCE_ADDABLE : shared ? SHARED_ADDABLE : ADDABLE).map((k) => (
                 <button
                   key={k}
                   type="button"
-                  className="secondary"
                   onClick={() => addCard(k)}
                   title={CARD_STYLE[k].help}
-                  style={{ textAlign: "left", padding: "6px 8px", borderLeft: `4px solid ${CARD_STYLE[k].color}` }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", padding: "7px 8px", background: "#fff", color: "#1f1b24", border: "1px solid #ece8e2", borderRadius: 12, boxShadow: "none", fontWeight: 600, fontSize: 13 }}
                 >
-                  {CARD_STYLE[k].icon} {CARD_LABELS[k]}
+                  <span style={{ width: 26, height: 26, flex: "none", borderRadius: 9, background: `${CARD_STYLE[k].color}1f`, color: CARD_STYLE[k].color, display: "grid", placeItems: "center", fontSize: 13 }}>{CARD_STYLE[k].icon}</span>
+                  {CARD_LABELS[k].split(":")[0]}
                 </button>
               ))}
               <p className="muted" style={{ fontSize: 12 }}>
@@ -492,7 +529,7 @@ function Builder(props: Props) {
         </div>
 
         {/* Canvas */}
-        <div ref={canvas} className="card" style={{ margin: 0, padding: 0, position: "relative", overflow: "hidden" }}>
+        <div ref={canvas} style={{ ...PANEL, background: "#f7f5f2", padding: 0, position: "relative", overflow: "hidden" }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -508,15 +545,26 @@ function Builder(props: Props) {
             fitViewOptions={{ maxZoom: 1, padding: 0.1 }}
             minZoom={0.2}
           >
-            <Background gap={20} />
-            <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(n) => CARD_STYLE[(n.data as CardFlowNode["data"]).card.kind].color} />
+            <Background gap={22} size={1.6} color="#d9d3ca" />
+            <Controls showInteractive={false} position="bottom-left" />
+            <MiniMap
+              pannable
+              zoomable
+              position="bottom-right"
+              style={{ width: 168, height: 112, borderRadius: 14, overflow: "hidden", boxShadow: "var(--a-shadow)" }}
+              maskColor="#f7f5f2b0"
+              nodeBorderRadius={8}
+              nodeColor={(n) => {
+                const k = (n.data as CardFlowNode["data"]).card.kind;
+                return k === "keyword" || k === "start" || k === "web" || k === "trigger" ? "#bdf3c9" : `${CARD_STYLE[k].color}55`;
+              }}
+            />
           </ReactFlow>
 
           {selectedNode && (
-            <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 340, background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 12, overflowY: "auto", zIndex: 5, boxShadow: "-4px 0 12px #0001" }}>
+            <div style={{ position: "absolute", top: 12, right: 12, bottom: 12, width: 350, background: "#fff", borderRadius: 20, padding: 16, overflowY: "auto", zIndex: 5, boxShadow: "0 12px 40px #1f1b2426" }}>
               <Inspector
-                mode={seq ? "sequence" : "series"}
+                mode={mode}
                 seriesCodes={seq?.seriesCodes ?? []}
                 seriesId={props.seriesId}
                 nodeId={selectedNode.id}
@@ -546,7 +594,7 @@ function Builder(props: Props) {
           )}
 
           {multi.length > 1 && (
-            <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", zIndex: 7, background: "#fff", border: "1px solid #c7d2fe", borderRadius: 10, padding: "6px 8px", display: "flex", gap: 6, alignItems: "center", boxShadow: "0 4px 12px #0002", fontSize: 13 }}>
+            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 7, background: "#fff", border: 0, borderRadius: 14, padding: "8px 10px", display: "flex", gap: 6, alignItems: "center", boxShadow: "0 4px 12px #0002", fontSize: 13 }}>
               <strong>{multi.length} cards selected</strong>
               <input value={blockName} onChange={(e) => setBlockName(e.target.value)} placeholder="Name, e.g. Reminder after 2 h" style={{ width: 200 }} dir="auto" />
               <button
@@ -574,7 +622,7 @@ function Builder(props: Props) {
           )}
 
           {showIssues && (
-            <div style={{ position: "absolute", left: 8, bottom: 8, maxWidth: 520, maxHeight: "45%", overflowY: "auto", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 8, zIndex: 6, fontSize: 13, boxShadow: "0 4px 12px #0002" }}>
+            <div style={{ position: "absolute", left: 60, bottom: 12, maxWidth: 520, maxHeight: "45%", overflowY: "auto", background: "#fff", borderRadius: 16, padding: 12, zIndex: 6, fontSize: 13, boxShadow: "0 12px 40px #1f1b2426" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <strong>{issues.length ? "Checks before publishing" : "All checks pass ✓"}</strong>
                 <button type="button" className="secondary" style={{ padding: "0 6px" }} onClick={() => setShowIssues(false)}>
@@ -591,7 +639,7 @@ function Builder(props: Props) {
                 className="secondary"
                 style={{ marginTop: 6, padding: "2px 8px", fontSize: 12 }}
                 onClick={async () => {
-                  const server = seq ? await checkSequence(seq.id, graph) : await checkFlow(props.seriesId, graph);
+                  const server = seq ? await checkSequence(seq.id, graph) : shared ? await checkShared(graph) : await checkFlow(props.seriesId, graph);
                   setMessage({ kind: server.some((i) => i.level === "error") ? "err" : "ok", text: server.length ? `Server check: ${server.length} item(s), same as listed.` : "Server check passed ✓" });
                 }}
               >
@@ -602,10 +650,23 @@ function Builder(props: Props) {
         </div>
 
         {/* Right: live preview, always visible */}
-        <div className="card" style={{ margin: 0, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <ChatPreview graph={graph} logicKey={logicKey} series={props.series} templates={previewTemplates} code={props.code} selectedNodeId={selected} onSelectNode={focusCard} />
+        <div style={{ ...PANEL, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <ChatPreview graph={graph} logicKey={logicKey} series={props.series} templates={previewTemplates} code={props.code} selectedNodeId={selected} onSelectNode={focusCard} shared={Boolean(shared)} />
         </div>
       </div>
     </div>
+  );
+}
+
+function tabStyle(on: boolean) {
+  return { flex: 1, padding: "6px 4px", borderRadius: 10, border: 0, fontSize: 12.5, fontWeight: 600, background: on ? "#fff" : "transparent", color: "#1f1b24", boxShadow: on ? "0 1px 3px #1f1b2420" : "none" } as const;
+}
+
+function StatusPill({ live, text }: { live: boolean; text: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, borderRadius: 999, padding: "4px 10px", background: live ? "#e9fbf3" : "#f4f2ee", color: live ? "#0b7a52" : "#6b6474" }}>
+      <span style={{ width: 7, height: 7, borderRadius: 4, background: live ? MINT : "#c5bfb6" }} />
+      {text}
+    </span>
   );
 }
