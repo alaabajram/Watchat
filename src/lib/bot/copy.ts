@@ -101,7 +101,7 @@ export const COPY = {
     label: "My account link message",
     kind: "text",
     ar: "حسابك في واتشات: كل مسلسلاتك، من وين وقفت، ورصيدك. افتحه من هنا 👇",
-    en: "Your Watchat account: all your series, where you left off, and your coins. Open it here 👇",
+    en: "Your Watchat account: all your series, where you left off, and your Ping. Open it here 👇",
   },
   btnMyAccount: { label: "My account button", kind: "button", ar: "حسابي", en: "My account" },
   pinHint: {

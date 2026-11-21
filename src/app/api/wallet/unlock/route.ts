@@ -1,4 +1,4 @@
-// Unlock one episode with coins.
+// Unlock one episode with Ping.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -6,6 +6,7 @@ import { trackEvent } from "@/lib/events";
 import { allow } from "@/lib/security/rate-limit";
 import { err, readJson, sameOrigin } from "@/lib/security/request";
 import { getSessionViewer } from "@/lib/session";
+import { hasAllAccess } from "@/lib/content";
 import { db } from "@/lib/supabase";
 import { getBalance, unlockEpisode } from "@/lib/wallet";
 
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
   if (series.status !== "live") return err(404, "not_found");
   if (ep.number <= series.free_web_until_ep) return NextResponse.json({ result: "already" });
 
+  // Weekly / yearly pass holders never spend Ping.
+  if (await hasAllAccess(viewer.id)) return NextResponse.json({ result: "already" });
   // The price always comes from the database, never from the browser.
   const price = ep.coin_price_override ?? series.coins_per_episode;
   const result = await unlockEpisode(viewer.id, ep.series_id, ep.number, price);

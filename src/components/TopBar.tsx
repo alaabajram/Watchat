@@ -7,6 +7,7 @@ import { ChevronIcon, GiftIcon } from "@/components/brand/icons";
 import { DEFAULT_SITE } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import { webCopy, type Locale } from "@/lib/web-copy";
+import { PingIcon } from "@/components/brand/PingIcon";
 
 export async function TopBar({ locale, balance, backHref, backLabel, dark = false }: { locale: Locale; balance: number; backHref?: string; backLabel?: string; dark?: boolean }) {
   const t = webCopy(locale);
@@ -31,7 +32,7 @@ export async function TopBar({ locale, balance, backHref, backLabel, dark = fals
       )}
       <nav style={{ display: "flex", gap: 8 }} aria-label={t.wallet}>
         <Link className="chip" href="/wallet" aria-label={`${t.balance}: ${t.coins(balance)}`} style={dark ? { background: round, color: "#fff" } : undefined}>
-          <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", background: "#f5b323", boxShadow: "inset 0 0 0 3px #ffd877" }} />
+          <PingIcon size={22} />
           {balance}
         </Link>
         <Link href="/store" aria-label={t.getCoins} style={{ width: 44, height: 44, borderRadius: "50%", background: round, display: "grid", placeItems: "center", position: "relative" }}>

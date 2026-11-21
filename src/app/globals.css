@@ -389,3 +389,15 @@ h2 { font-size: 19px; font-weight: 600; }
 /* Sign-in / setup */
 .admin-auth { display: grid; place-items: center; min-height: 100dvh; background: var(--a-bg); }
 .admin-auth form { width: 380px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 14px; background: #fff; padding: 32px; border-radius: 28px; box-shadow: var(--a-shadow); }
+
+/* Ping store: passes, promo banner, rewards */
+.wc-promo-banner { border-radius: 16px; padding: 12px 14px; font-weight: 600; background: linear-gradient(135deg, #fff4dc, #e3fbf1); border: 1px solid #fbe3a8; }
+.wc-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wc-plan { position: relative; padding: 14px; display: flex; flex-direction: column; gap: 6px; background: #fff; text-decoration: none; color: inherit; }
+.wc-plan-best { border: 2px solid var(--wc-mint, #31e5a0); }
+.wc-plan-on { border: 2px solid var(--wc-mint, #31e5a0); }
+.wc-plan-badge { position: absolute; top: -10px; inset-inline-end: 10px; background: var(--wc-mint, #31e5a0); color: #04281b; }
+.wc-ladder { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.wc-ladder-day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border-radius: 12px; background: #f6f6f6; font-size: 12px; }
+.wc-ladder-day.is-done { background: #e3fbf1; color: var(--wc-mint-text); }
+.wc-ladder-day.is-today { background: #fff4dc; outline: 2px solid #f5b323; }

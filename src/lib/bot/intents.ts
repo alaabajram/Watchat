@@ -58,6 +58,13 @@ export function parseIntent(msg: InboundMessage): Intent {
   if (msg.kind === "reply" && msg.replyId) return intentFromReplyId(msg.replyId);
 
   if (msg.kind === "text" && msg.text) {
+    // Invite (INV-XXXXXX) and partner (P-CODE) links prefill a code: it's read at first contact (rewards.ts);
+    // here it's stripped so "INV-ABC234 SECRETS01" still opens the series and a bare code opens the menu.
+    const stripped = msg.text.replace(/(?:^|\s)(?:INV|P)-[A-Za-z0-9]{3,20}(?=\s|$)/gi, " ").trim();
+    if (stripped !== msg.text.trim()) {
+      const rest: Intent = stripped ? parseIntent({ ...msg, text: stripped }) : { type: "menu" };
+      return rest.type === "unknown" ? { type: "menu" } : rest; // the greeting around the code opens the menu
+    }
     const text = normaliseDigits(msg.text.trim());
     const upper = text.toUpperCase();
     const word = upper.replace(/[^\p{L}\p{N}]/gu, "");

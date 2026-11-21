@@ -83,8 +83,6 @@ export async function updateSeriesAction(fd: FormData) {
     free_web_until_ep: freeUntil,
     paywall_ep: paywall,
     coins_per_episode: coins,
-    season_pass_price_aed: num(fd, "season_pass_price_aed"),
-    season_pass_price_sar: num(fd, "season_pass_price_sar"),
     tagline_ar: opt(fd, "tagline_ar", 140),
     tagline_en: opt(fd, "tagline_en", 140),
     genres: list(fd, "genres").filter((g) => (GENRES as readonly string[]).includes(g)),

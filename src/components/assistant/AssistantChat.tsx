@@ -9,6 +9,7 @@ import type { AssistantAnswer } from "@/lib/assistant/run";
 import { CHIP_LABEL, MAX_MESSAGE_CHARS, type Chip, type Offer } from "@/lib/assistant/engine";
 import { AgentIcon } from "./AgentIcon";
 import { AlertsOptIn } from "./AlertsOptIn";
+import { PingIcon } from "@/components/brand/PingIcon";
 
 type Locale = "ar" | "en";
 type Item = { from: "viewer"; text: string } | { from: "bot"; answer: AssistantAnswer } | { from: "error"; text: string };
@@ -22,10 +23,12 @@ const T = {
     watch: "شاهد",
     resume: (n: number) => `كمّل الحلقة ${n}`,
     episodes: (n: number) => `${n} حلقة`,
-    coins: (n: number) => `${n} كوين`,
+    coins: (n: number) => `${n} بينج`,
+    weekly: "باقة أسبوعية · كل المسلسلات",
+    yearly: "باقة سنوية · كل المسلسلات",
     bonus: (n: number) => `+${n} هدية`,
     best: "أفضل قيمة",
-    pass: "تذكرة الموسم",
+    pass: "تذكرة المسلسل",
     buy: "اشترِ",
     error: "صار خطأ بسيط. جرّب مرة ثانية.",
     signedOut: "انتهت الجلسة. افتح واتشات من رابطك في واتساب.",
@@ -40,10 +43,12 @@ const T = {
     watch: "Watch",
     resume: (n: number) => `Continue episode ${n}`,
     episodes: (n: number) => `${n} episodes`,
-    coins: (n: number) => `${n} coins`,
+    coins: (n: number) => `${n} Ping`,
+    weekly: "Weekly pass · every series",
+    yearly: "Yearly pass · every series",
     bonus: (n: number) => `+${n} bonus`,
     best: "Best value",
-    pass: "Season pass",
+    pass: "Series pass",
     buy: "Buy",
     error: "Something went wrong. Try again.",
     signedOut: "Your session ended. Open Watchat from your link in WhatsApp.",
@@ -201,7 +206,7 @@ function BotAnswer({ answer, locale }: { answer: AssistantAnswer; locale: Locale
       {answer.offers.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {answer.offers.map((o) => (
-            <OfferCard key={o.kind === "pack" ? o.id : `pass-${o.seriesCode}`} offer={o} locale={locale} />
+            <OfferCard key={o.kind === "pack" ? o.id : o.kind === "plan" ? o.plan : `pass-${o.seriesCode}`} offer={o} locale={locale} />
           ))}
         </div>
       )}
@@ -225,15 +230,15 @@ function OfferCard({ offer, locale }: { offer: Offer; locale: Locale }) {
   const isPack = offer.kind === "pack";
   return (
     <Link
-      href={isPack ? "/store?back=/assistant" : `/series/${offer.seriesCode}`}
+      href={offer.kind === "pass" ? `/series/${offer.seriesCode}` : "/store?back=/assistant"}
       className="wc-card"
       style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", padding: 12, textDecoration: "none", color: "inherit" }}
     >
       <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: "50%", background: "#fff4dc", border: "1px solid #fbe3a8", display: "grid", placeItems: "center", flex: "none", fontSize: 20 }}>
-        {isPack ? "🪙" : "🎟️"}
+        {isPack ? <PingIcon size={30} /> : offer.kind === "plan" ? "⭐" : "🎟️"}
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <strong style={{ fontSize: 16 }}>{isPack ? t.coins(offer.coins + offer.bonus) : `${t.pass} · ${locale === "en" ? offer.titleEn : offer.titleAr}`}</strong>
+        <strong style={{ fontSize: 16 }}>{offer.kind === "pack" ? t.coins(offer.coins + offer.bonus) : offer.kind === "plan" ? t[offer.plan] : `${t.pass} · ${locale === "en" ? offer.titleEn : offer.titleAr}`}</strong>
         <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {isPack && offer.bonus > 0 && <span className="wc-chip" style={{ fontSize: 12, padding: "2px 8px" }}>{t.bonus(offer.bonus)}</span>}
           {isPack && offer.best && <span className="wc-chip" style={{ fontSize: 12, padding: "2px 8px", background: "rgba(49,229,160,0.18)" }}>{t.best}</span>}
