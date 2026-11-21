@@ -58,6 +58,7 @@ const PREFIXES: [string, Market][] = [
 
 /** Rate-card market from a WhatsApp number (digits with country code). Only the market is stored. */
 export function marketFromPhone(waId: string): Market {
+  if (waId.replace(/^\+/, "").startsWith("tg:")) return "OTHER"; // Telegram: free, never billed (see the wa_messages trigger)
   const digits = waId.replace(/\D/g, "");
   return PREFIXES.find(([p]) => digits.startsWith(p))?.[1] ?? "OTHER";
 }

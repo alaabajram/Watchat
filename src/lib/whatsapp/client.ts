@@ -1,10 +1,14 @@
 import { env } from "../env";
+import { sendTelegram } from "../telegram/client";
+import { isTelegram } from "../telegram/telegram";
 import { toGraphPayload, type OutMessage } from "./messages";
 
 export type SendResult = { ok: true; waMessageId: string } | { ok: false; error: string };
 
 /** Send one message through the WhatsApp Cloud API. Never throws: failures are returned and logged. */
 export async function sendWhatsApp(to: string, msg: OutMessage): Promise<SendResult> {
+  // Telegram viewers ("tg:<id>") get the same message through the Telegram bot.
+  if (isTelegram(to)) return sendTelegram(to.replace(/^\+/, ""), msg);
   const url = `https://graph.facebook.com/${env.waGraphVersion}/${env.waPhoneNumberId}/messages`;
   try {
     const res = await fetch(url, {

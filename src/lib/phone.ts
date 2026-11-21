@@ -11,6 +11,7 @@ const PREFIXES: [string, string][] = [
 ];
 
 export function countryFromPhone(waId: string): string | null {
+  if (waId.replace(/^\+/, "").startsWith("tg:")) return null; // Telegram viewers have no number
   const digits = waId.replace(/\D/g, "");
   return PREFIXES.find(([prefix]) => digits.startsWith(prefix))?.[1] ?? null;
 }
