@@ -32,6 +32,7 @@ export const PERMISSIONS = {
   grantCoins: ["owner", "support"],
   orders: ["owner", "finance", "support"],
   pricing: ["owner", "finance"],
+  offers: ["owner", "marketing", "finance"],
   team: ["owner"],
   aiAccount: ["owner"],
   site: ["owner"],

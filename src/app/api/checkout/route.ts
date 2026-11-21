@@ -1,4 +1,4 @@
-// Start a purchase (coin pack or season pass). Any signed-in viewer can buy (no device confirm).
+// Start a purchase (Ping pack, series pass, or weekly / yearly pass). Any signed-in viewer can buy (no device confirm).
 // Online (Tap) when TAP_SECRET_KEY is set; otherwise a manual cash / transfer order with a reference code.
 
 import type { NextRequest } from "next/server";
@@ -11,7 +11,7 @@ import { paymentMode, startCashOrder, startCheckout, type CheckoutItem } from "@
 
 export const runtime = "nodejs";
 
-type Body = { type?: "coin_pack" | "season_pass"; id?: string; returnTo?: string };
+type Body = { type?: "coin_pack" | "season_pass" | "subscription"; id?: string; returnTo?: string; code?: string };
 
 export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
@@ -20,16 +20,18 @@ export async function POST(req: NextRequest) {
   if (!(await allow(`checkout:${viewer.id}`, 10, 3600))) return err(429, "slow_down");
 
   const body = await readJson<Body>(req);
-  if (!body?.id || !/^[0-9a-f-]{36}$/.test(body.id) || (body.type !== "coin_pack" && body.type !== "season_pass")) {
-    return err(400, "bad_request");
-  }
-  const item: CheckoutItem = body.type === "coin_pack" ? { type: "coin_pack", packId: body.id } : { type: "season_pass", seriesId: body.id };
+  let item: CheckoutItem;
+  if (body?.type === "subscription" && (body.id === "weekly" || body.id === "yearly")) item = { type: "subscription", plan: body.id };
+  else if (body?.id && /^[0-9a-f-]{36}$/.test(body.id) && body.type === "coin_pack") item = { type: "coin_pack", packId: body.id };
+  else if (body?.id && /^[0-9a-f-]{36}$/.test(body.id) && body.type === "season_pass") item = { type: "season_pass", seriesId: body.id };
+  else return err(400, "bad_request");
+  const code = typeof body.code === "string" && /^[A-Za-z0-9]{3,20}$/.test(body.code.trim()) ? body.code.trim() : null;
   // Only allow returning to our own pages.
   const returnTo = body.returnTo && body.returnTo.startsWith("/") && !body.returnTo.startsWith("//") ? body.returnTo : "/wallet";
 
   try {
     if (paymentMode() === "cash") {
-      const order = await startCashOrder({ viewerId: viewer.id, country: viewer.country, item });
+      const order = await startCashOrder({ viewerId: viewer.id, country: viewer.country, item, code });
       await trackEvent({
         viewerHmac: viewer.phoneHmac,
         name: "order_requested",
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ pending: true, reference: order.reference, amount: order.amount, currency: order.currency });
     }
-    const { url } = await startCheckout({ viewerId: viewer.id, country: viewer.country, item, returnTo });
+    const { url } = await startCheckout({ viewerId: viewer.id, country: viewer.country, item, returnTo, code });
     return NextResponse.json({ url });
   } catch (e) {
     if (e instanceof Error && e.message === "too_many_pending") return err(409, "too_many_pending");

@@ -5,10 +5,11 @@ import { siteUrl } from "./site/store";
 import { env } from "./env";
 import { trackEvent } from "./events";
 import { createCharge, getCharge } from "./payments/tap";
-import { currencyFor } from "./phone";
+import { afterPaid } from "./economy/rewards";
+import { economySettings, quoteFor, seriesLicensed, viewerMarket } from "./economy/store";
+import type { PriceItem } from "./economy/pricing";
+import type { TapCharge } from "./payments/tap";
 import { db } from "./supabase";
-
-export const VAT_RATE: Record<"AED" | "SAR", number> = { AED: 0.05, SAR: 0.15 };
 
 export async function getBalance(viewerId: string): Promise<number> {
   const { data, error } = await db().rpc("wallet_balance", { p_viewer: viewerId });
@@ -39,45 +40,83 @@ export async function unlockEpisode(viewerId: string, seriesId: string, episode:
   return data as UnlockResult;
 }
 
-export type CheckoutItem = { type: "coin_pack"; packId: string } | { type: "season_pass"; seriesId: string };
+export type CheckoutItem =
+  | { type: "coin_pack"; packId: string }
+  | { type: "season_pass"; seriesId: string }
+  | { type: "subscription"; plan: "weekly" | "yearly" };
 
 /** "tap" when online payments are configured, otherwise manual cash / transfer approval. */
 export function paymentMode(): "tap" | "cash" {
   return process.env.TAP_SECRET_KEY ? "tap" : "cash";
 }
 
-type Priced = { amount: number; currency: "AED" | "SAR"; description: string; itemRef: string; vat: number };
+type Priced = {
+  amount: number;
+  listAmount: number;
+  currency: string;
+  country: string;
+  description: string;
+  itemRef: string;
+  vat: number;
+  bonusPing: number;
+  promotionId: string | null;
+};
 
-/** Price an item from the database in the viewer's currency (VAT included). Never trusts the browser. */
-async function priceItem(country: string | null, item: CheckoutItem): Promise<Priced> {
-  const currency = currencyFor(country);
-  let amount: number;
+/**
+ * Price an item from the database for this viewer: their market (IP country → phone country → international),
+ * that market's price list, the best promotion (or the code they entered) and the first-purchase bonus.
+ * Never trusts the browser. Series passes are only sold where the series is licensed.
+ */
+async function priceItem(viewer: { id: string; country: string | null }, item: CheckoutItem, code?: string | null): Promise<Priced> {
+  const market = await viewerMarket(viewer);
+  let priceKey: PriceItem;
   let description: string;
   let itemRef: string;
   if (item.type === "coin_pack") {
-    const { data: pack } = await db()
-      .from("coin_packs")
-      .select("id, coins, bonus_coins, price_aed, price_sar, active")
-      .eq("id", item.packId)
-      .maybeSingle();
-    if (!pack || !pack.active) throw new Error("This coin pack is not available.");
-    amount = Number(currency === "SAR" ? pack.price_sar : pack.price_aed);
-    description = `Watchat ${pack.coins + pack.bonus_coins} coins`;
-    itemRef = pack.id;
-  } else {
-    const { data: series } = await db()
-      .from("series")
-      .select("id, title_en, season_pass_price_aed, season_pass_price_sar, status")
-      .eq("id", item.seriesId)
-      .maybeSingle();
-    const price = currency === "SAR" ? series?.season_pass_price_sar : series?.season_pass_price_aed;
-    if (!series || series.status !== "live" || price === null || price === undefined) throw new Error("No season pass for this series.");
-    amount = Number(price);
-    description = `Watchat season pass · ${series.title_en}`;
+    priceKey = `pack:${item.packId}`;
+    itemRef = item.packId;
+    description = "Watchat Ping";
+  } else if (item.type === "season_pass") {
+    const { data: series } = await db().from("series").select("id, title_en, status, license_countries").eq("id", item.seriesId).maybeSingle();
+    if (!series || series.status !== "live" || !seriesLicensed(series.license_countries, market)) throw new Error("No series pass for this series.");
+    priceKey = "series_pass";
     itemRef = series.id;
+    description = `Watchat series pass · ${series.title_en}`;
+  } else {
+    priceKey = item.plan;
+    itemRef = item.plan;
+    description = item.plan === "weekly" ? "Watchat weekly pass" : "Watchat yearly pass";
   }
-  const vat = Math.round((amount - amount / (1 + VAT_RATE[currency])) * 100) / 100;
-  return { amount, currency, description, itemRef, vat };
+  const q = await quoteFor(viewer.id, market, priceKey, code);
+  if (!q) throw new Error("This item is not on sale in your country.");
+  if (item.type === "coin_pack") description = `Watchat ${q.ping + q.bonusPing} Ping`;
+  return {
+    amount: q.price,
+    listAmount: q.listPrice,
+    currency: q.currency,
+    country: market.country,
+    description,
+    itemRef,
+    vat: q.vat,
+    bonusPing: q.bonusPing,
+    promotionId: q.promotion?.id ?? null,
+  };
+}
+
+function orderRow(viewerId: string, item: CheckoutItem, p: Priced, extra: Record<string, unknown>) {
+  return {
+    viewer_id: viewerId,
+    item_type: item.type,
+    item_ref: p.itemRef,
+    amount: p.amount,
+    list_amount: p.listAmount,
+    currency: p.currency,
+    country: p.country,
+    vat_amount: p.vat,
+    bonus_ping: p.bonusPing,
+    promotion_id: p.promotionId,
+    ...extra,
+  };
 }
 
 const REF_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"; // no 0/O, 1/I/L
@@ -89,7 +128,7 @@ function newReference(): string {
 export const MAX_PENDING_CASH_ORDERS = 3;
 
 /** Manual payment: record the order as pending with a short reference the team matches to the payment. */
-export async function startCashOrder(params: { viewerId: string; country: string | null; item: CheckoutItem }) {
+export async function startCashOrder(params: { viewerId: string; country: string | null; item: CheckoutItem; code?: string | null }) {
   const { count } = await db()
     .from("orders")
     .select("id", { count: "exact", head: true })
@@ -98,22 +137,12 @@ export async function startCashOrder(params: { viewerId: string; country: string
     .eq("status", "pending");
   if ((count ?? 0) >= MAX_PENDING_CASH_ORDERS) throw new Error("too_many_pending");
 
-  const priced = await priceItem(params.country, params.item);
+  const priced = await priceItem({ id: params.viewerId, country: params.country }, params.item, params.code);
   for (let attempt = 0; attempt < 5; attempt++) {
     const reference = newReference();
     const { data, error } = await db()
       .from("orders")
-      .insert({
-        viewer_id: params.viewerId,
-        item_type: params.item.type,
-        item_ref: priced.itemRef,
-        amount: priced.amount,
-        currency: priced.currency,
-        vat_amount: priced.vat,
-        gateway: "cash",
-        payment_ref: reference,
-        note: priced.description,
-      })
+      .insert(orderRow(params.viewerId, params.item, priced, { gateway: "cash", payment_ref: reference, note: priced.description }))
       .select("id")
       .single();
     if (!error && data) return { orderId: data.id as string, reference, amount: priced.amount, currency: priced.currency };
@@ -131,6 +160,7 @@ export async function approveCashOrder(orderId: string, adminId: string, note: s
   if (error) throw new Error(`fulfil_order failed: ${error.message}`);
   await db().from("orders").update({ decided_by: adminId, decided_at: new Date().toISOString(), ...(note ? { note } : {}) }).eq("id", orderId);
   if (data === "ok") {
+    await afterPaid(orderId).catch((e) => console.error("[rewards] after paid", e));
     const { data: viewer } = await db().from("viewers").select("phone_hmac").eq("id", order.viewer_id).single();
     await trackEvent({
       viewerHmac: viewer?.phone_hmac ?? null,
@@ -157,20 +187,16 @@ export async function startCheckout(params: {
   country: string | null;
   item: CheckoutItem;
   returnTo: string;
+  code?: string | null;
 }): Promise<{ url: string; orderId: string }> {
-  const { amount, currency, description, itemRef, vat } = await priceItem(params.country, params.item);
+  const priced = await priceItem({ id: params.viewerId, country: params.country }, params.item, params.code);
+  const { amount, currency, description } = priced;
+  // Weekly / yearly passes save the card for automatic renewal once Tap's Save Card is on for the account.
+  const saveCard = params.item.type === "subscription" && (await economySettings()).recurringEnabled;
 
   const { data: order, error } = await db()
     .from("orders")
-    .insert({
-      viewer_id: params.viewerId,
-      item_type: params.item.type,
-      item_ref: itemRef,
-      amount,
-      currency,
-      vat_amount: vat,
-      gateway: "tap",
-    })
+    .insert(orderRow(params.viewerId, params.item, priced, { gateway: "tap", save_card: saveCard }))
     .select("id")
     .single();
   if (error || !order) throw new Error(`order failed: ${error?.message}`);
@@ -188,6 +214,7 @@ export async function startCheckout(params: {
     phone: { countryCode: cc, number: digits.slice(cc.length) },
     redirectUrl: `${base}/payment/return?order=${order.id}&back=${encodeURIComponent(params.returnTo)}`,
     webhookUrl: `${base}/api/payments/tap`,
+    saveCard,
   });
   const url = charge.transaction?.url;
   if (!url) throw new Error("Tap returned no checkout URL.");
@@ -208,7 +235,7 @@ export async function verifyAndFulfil(chargeId: string): Promise<{ outcome: Paym
 
   const { data: order } = await db()
     .from("orders")
-    .select("id, viewer_id, amount, currency, status, item_type")
+    .select("id, viewer_id, amount, currency, status, item_type, save_card")
     .eq("id", orderId)
     .maybeSingle();
   if (!order) return { outcome: "unknown" };
@@ -224,6 +251,8 @@ export async function verifyAndFulfil(chargeId: string): Promise<{ outcome: Paym
     if (error) throw new Error(`fulfil_order failed: ${error.message}`);
     const { data: viewer } = await db().from("viewers").select("phone_hmac").eq("id", order.viewer_id).single();
     if (data === "ok") {
+      if (order.item_type === "subscription" && order.save_card) await rememberCard(orderId, charge);
+      await afterPaid(orderId).catch((e) => console.error("[rewards] after paid", e));
       await trackEvent({
         viewerHmac: viewer?.phone_hmac ?? null,
         name: "order_paid",
@@ -238,4 +267,24 @@ export async function verifyAndFulfil(chargeId: string): Promise<{ outcome: Paym
     return { outcome: "failed", orderId };
   }
   return { outcome: "pending", orderId };
+}
+
+/** Keep the saved card on the pass so it can renew (Tap: card id + customer id + payment agreement). */
+async function rememberCard(orderId: string, charge: TapCharge) {
+  const { data: o } = await db().from("orders").select("subscription_id").eq("id", orderId).single();
+  if (!o?.subscription_id || !charge.card?.id || !charge.customer?.id || !charge.payment_agreement?.id) {
+    if (o?.subscription_id) await db().from("subscriptions").update({ auto_renew: false }).eq("id", o.subscription_id); // nothing to renew with
+    return;
+  }
+  await db()
+    .from("subscriptions")
+    .update({
+      tap_customer_id: charge.customer.id,
+      tap_card_id: charge.card.id,
+      tap_agreement_id: charge.payment_agreement.id,
+      card_last4: charge.card.last_four ?? null,
+      auto_renew: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", o.subscription_id);
 }

@@ -1,6 +1,7 @@
 "use client";
 
-// Starts a Tap checkout for a coin pack or season pass (asks to confirm the device first if needed).
+// Starts a checkout for a Ping pack, a series pass or a weekly / yearly pass. A discount code typed in the store's
+// code box (#promo-code) travels with it; the server decides whether it applies.
 
 import { useState } from "react";
 import { formatMoney, webCopy, type Locale } from "@/lib/web-copy";
@@ -12,12 +13,14 @@ export function BuyButton({
   id,
   label,
   returnTo,
+  secondary,
 }: {
   locale: Locale;
-  type: "coin_pack" | "season_pass";
+  type: "coin_pack" | "season_pass" | "subscription";
   id: string;
   label: string;
   returnTo: string;
+  secondary?: boolean;
 }) {
   const t = webCopy(locale);
   const [busy, setBusy] = useState(false);
@@ -30,7 +33,7 @@ export function BuyButton({
     const res = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, id, returnTo }),
+      body: JSON.stringify({ type, id, returnTo, code: readCode() }),
     });
     const j = (await res.json().catch(() => ({}))) as {
       url?: string;
@@ -38,7 +41,7 @@ export function BuyButton({
       pending?: boolean;
       reference?: string;
       amount?: number;
-      currency?: "AED" | "SAR";
+      currency?: string;
     };
     if (j.pending && j.reference) {
       setBusy(false);
@@ -69,7 +72,7 @@ export function BuyButton({
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch" }}>
-      <button className="btn" type="button" onClick={buy} disabled={busy}>
+      <button className={secondary ? "btn secondary" : "btn"} type="button" onClick={buy} disabled={busy}>
         {busy ? t.redirecting : label}
       </button>
       {message && (
@@ -79,4 +82,11 @@ export function BuyButton({
       )}
     </div>
   );
+}
+
+function readCode(): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const el = document.getElementById("promo-code") as HTMLInputElement | null;
+  const v = el?.value.trim();
+  return v && /^[A-Za-z0-9]{3,20}$/.test(v) ? v : undefined;
 }

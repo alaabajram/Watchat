@@ -2,6 +2,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/crypto";
+import { runBilling } from "@/lib/economy/billing";
 import { runFlowWaits } from "@/lib/flows/runner";
 import { maybeRunGrowth } from "@/lib/growth/run";
 import { syncTemplateStatuses } from "@/lib/messaging/template-store";
@@ -36,7 +37,14 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     growth = e instanceof Error ? e.message : "growth run failed";
   }
+  // Weekly / yearly passes: expire ended ones and renew due ones with the saved card.
+  let billing: unknown = "skipped";
+  try {
+    billing = await runBilling();
+  } catch (e) {
+    billing = e instanceof Error ? e.message : "billing failed";
+  }
   const summary = await runMessaging();
-  console.log("[cron] messaging", JSON.stringify({ templates, flows, growth, ...summary }));
+  console.log("[cron] messaging", JSON.stringify({ templates, flows, growth, billing, ...summary }));
   return NextResponse.json({ templates, flows, growth, ...summary });
 }

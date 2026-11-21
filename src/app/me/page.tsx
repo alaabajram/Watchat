@@ -19,6 +19,7 @@ import { getPublishedPage, getSiteSafe } from "@/lib/site/store";
 import { db } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
+import { PingIcon } from "@/components/brand/PingIcon";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Watchat · حسابي" };
@@ -89,9 +90,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span aria-hidden="true" style={{ width: 56, height: 56, borderRadius: 16, background: "#fff4dc", border: "1px solid #fbe3a8", display: "grid", placeItems: "center" }}>
-                <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#f5b323", boxShadow: "inset 0 0 0 4px #ffd877" }} />
-              </span>
+              <PingIcon size={56} />
               <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                 <strong style={{ fontSize: 32, fontWeight: 700 }}>{balance}</strong>
                 <span style={{ fontSize: 13, color: "var(--wc-muted)" }}>{t.coinsAvailable}</span>

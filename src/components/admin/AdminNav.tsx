@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 export type NavItem = { href: string; label: string; icon: IconName; group: string; also?: string[] };
 export type IconName =
   | "dashboard" | "spend" | "cms" | "flow" | "replies" | "template" | "sequence" | "campaign"
-  | "growth" | "viewers" | "orders" | "pricing" | "team" | "ai" | "audit" | "brand";
+  | "growth" | "viewers" | "orders" | "pricing" | "offers" | "team" | "ai" | "audit" | "brand";
 
 const PATHS: Record<IconName, string> = {
   dashboard: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z",
@@ -23,6 +23,7 @@ const PATHS: Record<IconName, string> = {
   viewers: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 6.5M18 14a6 6 0 0 1 3.5 6",
   orders: "M4 7h16v12H4zM4 11h16M8 15h3",
   pricing: "M3.5 12.5l8-8H20v8.5l-8 8zM15.5 8.5h.01",
+  offers: "M4 10h16v10H4zM3 7h18v3H3zM12 7v13M12 7c-1.5-3-5-3.5-5-1.5S10 7 12 7zM12 7c1.5-3 5-3.5 5-1.5S14 7 12 7z",
   team: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
   ai: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z",
   audit: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7zM9 12l2 2 4-4",
