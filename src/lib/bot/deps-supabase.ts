@@ -1,5 +1,7 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import { onNewViewer } from "../economy/rewards";
+import { seriesLicensed, storedViewerMarket } from "../economy/store";
 import { publishedSharedFlow } from "../flows/shared-store";
 import { siteUrl } from "../site/store";
 import { ensurePublishedFlow } from "../flows/standard";
@@ -37,7 +39,7 @@ export type SeriesRow = {
 };
 
 export const SERIES_SELECT =
-  "id, code, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, banner_wa_url, banner_wide_url, square_url, tagline_ar, tagline_en, genres, cast_members, episodes(count)";
+  "id, code, license_countries, title_ar, title_en, poster_url, trailer_video_url, wa_episode_count, banner_wa_url, banner_wide_url, square_url, tagline_ar, tagline_en, genres, cast_members, episodes(count)";
 
 export function toSeries(row: SeriesRow): Series {
   return {
@@ -103,6 +105,12 @@ export function primeViewer(viewerId: string, waId: string): void {
 /** `source` tags what sent each message, for the spend meter: the chat bot, or a flow resumed by the cron / the web. */
 export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotDeps {
   const source = opts.source ?? "bot";
+  // Licensing in chat follows the viewer's last web country (IP), else their number's country.
+  let viewerId: string | null = null;
+  const licensed = async (row: { license_countries?: string[] | null }) => {
+    if (!row.license_countries?.length || !viewerId) return true;
+    return seriesLicensed(row.license_countries, await storedViewerMarket(viewerId));
+  };
   return {
     async upsertViewer(msg: InboundMessage): Promise<Viewer> {
       const tenantId = await currentTenantId();
@@ -121,6 +129,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
           .eq("id", existing.id);
         hmacByViewer.set(existing.id, hmac);
         viewerByWaId.set(msg.from, existing.id);
+        viewerId = existing.id;
         return { id: existing.id, waId: msg.from, language: existing.language as ViewerLang | null, pinHintSent: Boolean(existing.pin_hint_at) };
       }
 
@@ -152,8 +161,13 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
         .select("id, language")
         .single();
       if (error || !created) throw new Error(`upsertViewer failed: ${error?.message}`);
+      // Welcome Ping, and the invite / partner code from the first message (both exactly once).
+      await onNewViewer({ viewerId: created.id, tenantId, firstText: msg.text ?? null, phoneHmac: hmac }).catch((e) =>
+        console.error("[rewards] new viewer", e),
+      );
       hmacByViewer.set(created.id, hmac);
       viewerByWaId.set(msg.from, created.id);
+      viewerId = created.id;
       return { id: created.id, waId: msg.from, language: created.language as ViewerLang | null };
     },
 
@@ -194,7 +208,8 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
         .eq("code", code.toUpperCase())
         .eq("status", "live")
         .maybeSingle();
-      return data ? toSeries(data as unknown as SeriesRow) : null;
+      if (!data || !(await licensed(data as { license_countries?: string[] }))) return null; // not shown in this country
+      return toSeries(data as unknown as SeriesRow);
     },
 
     async getSeries(seriesId: string): Promise<Series | null> {
@@ -225,7 +240,9 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       let query = db().from("series").select(SERIES_SELECT).eq("tenant_id", tenantId).eq("status", "live").limit(10);
       if (excludeSeriesId) query = query.neq("id", excludeSeriesId);
       const { data } = await query;
-      return ((data ?? []) as unknown as SeriesRow[]).map(toSeries);
+      const rows = (data ?? []) as unknown as (SeriesRow & { license_countries?: string[] })[];
+      const ok = await Promise.all(rows.map((r) => licensed(r)));
+      return rows.filter((_, i) => ok[i]).map(toSeries);
     },
 
     async getOptIn(viewerId: string): Promise<"in" | "out" | null> {

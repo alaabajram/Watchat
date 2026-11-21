@@ -63,8 +63,9 @@ ${contactEn}`,
 ## الحساب
 رقم واتساب الخاص بك هو حسابك. الروابط التي نرسلها لك شخصية، فلا تشاركها مع غيرك.
 
-## العملات والمشتريات
-- العملات تُستخدم لفتح الحلقات داخل ${nameAr} فقط، وليس لها قيمة نقدية.
+## البينج والمشتريات
+- البينج (عملة التطبيق) يُستخدم لفتح الحلقات داخل ${nameAr} فقط، وليس له قيمة نقدية. البينج المجاني من المكافآت قد يُحدَّد أو يتغيّر.
+- الباقة الأسبوعية والسنوية تفتح كل المسلسلات خلال مدتها. إذا كانت الباقة تتجدد تلقائيًا، تقدر توقف التجديد متى ما تبي من محفظتك، وتبقى فعّالة لنهاية المدة المدفوعة.
 - الأسعار تشمل ضريبة القيمة المضافة حيث تنطبق.
 - المشتريات نهائية إلا إذا نص القانون على غير ذلك. إذا واجهت مشكلة في الدفع تواصل معنا.
 
@@ -83,8 +84,9 @@ ${contactAr}`,
 ## Your account
 Your WhatsApp number is your account. The links we send you are personal, so don't share them.
 
-## Coins and purchases
-- Coins unlock episodes on ${nameEn} only and have no cash value.
+## Ping and purchases
+- Ping (the in-app currency) unlocks episodes on ${nameEn} only and has no cash value. Free Ping from rewards may be limited or changed.
+- Weekly and yearly passes open every series for their period. If a pass renews automatically, you can stop renewal any time from your wallet; it stays active until the end of the paid period.
 - Prices include VAT where it applies.
 - Purchases are final unless the law says otherwise. If something went wrong with a payment, contact us.
 

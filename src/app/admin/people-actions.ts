@@ -35,12 +35,12 @@ export async function grantCoinsAction(fd: FormData) {
   const coins = int(fd, "coins", 0);
   const note = str(fd, "note", 200);
   if (!id) done("/admin/viewers", "Bad request.", "err");
-  if (coins < 1 || coins > 10000) done(`/admin/viewers/${id}`, "Grant 1–10,000 coins.", "err");
+  if (coins < 1 || coins > 10000) done(`/admin/viewers/${id}`, "Grant 1–10,000 Ping.", "err");
   if (!note) done(`/admin/viewers/${id}`, "Add a reason (e.g. support ticket number).", "err");
   const { data, error } = await db().rpc("grant_coins", { p_viewer: id, p_coins: coins, p_admin: admin.id, p_note: note });
   if (error) done(`/admin/viewers/${id}`, `Grant failed: ${error.message}`, "err");
   await audit(admin, "coins.granted", "viewer", id, { coins, note });
-  done(`/admin/viewers/${id}`, `Granted ${coins} coins. New balance: ${data}.`);
+  done(`/admin/viewers/${id}`, `Granted ${coins} Ping. New balance: ${data}.`);
 }
 
 export async function signOutViewerAction(fd: FormData) {
@@ -112,22 +112,6 @@ export async function anonymiseViewerAction(fd: FormData) {
 // ---------------------------------------------------------------------------
 // Pricing
 // ---------------------------------------------------------------------------
-
-export async function savePackAction(fd: FormData) {
-  const admin = await requireAdmin("pricing");
-  const id = uuid(fd, "id");
-  const coins = int(fd, "coins", 0);
-  const aed = num(fd, "price_aed");
-  const sar = num(fd, "price_sar");
-  if (coins < 1 || aed === null || sar === null || aed <= 0 || sar <= 0) done("/admin/pricing", "Coins and both prices are required.", "err");
-  const row = { coins, bonus_coins: Math.max(0, int(fd, "bonus_coins", 0)), price_aed: aed, price_sar: sar, sort: int(fd, "sort", 0), active: bool(fd, "active") };
-  const { error } = id
-    ? await db().from("coin_packs").update(row).eq("id", id).eq("tenant_id", admin.tenantId)
-    : await db().from("coin_packs").insert({ ...row, tenant_id: admin.tenantId });
-  if (error) done("/admin/pricing", `Save failed: ${error.message}`, "err");
-  await audit(admin, id ? "pack.updated" : "pack.created", "coin_pack", id, row);
-  done("/admin/pricing", "Coin pack saved.");
-}
 
 // ---------------------------------------------------------------------------
 // Team

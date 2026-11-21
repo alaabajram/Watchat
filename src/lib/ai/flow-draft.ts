@@ -475,7 +475,7 @@ Rules (the replies are checked against these before they can be published):
 - Replies go out right after the viewer's message, so free-form messages are fine; there are no waits or templates here.
 - list = the WhatsApp menu: a message, a menu button label (extra_ar / extra_en, max 20 characters) and 1–10 rows (max 24 characters), each row leading to its own step.
 - link sends the viewer's personal player link to where they left off; put a condition has_series before it and send the account step when they have no series yet.
-- account sends a personal sign-in link to the viewer's account page (all their series, where they stopped, coins).
+- account sends a personal sign-in link to the viewer's account page (all their series, where they stopped, Ping).
 - action steps change things silently: opt_out (alerts off), opt_in (alerts on), delete_data (log a deletion request); follow them with a message that confirms it.
 - Keep a way to turn alerts off (words like STOP, إيقاف → action opt_out → confirmation) and a way to request data deletion.
 - Reply buttons: at most ${LIMITS.maxButtons} per message, titles at most ${LIMITS.buttonTitle} characters, all different. Messages at most ${LIMITS.body} characters.
@@ -488,7 +488,7 @@ Answer only by calling write_flow with the complete set of replies.`;
 function seriesPrompt(ctx: AgentContext): string {
   const kinds = kindList("series");
   return `You design WhatsApp chat flows for Watchat, an Arabic-first micro-drama service. A viewer sends the series code in WhatsApp,
-gets a few short episodes in the chat with cliffhangers, then a personal link to keep watching on the web (episodes after the free ones cost coins).
+gets a few short episodes in the chat with cliffhangers, then a personal link to keep watching on the web (episodes after the free ones cost Ping, or a weekly pass opens everything).
 
 Series: ${ctx.code} · "${ctx.titleAr}" / "${ctx.titleEn}" · ${ctx.episodeCount} episodes
 Chat clips uploaded for episodes: ${ctx.clips.length ? ctx.clips.join(", ") : "none yet"} · poster: ${ctx.hasPoster ? "yes" : "no"} · trailer: ${ctx.hasTrailer ? "yes" : "no"}

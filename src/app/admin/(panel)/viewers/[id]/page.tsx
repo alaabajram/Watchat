@@ -59,7 +59,7 @@ export default async function ViewerDetail({ params, searchParams }: { params: P
 
       <div className="kpis">
         <div className="kpi">
-          <span className="muted">Coins</span>
+          <span className="muted">Ping</span>
           <strong>🪙 {Number(balance ?? 0)}</strong>
         </div>
         <div className="kpi">
@@ -109,9 +109,9 @@ export default async function ViewerDetail({ params, searchParams }: { params: P
           {can(admin, "grantCoins") && (
             <form action={grantCoinsAction} className="row" style={{ marginBottom: 8 }}>
               <input type="hidden" name="id" value={id} />
-              <input name="coins" type="number" min={1} max={10000} placeholder="Coins" style={{ width: 90 }} required />
+              <input name="coins" type="number" min={1} max={10000} placeholder="Ping" style={{ width: 90 }} required />
               <input name="note" placeholder="Reason / ticket #" required />
-              <button type="submit">Grant coins</button>
+              <button type="submit">Grant Ping</button>
             </form>
           )}
           <div className="row">

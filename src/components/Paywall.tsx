@@ -1,10 +1,11 @@
 "use client";
 
-// P8 — paywall sheet over a locked episode: unlock with coins, buy the season pass, or get coins.
+// P8 — paywall sheet over a locked episode: unlock with Ping, buy the series pass or the weekly pass, or top up Ping.
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney, webCopy, type Locale } from "@/lib/web-copy";
+import { PingIcon } from "./brand/PingIcon";
 import { ConfirmDevice } from "./ConfirmDevice";
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
   seriesCode: string;
   seriesId: string;
   seasonPassLabel: string | null;
+  weeklyPassLabel?: string | null;
   returnTo: string;
 };
 
@@ -24,7 +26,7 @@ export function Paywall(p: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<null | "unlock" | "pass">(null);
+  const [confirming, setConfirming] = useState<null | "unlock" | "pass" | "weekly">(null);
 
   const unlock = useCallback(async () => {
     setBusy(true);
@@ -42,13 +44,15 @@ export function Paywall(p: Props) {
     setMessage(t.error);
   }, [p.episodeId, router, t]);
 
-  const buyPass = useCallback(async () => {
+  const buyPass = useCallback(async (kind: "pass" | "weekly" = "pass") => {
     setBusy(true);
     setMessage(null);
     const res = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "season_pass", id: p.seriesId, returnTo: p.returnTo }),
+      body: JSON.stringify(
+        kind === "weekly" ? { type: "subscription", id: "weekly", returnTo: p.returnTo } : { type: "season_pass", id: p.seriesId, returnTo: p.returnTo },
+      ),
     });
     const j = (await res.json().catch(() => ({}))) as {
       url?: string;
@@ -56,7 +60,7 @@ export function Paywall(p: Props) {
       pending?: boolean;
       reference?: string;
       amount?: number;
-      currency?: "AED" | "SAR";
+      currency?: string;
     };
     if (j.pending && j.reference) {
       setBusy(false);
@@ -64,7 +68,7 @@ export function Paywall(p: Props) {
     }
     if (j.error === "confirm_device") {
       setBusy(false);
-      return setConfirming("pass");
+      return setConfirming(kind);
     }
     if (j.url) {
       setMessage(t.redirecting);
@@ -84,7 +88,7 @@ export function Paywall(p: Props) {
           const next = confirming;
           setConfirming(null);
           if (next === "unlock") void unlock();
-          else void buyPass();
+          else void buyPass(next);
         }}
       />
     );
@@ -93,15 +97,21 @@ export function Paywall(p: Props) {
   return (
     <div className="sheet">
       <strong>{t.paywallTitle}</strong>
-      <span className="muted">
+      <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <PingIcon size={18} />
         {t.balance}: {t.coins(p.balance)}
       </span>
       <button className="btn" type="button" onClick={unlock} disabled={busy}>
         {busy ? t.unlocking : t.unlockFor(p.price)}
       </button>
       {p.seasonPassLabel && (
-        <button className="btn secondary" type="button" onClick={buyPass} disabled={busy}>
+        <button className="btn secondary" type="button" onClick={() => buyPass("pass")} disabled={busy}>
           {p.seasonPassLabel}
+        </button>
+      )}
+      {p.weeklyPassLabel && (
+        <button className="btn secondary" type="button" onClick={() => buyPass("weekly")} disabled={busy}>
+          {p.weeklyPassLabel}
         </button>
       )}
       <a className="btn secondary" href={`/store?back=${encodeURIComponent(p.returnTo)}`}>

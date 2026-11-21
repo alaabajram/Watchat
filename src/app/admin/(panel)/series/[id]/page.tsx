@@ -10,6 +10,8 @@ import { WhatsAppVersion } from "@/components/admin/WhatsAppVersion";
 import { SeriesMediaLibrary } from "@/components/flow/SeriesMediaLibrary";
 import { AGE_RATINGS, GENRES, GENRE_LABELS, type CastMember } from "@/lib/content-meta";
 import { requireAdmin } from "@/lib/admin/auth";
+import { countryName } from "@/lib/economy/countries";
+import { saveLicenseAction } from "../../../economy-actions";
 import { db } from "@/lib/supabase";
 import {
   addEpisodesAction,
@@ -28,12 +30,13 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
 
-  const [{ data: s }, { data: episodes }, { data: licences }, { data: reviews }, { data: assets }] = await Promise.all([
+  const [{ data: s }, { data: episodes }, { data: licences }, { data: reviews }, { data: assets }, { data: markets }] = await Promise.all([
     db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("episodes").select("*").eq("series_id", id).order("number"),
     db().from("licences").select("*").eq("series_id", id).order("created_at", { ascending: false }),
     db().from("content_reviews").select("*").eq("series_id", id).order("created_at", { ascending: false }).limit(5),
     db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", admin.tenantId).eq("series_id", id).order("created_at", { ascending: false }),
+    db().from("markets").select("country").eq("tenant_id", admin.tenantId).order("sort"),
   ]);
   if (!s) notFound();
   const eps = episodes ?? [];
@@ -191,18 +194,14 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
             <input name="paywall_ep" type="number" min={1} defaultValue={s.paywall_ep} />
           </label>
           <label>
-            Coins per episode
+            Ping per episode
             <input name="coins_per_episode" type="number" min={1} defaultValue={s.coins_per_episode} />
           </label>
-          <label>
-            Season pass (AED, VAT incl.)
-            <input name="season_pass_price_aed" type="number" step="0.01" defaultValue={s.season_pass_price_aed ?? ""} />
-          </label>
-          <label>
-            Season pass (SAR, VAT incl.)
-            <input name="season_pass_price_sar" type="number" step="0.01" defaultValue={s.season_pass_price_sar ?? ""} />
-          </label>
         </div>
+        <p className="muted" style={{ margin: "4px 0 0" }}>
+          The series pass (whole series, one payment) and the weekly / yearly passes have one price per country in{" "}
+          <Link href="/admin/pricing">Pricing &amp; Ping</Link>.
+        </p>
         <p>
           <button type="submit">Save series</button>
         </p>
@@ -246,7 +245,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
               <th>Titles</th>
               <th>Web video (Stream)</th>
               <th>WhatsApp clips</th>
-              <th>Coins</th>
+              <th>Ping</th>
               <th />
             </tr>
           </thead>
@@ -272,7 +271,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                         <input name="wa_video_url_en" defaultValue={e.wa_video_url_en ?? ""} placeholder="WhatsApp clip URL (English subs)" />
                       </>
                     )}
-                    <input name="coin_price_override" type="number" min={1} defaultValue={e.coin_price_override ?? ""} placeholder={`Coins (default ${s.coins_per_episode})`} />
+                    <input name="coin_price_override" type="number" min={1} defaultValue={e.coin_price_override ?? ""} placeholder={`Ping (default ${s.coins_per_episode})`} />
                     <select name="ready" defaultValue={e.status === "draft" ? "draft" : "ready"} title="Draft = hidden from viewers">
                       <option value="draft">Draft (hidden)</option>
                       <option value="ready">Ready</option>
@@ -328,6 +327,24 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
       {/* Licences */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Licence</h2>
+        <form action={saveLicenseAction} style={{ marginBottom: 16 }}>
+          <input type="hidden" name="id" value={s.id} />
+          <fieldset className="row" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend style={{ fontWeight: 600, marginBottom: 6 }}>Shown in (geo-fencing by the viewer&apos;s IP country)</legend>
+            {(markets ?? []).map((m) => (
+              <label key={m.country} className="inline">
+                <input type="checkbox" name="license" value={m.country} defaultChecked={((s.license_countries as string[] | null) ?? []).includes(m.country)} />{" "}
+                {countryName(m.country)}
+              </label>
+            ))}
+            <button type="submit" className="secondary">Save countries</button>
+          </fieldset>
+          <p className="muted" style={{ margin: "6px 0 0" }}>
+            {((s.license_countries as string[] | null) ?? []).length
+              ? "Only viewers in the ticked countries see this series on the web, in the assistant and in the WhatsApp chat."
+              : "Nothing ticked: shown in every country you sell in. Tick the countries in the licence to limit it."}
+          </p>
+        </form>
         {(licences ?? []).length > 0 && (
           <table style={{ marginBottom: 12 }}>
             <thead>

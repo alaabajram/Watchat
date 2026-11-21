@@ -1,13 +1,16 @@
-// P12 Wallet — balance, season passes and history, all tied to the viewer's WhatsApp number.
+// P12 Wallet — Ping balance, weekly / yearly pass (auto-renew), series passes, rewards and history, all tied to the viewer's WhatsApp number.
 
 import Link from "next/link";
 import { PlusIcon } from "@/components/brand/icons";
 import { BottomNav } from "@/components/home/BottomNav";
 import { TopBar } from "@/components/TopBar";
+import { AutoRenewToggle } from "@/components/RewardsClient";
+import { viewerPass } from "@/lib/economy/billing";
 import { getSessionViewer } from "@/lib/session";
 import { db } from "@/lib/supabase";
 import { getBalance, getHistory } from "@/lib/wallet";
 import { dirFor, formatMoney, webCopy } from "@/lib/web-copy";
+import { PingIcon } from "@/components/brand/PingIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +25,7 @@ export default async function WalletPage() {
       </main>
     );
   }
-  const [balance, history, { data: passes }, { data: pending }] = await Promise.all([
+  const [balance, history, { data: passes }, { data: pending }, pass] = await Promise.all([
     getBalance(viewer.id),
     getHistory(viewer.id),
     db().from("entitlements").select("series_id, series!inner(code, title_ar, title_en)").eq("viewer_id", viewer.id).is("episode_number", null),
@@ -33,6 +36,7 @@ export default async function WalletPage() {
       .eq("gateway", "cash")
       .eq("status", "pending")
       .order("created_at", { ascending: false }),
+    viewerPass(viewer.id),
   ]);
   const fmt = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", { dateStyle: "medium" });
 
@@ -43,9 +47,7 @@ export default async function WalletPage() {
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700 }}>{t.walletTitle}</h1>
         <div className="wc-card" style={{ padding: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span aria-hidden="true" style={{ width: 56, height: 56, borderRadius: 16, background: "#fff4dc", border: "1px solid #fbe3a8", display: "grid", placeItems: "center" }}>
-              <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#f5b323", boxShadow: "inset 0 0 0 4px #ffd877" }} />
-            </span>
+            <PingIcon size={56} />
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
               <strong style={{ fontSize: 32, fontWeight: 700 }}>{balance}</strong>
               <span className="muted" style={{ fontSize: 13 }}>{t.coinsAvailable}</span>
@@ -56,6 +58,29 @@ export default async function WalletPage() {
             {t.refillCoins}
           </Link>
         </div>
+
+        {pass && (
+          <section className="wc-card wc-plan wc-plan-on" style={{ gap: 8 }}>
+            <strong>⭐ {t.yourPass}</strong>
+            <span>{t.passUntil(pass.plan === "weekly" ? t.weeklyPass : t.yearlyPass, fmt.format(new Date(pass.endsAt)))}</span>
+            {pass.pastDue && <span style={{ color: "var(--wc-coral-text)" }}>{t.pastDue}</span>}
+            {pass.canRenew && (
+              <>
+                <span className="muted" style={{ fontSize: 13 }}>{pass.autoRenew ? t.autoRenewOn(pass.last4) : t.autoRenewOff}</span>
+                <AutoRenewToggle locale={locale} on={pass.autoRenew} />
+              </>
+            )}
+          </section>
+        )}
+
+        <Link href="/rewards" className="wc-card wc-promo-banner" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: "inherit" }}>
+          <PingIcon size={32} />
+          <span style={{ flex: 1 }}>
+            <strong style={{ display: "block" }}>{t.rewardsTitle}</strong>
+            <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>{t.dailyCheckin} · {t.inviteTitle}</span>
+          </span>
+          <span aria-hidden="true">{locale === "ar" ? "‹" : "›"}</span>
+        </Link>
 
         {(pending ?? []).length > 0 && (
           <section>
@@ -69,7 +94,7 @@ export default async function WalletPage() {
                       {t.reference}: <span dir="ltr">{o.payment_ref}</span>
                     </span>
                   </span>
-                  <strong>{formatMoney(Number(o.amount), o.currency as "AED" | "SAR", locale)}</strong>
+                  <strong>{formatMoney(Number(o.amount), o.currency, locale)}</strong>
                 </li>
               ))}
             </ul>

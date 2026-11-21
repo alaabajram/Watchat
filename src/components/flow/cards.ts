@@ -37,7 +37,7 @@ export const CARD_STYLE: Record<NodeKind, { icon: string; color: string; help: s
     help: "Where a reply begins: the words a viewer sends (e.g. ابدأ, رابط, حسابي). Case, spaces and punctuation don't matter. Turn on “Anything else” for one card to answer messages nothing else matches.",
   },
   list: { icon: "☰", color: "#0d9488", help: "A WhatsApp menu: one button that opens a list of up to 10 rows. Each row leads to its own card." },
-  account: { icon: "👛", color: "#7c3aed", help: "A personal sign-in link to the viewer's account page (all their series, where they stopped, coins)." },
+  account: { icon: "👛", color: "#7c3aed", help: "A personal sign-in link to the viewer's account page (all their series, where they stopped, Ping)." },
   action: { icon: "⚙", color: "#475569", help: "Does something without sending a message: turn alerts off or on, or log a data-deletion request. Follow it with a message." },
 };
 

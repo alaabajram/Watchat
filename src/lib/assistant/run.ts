@@ -5,7 +5,7 @@
 import { assistantAccount, ASSISTANT_PURPOSE, logAiUsage } from "../ai/settings";
 import { AiError, callTool } from "../ai/anthropic";
 import { getHome } from "../content";
-import { currencyFor } from "../phone";
+import { storeOffers, viewerMarket } from "../economy/store";
 import { allow } from "../security/rate-limit";
 import { currentTenantId, db } from "../supabase";
 import { HELP, answerChip, answerFromAi, answerLocally, answerWithoutAi, ASSISTANT_TOOL, assistantSystemPrompt, CHIPS, TEXT, type AssistantCtx, type CatalogItem, type Chip, type Offer, type Reply } from "./engine";
@@ -17,11 +17,10 @@ const PER_VIEWER = { messages: 20, windowS: 600, aiPerDay: 25 };
 
 export async function assistantContext(viewer: { id: string; country: string | null; uiLocale: "ar" | "en" }): Promise<AssistantCtx> {
   const tenantId = await currentTenantId();
-  const currency = currencyFor(viewer.country);
-  const [home, { data: meta }, { data: packs }] = await Promise.all([
+  const [home, { data: meta }, shop] = await Promise.all([
     getHome(viewer.id),
-    db().from("series").select("code, tags, cast_members, season_pass_price_aed, season_pass_price_sar, coins_per_episode").eq("tenant_id", tenantId).eq("status", "live"),
-    db().from("coin_packs").select("id, coins, bonus_coins, price_aed, price_sar").eq("tenant_id", tenantId).eq("active", true).order("sort"),
+    db().from("series").select("code, tags, cast_members, coins_per_episode").eq("tenant_id", tenantId).eq("status", "live"),
+    viewerMarket(viewer).then((market) => storeOffers(viewer.id, market)),
   ]);
   const byCode = new Map((meta ?? []).map((m) => [m.code as string, m]));
   const catalog: CatalogItem[] = home.catalogue.map((c) => {
@@ -29,16 +28,17 @@ export async function assistantContext(viewer: { id: string; country: string | n
     const cast = ((m?.cast_members as { name_ar?: string; name_en?: string }[] | null) ?? []).flatMap((x) => [x.name_ar, x.name_en].filter((n): n is string => Boolean(n)));
     return { code: c.code, titleAr: c.titleAr, titleEn: c.titleEn, taglineAr: c.taglineAr, taglineEn: c.taglineEn, genres: c.genres, tags: (m?.tags as string[] | null) ?? [], cast, total: c.total, createdAt: c.createdAt, posterUrl: c.posterUrl };
   });
-  const price = (aed: unknown, sar: unknown) => Number(currency === "SAR" ? sar : aed);
-  const packList = (packs ?? []).map((p) => ({ id: p.id as string, coins: p.coins as number, bonus: p.bonus_coins as number, price: price(p.price_aed, p.price_sar) }));
+  // Preset offers in the viewer's market and currency: passes first, then Ping packs, then a series pass for what they watch.
+  const currency = shop.market.currency;
+  const packList = shop.packs.map(({ pack, quote }) => ({ id: pack.id, coins: pack.coins, bonus: pack.bonus + quote.bonusPing, price: quote.price }));
   const best = packList.reduce<{ id: string; per: number } | null>((b, p) => (!b || p.price / (p.coins + p.bonus) < b.per ? { id: p.id, per: p.price / (p.coins + p.bonus) } : b), null)?.id;
   const offers: Offer[] = [
+    ...(shop.weekly ? [{ kind: "plan" as const, plan: "weekly" as const, price: shop.weekly.price, currency }] : []),
+    ...(shop.yearly ? [{ kind: "plan" as const, plan: "yearly" as const, price: shop.yearly.price, currency }] : []),
     ...packList.map((p) => ({ kind: "pack" as const, ...p, currency, best: p.id === best && packList.length > 1 })),
-    ...catalog.flatMap((c) => {
-      const m = byCode.get(c.code);
-      const pr = m ? price(m.season_pass_price_aed, m.season_pass_price_sar) : NaN;
-      return Number.isFinite(pr) && pr > 0 ? [{ kind: "pass" as const, seriesCode: c.code, titleAr: c.titleAr, titleEn: c.titleEn, price: pr, currency }] : [];
-    }),
+    ...(shop.seriesPass
+      ? home.watching.slice(0, 2).map((w) => ({ kind: "pass" as const, seriesCode: w.code, titleAr: w.titleAr, titleEn: w.titleEn, price: shop.seriesPass!.price, currency }))
+      : []),
   ];
   const cpe = (meta ?? []).map((m) => m.coins_per_episode as number).filter(Boolean);
   return {
@@ -46,7 +46,7 @@ export async function assistantContext(viewer: { id: string; country: string | n
     catalog,
     watching: home.watching.map((w) => ({ code: w.code, resume: w.resume })),
     offers,
-    coinsPerEpisode: cpe.length ? Math.round(cpe.reduce((a, b) => a + b, 0) / cpe.length) : 30,
+    coinsPerEpisode: cpe.length ? Math.round(cpe.reduce((a, b) => a + b, 0) / cpe.length) : shop.episodePing,
   };
 }
 

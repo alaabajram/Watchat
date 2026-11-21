@@ -1,5 +1,6 @@
 // Read-side helpers for the web player.
 
+import { ipMarket, seriesLicensed } from "./economy/store";
 import { currentTenantId, db } from "./supabase";
 
 export type WebSeries = {
@@ -32,13 +33,14 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
     .eq("status", "live")
     .maybeSingle();
   if (!data) return null;
+  if (!seriesLicensed(data.license_countries, await ipMarket())) return null; // geo-fenced: not licensed here
   return {
     id: data.id,
     code: data.code,
@@ -89,15 +91,20 @@ export async function getNextRelease(seriesId: string): Promise<{ number: number
   return data ? { number: data.number, releaseAt: data.release_at } : null;
 }
 
+/** An active weekly / yearly pass opens every series. */
+export async function hasAllAccess(viewerId: string): Promise<boolean> {
+  const { data } = await db().rpc("has_all_access", { p_viewer: viewerId });
+  return data === true;
+}
+
 export async function getUnlocked(viewerId: string, seriesId: string): Promise<{ all: boolean; episodes: Set<number> }> {
-  const { data } = await db()
-    .from("entitlements")
-    .select("episode_number")
-    .eq("viewer_id", viewerId)
-    .eq("series_id", seriesId);
+  const [{ data }, allAccess] = await Promise.all([
+    db().from("entitlements").select("episode_number").eq("viewer_id", viewerId).eq("series_id", seriesId),
+    hasAllAccess(viewerId),
+  ]);
   const rows = data ?? [];
   return {
-    all: rows.some((r) => r.episode_number === null),
+    all: allAccess || rows.some((r) => r.episode_number === null),
     episodes: new Set(rows.filter((r) => r.episode_number !== null).map((r) => r.episode_number as number)),
   };
 }
@@ -156,7 +163,7 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
   const [{ data: catalog }, { data: rows }] = await Promise.all([
     db()
       .from("series")
-      .select("id, code, title_ar, title_en, poster_url, banner_wide_url, created_at, episodes(number, status, release_at)")
+      .select("id, code, title_ar, title_en, poster_url, banner_wide_url, created_at, license_countries, episodes(number, status, release_at)")
       .eq("tenant_id", tenantId)
       .eq("status", "live")
       .order("created_at", { ascending: false }),
@@ -171,7 +178,8 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
   }
   const watching: LibraryItem[] = [];
   const more: Omit<LibraryItem, "resume" | "lastWatchedAt">[] = [];
-  for (const s of catalog ?? []) {
+  const market = await ipMarket();
+  for (const s of (catalog ?? []).filter((c) => seriesLicensed(c.license_countries, market))) {
     const eps = ((s.episodes ?? []) as { number: number; status: string; release_at: string | null }[]).filter(
       (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
     );
@@ -212,7 +220,7 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   const [{ data: catalog }, { data: rows }] = await Promise.all([
     db()
       .from("series")
-      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, episodes(number, status, release_at)")
+      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, license_countries, episodes(number, status, release_at)")
       .eq("tenant_id", tenantId)
       .eq("status", "live")
       .order("created_at", { ascending: false }),
@@ -226,7 +234,8 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   }
   const catalogue: HomeSeries[] = [];
   const watching: HomeWatching[] = [];
-  for (const s of catalog ?? []) {
+  const market = await ipMarket();
+  for (const s of (catalog ?? []).filter((c) => seriesLicensed(c.license_countries, market))) {
     const total = ((s.episodes ?? []) as { status: string; release_at: string | null }[]).filter(
       (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
     ).length;

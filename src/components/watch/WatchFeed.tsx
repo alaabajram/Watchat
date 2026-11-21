@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Paywall } from "@/components/Paywall";
 import { webCopy, type Locale } from "@/lib/web-copy";
+import { PingIcon } from "@/components/brand/PingIcon";
 
 export type FeedEpisode = { id: string; number: number; hls: string | null; poster: string | null; allowed: boolean; price: number };
 
@@ -27,6 +28,7 @@ type Props = {
   balance: number;
   trusted: boolean;
   seasonPassLabel: string | null;
+  weeklyPassLabel?: string | null;
 };
 
 const HIDE_AFTER_MS = 3500;
@@ -179,7 +181,7 @@ export function WatchFeed(p: Props) {
           {t.episodes}
         </a>
         <a href={`/store?back=${encodeURIComponent(`/watch/${p.seriesCode}/${active}`)}`} className="wc-glass" aria-label={t.getCoins}>
-          <span className="wc-coin" aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: "#f5b323", boxShadow: "inset 0 0 0 3px #ffd877", display: "inline-block" }} />
+          <PingIcon size={20} />
           {p.balance}
         </a>
       </div>
@@ -256,6 +258,7 @@ export function WatchFeed(p: Props) {
               seriesCode={p.seriesCode}
               seriesId={p.seriesId}
               seasonPassLabel={p.seasonPassLabel}
+              weeklyPassLabel={p.weeklyPassLabel ?? null}
               returnTo={`/watch/${p.seriesCode}/${current.number}`}
             />
           </div>
