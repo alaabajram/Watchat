@@ -1,10 +1,12 @@
 // Personal signed links: the bot sends watchat.pro/w/<token>; opening it signs the viewer in.
 // Only the SHA-256 hash of the token is stored, so a database leak can't be used to sign in.
 //
-// A link signs in ONCE: its first open, within SIGN_IN_WINDOW_HOURS of being sent. After that the link
-// only tells us which series/episode it was for, and the page asks the opener to continue in WhatsApp,
-// where the bot sends a fresh link to *their own* number. So a forwarded link never opens the sender's
-// account, wallet or progress — the receiver gets their own.
+// A link from the viewer's own WhatsApp signs in silently EVERY time it is opened, until it expires
+// (LINK_TTL_DAYS) — so a pinned message keeps working even when the browser has forgotten the session.
+// Protection for forwarded links:
+//   • only the first open within FRESH_LINK_MINUTES of sending starts a *trusted* session; any other open
+//     can watch what the owner already unlocked but must confirm from WhatsApp before spending coins;
+//   • a device already signed in to another account is never switched over (it gets its own link in WhatsApp).
 
 import { siteUrl } from "./site/store";
 import { randomToken, sha256Hex } from "./crypto";
@@ -12,12 +14,10 @@ import { env } from "./env";
 import type { MsgRef } from "./ctr/ctr";
 import { db } from "./supabase";
 
-/** Links stay readable (for the "continue in WhatsApp" page) for this long. */
-export const LINK_TTL_DAYS = 7;
-/** Each link can sign in exactly once. */
+/** A personal link signs its owner in, as often as they open it, for this long (same as a session). */
+export const LINK_TTL_DAYS = 90;
+/** uses_left only records whether the link has been opened yet (the first open may be trusted). */
 export const LINK_MAX_USES = 1;
-/** …and only if opened within this many hours of being sent. */
-export const SIGN_IN_WINDOW_HOURS = 24;
 /** A link opened within this many minutes of being sent starts a trusted session (can top up without a code). */
 export const FRESH_LINK_MINUTES = 30;
 
@@ -111,9 +111,9 @@ export async function peekLink(token: string): Promise<LinkInfo | null> {
   };
 }
 
-/** Whether this link may still sign someone in (first open, inside the window). */
+/** Whether this link may sign its owner in: any open until it expires. */
 export function canSignIn(link: LinkInfo, now = Date.now()): boolean {
-  return !link.expired && link.usesLeft > 0 && now - link.mintedAt <= SIGN_IN_WINDOW_HOURS * 3600 * 1000;
+  return !link.expired && now - link.mintedAt <= LINK_TTL_DAYS * 24 * 3600 * 1000;
 }
 
 /** Opened within minutes of being sent: almost certainly the number's owner. */
@@ -121,9 +121,14 @@ export function isFresh(link: LinkInfo, now = Date.now()): boolean {
   return now - link.mintedAt <= FRESH_LINK_MINUTES * 60 * 1000;
 }
 
+/** A trusted session (can spend without a WhatsApp code) only from the link's FIRST open, while fresh. */
+export function opensTrusted(link: LinkInfo, now = Date.now()): boolean {
+  return link.usesLeft > 0 && isFresh(link, now);
+}
+
 export type RedeemedLink = { viewerId: string; seriesId: string | null; episodeNumber: number | null };
 
-/** Use up the link (atomic). Returns null if someone else used it a moment earlier, or it expired. */
+/** Record the link's first open (atomic). Returns null if it was already opened or expired. */
 export async function redeemLink(token: string): Promise<RedeemedLink | null> {
   if (!TOKEN_RE.test(token)) return null;
   const { data, error } = await db().rpc("redeem_link_token", { p_token_hash: sha256Hex(token) });

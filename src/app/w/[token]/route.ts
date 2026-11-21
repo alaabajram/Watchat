@@ -1,16 +1,18 @@
 // P1 — opening a personal link from WhatsApp (silent sign-in).
 //
-//  • Already signed in as the link's owner on this device → straight to the episode (link not used up).
-//  • First open within 24 h of being sent, on a device not signed in to anyone else → sign in, go to episode.
-//  • Anything else (link already opened, too old, or this device belongs to another account)
-//    → /continue: the opener continues in WhatsApp and gets a fresh link for THEIR OWN number.
-//    A forwarded link therefore never opens the sender's account, wallet or progress.
+//  • Already signed in as the link's owner on this device → straight to the episode.
+//  • Not signed in here → sign in silently (any open, until the link expires) and go to the episode.
+//    So a pinned link always works, even after the browser forgot the session.
+//  • Only the first open within minutes of sending is a *trusted* session; other opens must confirm
+//    from WhatsApp before spending coins (a forwarded copy can't spend the owner's money).
+//  • This device signed in to ANOTHER account, or the link expired → continue in WhatsApp, where the
+//    bot sends a fresh link for the opener's own number.
 
 import { siteUrl } from "@/lib/site/store";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
-import { ACCOUNT_WORD, canSignIn, isFresh, markLinkOpened, peekLink, redeemLink } from "@/lib/links";
+import { ACCOUNT_WORD, canSignIn, markLinkOpened, opensTrusted, peekLink, redeemLink } from "@/lib/links";
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { createSession, getSessionViewer, SESSION_COOKIE, SESSION_MAX_AGE_S } from "@/lib/session";
 import { db } from "@/lib/supabase";
@@ -59,7 +61,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     return noStore(NextResponse.redirect(target, 303));
   }
 
-  // Someone else's device, a reused link, or an old link: get your own link in WhatsApp.
+  // Someone else's device, or an expired link: get your own link in WhatsApp.
   if (current || !canSignIn(link)) {
     const { data: owner } = await db().from("viewers").select("phone_hmac").eq("id", link.viewerId).maybeSingle();
     await trackEvent({
@@ -67,31 +69,30 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       name: "link_handoff",
       seriesId: link.seriesId,
       episodeNumber: link.episodeNumber,
-      props: { reason: current ? "other_account_on_device" : link.usesLeft <= 0 ? "already_used" : "too_old" },
+      props: { reason: current ? "other_account_on_device" : "too_old" },
     });
     return noStore(NextResponse.redirect(continueUrl, 303));
   }
 
-  // First open: use the link up atomically (a simultaneous second open loses the race and is handed off).
-  const redeemed = await redeemLink(token);
-  if (!redeemed) return noStore(NextResponse.redirect(continueUrl, 303));
-
+  // Sign in. Trusted only if this is the link's first open and it is fresh; recording the first open is
+  // atomic, so two simultaneous first opens can't both be trusted.
+  const firstOpen = link.usesLeft > 0 ? Boolean(await redeemLink(token)) : false;
+  const trusted = firstOpen && opensTrusted(link);
   await markLinkOpened(token);
-  const fresh = isFresh(link);
-  const sessionToken = await createSession(redeemed.viewerId, { userAgent: req.headers.get("user-agent"), ip, trusted: fresh });
+  const sessionToken = await createSession(link.viewerId, { userAgent: req.headers.get("user-agent"), ip, trusted });
   const { data: viewer } = await db()
     .from("viewers")
     .update({ last_seen_at: new Date().toISOString() })
-    .eq("id", redeemed.viewerId)
+    .eq("id", link.viewerId)
     .select("phone_hmac")
     .single();
 
   await trackEvent({
     viewerHmac: viewer?.phone_hmac ?? null,
     name: "link_opened",
-    seriesId: redeemed.seriesId,
-    episodeNumber: redeemed.episodeNumber,
-    props: { fresh },
+    seriesId: link.seriesId,
+    episodeNumber: link.episodeNumber,
+    props: { fresh: trusted, reopen: !firstOpen },
   });
 
   const res = NextResponse.redirect(target, 303);
