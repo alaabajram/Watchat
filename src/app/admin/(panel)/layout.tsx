@@ -14,12 +14,11 @@ const NAV: (NavItem & { area: Area })[] = [
   { href: "/admin/series", label: "CMS", area: "content", icon: "cms", group: "Content" },
   // Automations, in the order they build on each other: the chat flow per series, then the follow-ups
   // (rules, one-offs, AI), then the building blocks they all send (approved templates, shared bot texts).
-  { href: "/admin/flows", label: "Flow builder", area: "bot", icon: "flow", group: "Automations" },
-  { href: "/admin/sequences", label: "Sequences", area: "messaging", icon: "sequence", group: "Automations" },
+  // Flow builder = Series flows · Sequence flows · Shared replies (tabs).
+  { href: "/admin/flows", label: "Flow builder", area: "bot", icon: "flow", group: "Automations", also: ["/admin/sequences", "/admin/bot"] },
   { href: "/admin/campaigns", label: "Campaigns", area: "messaging", icon: "campaign", group: "Automations" },
   { href: "/admin/growth", label: "Growth agent", area: "growth", icon: "growth", group: "Automations" },
   { href: "/admin/templates", label: "WhatsApp templates", area: "messaging", icon: "template", group: "Automations" },
-  { href: "/admin/bot", label: "Shared replies", area: "bot", icon: "replies", group: "Automations" },
   { href: "/admin/viewers", label: "Viewers", area: "viewers", icon: "viewers", group: "Viewers & money" },
   { href: "/admin/orders", label: "Orders & payments", area: "orders", icon: "orders", group: "Viewers & money" },
   { href: "/admin/pricing", label: "Pricing", area: "pricing", icon: "pricing", group: "Viewers & money" },
@@ -39,7 +38,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <img src={site.logoOnDark} alt={site.nameEn} />
           <span>Admin</span>
         </Link>
-        <AdminNavLinks items={NAV.filter((n) => can(admin, n.area)).map(({ href, label, icon, group }) => ({ href, label, icon, group }))} />
+        <AdminNavLinks
+          items={NAV.flatMap((n) => {
+            // A role that can run sequences but not edit the series chats still reaches the Flow builder, on Sequence flows.
+            if (n.href === "/admin/flows" && !can(admin, "bot") && can(admin, "messaging")) return [{ href: "/admin/sequences", label: n.label, icon: n.icon, group: n.group, also: ["/admin/flows"] }];
+            return can(admin, n.area) ? [{ href: n.href, label: n.label, icon: n.icon, group: n.group, also: n.also }] : [];
+          })}
+        />
         <div className="who">
           {admin.email}
           <br />

@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
+import { FlowTabs } from "@/components/admin/FlowTabs";
 import { requireAdmin } from "@/lib/admin/auth";
 import { COPY, SHARED_KEYS } from "@/lib/bot/copy";
 import { db } from "@/lib/supabase";
@@ -29,7 +30,7 @@ export default async function SharedRepliesPage({ searchParams }: { searchParams
 
   return (
     <>
-      <h1>Shared replies</h1>
+      <FlowTabs current="replies" />
       <Flash ok={sp.ok} err={sp.err} />
       <div className="card">
         <p style={{ marginTop: 0 }}>

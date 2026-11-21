@@ -51,7 +51,8 @@ const MAX_STEPS = 40;
 /** Text in the viewer's language; Arabic when the English one is empty. */
 export const pick = (b: { ar: string; en: string }, lang: Lang) => (b[lang] ?? "").trim() || b.ar;
 
-export const findStart = (g: FlowGraph) => g.nodes.find((n) => n.data.kind === "start") ?? null;
+/** Where a flow begins: the Start card (series flow) or the Trigger card (sequence flow). */
+export const findStart = (g: FlowGraph) => g.nodes.find((n) => n.data.kind === "start") ?? g.nodes.find((n) => n.data.kind === "trigger") ?? null;
 const nodeById = (g: FlowGraph, id: string) => g.nodes.find((n) => n.id === id) ?? null;
 export const nextOf = (g: FlowGraph, nodeId: string, port: string) => g.edges.find((e) => e.source === nodeId && e.sourceHandle === port)?.target ?? null;
 
@@ -86,7 +87,11 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
   switch (d.kind) {
     case "start":
     case "web":
+    case "trigger":
       return next();
+
+    case "end":
+      return { next: null, stop: { status: "done" } };
 
     case "message": {
       const body = renderCopy(pick(d.body, lang), vars);

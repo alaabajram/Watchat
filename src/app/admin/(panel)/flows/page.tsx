@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CtrMeter } from "@/components/admin/CtrMeter";
+import { FlowTabs } from "@/components/admin/FlowTabs";
 import { requireAdmin } from "@/lib/admin/auth";
 import { flowSummary } from "@/lib/ctr/ctr";
 import { CTR_DAYS, loadFlowCtr } from "@/lib/ctr/store";
@@ -30,7 +31,7 @@ export default async function FlowsPage() {
 
   return (
     <>
-      <h1>Flow builder</h1>
+      <FlowTabs current="series" />
       <div className="card">
         <p style={{ marginTop: 0 }}>
           Each series has its own chat flow: drag cards onto a canvas, connect buttons to the next card, and watch the WhatsApp preview update as you go. Upload

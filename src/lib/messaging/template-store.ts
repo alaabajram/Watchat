@@ -233,7 +233,7 @@ export type TemplateUse = { kind: "flow" | "flow_draft" | "sequence" | "campaign
 export async function templateUsage(tenantId: string): Promise<Map<string, TemplateUse[]>> {
   const [{ data: flows }, { data: sequences }, { data: campaigns }, { data: growth }] = await Promise.all([
     db().from("flows").select("series_id, draft, published_version_id, series(code)").eq("tenant_id", tenantId),
-    db().from("sequences").select("id, name, template_name, active").eq("tenant_id", tenantId),
+    db().from("sequences").select("id, name, template_name, active, graph, draft").eq("tenant_id", tenantId),
     db().from("campaigns").select("id, name, template_name, status").eq("tenant_id", tenantId),
     db().from("growth_settings").select("enabled").eq("tenant_id", tenantId).maybeSingle(),
   ]);
@@ -259,7 +259,16 @@ export async function templateUsage(tenantId: string): Promise<Map<string, Templ
       if (!liveNames.has(t.name)) add(t.name, { kind: "flow_draft", label: `${code} flow draft · ${t.card}`, href: `/admin/flows/${f.series_id}`, active: false });
     }
   }
-  for (const s of sequences ?? []) add(s.template_name, { kind: "sequence", label: `Sequence · ${s.name}`, href: `/admin/sequences?edit=${s.id}`, active: s.active });
+  for (const s of sequences ?? []) {
+    const href = `/admin/flows/sequence/${s.id}`;
+    if (s.template_name) add(s.template_name, { kind: "sequence", label: `Sequence · ${s.name}`, href, active: s.active });
+    const liveNames = new Set<string>();
+    for (const t of templatesIn(s.graph)) {
+      liveNames.add(t.name);
+      add(t.name, { kind: "sequence", label: `Sequence · ${s.name} · ${t.card}`, href, active: s.active });
+    }
+    for (const t of templatesIn(s.draft)) if (!liveNames.has(t.name)) add(t.name, { kind: "sequence", label: `Sequence draft · ${s.name} · ${t.card}`, href, active: false });
+  }
   for (const c of campaigns ?? []) {
     add(c.template_name, { kind: "campaign", label: `Campaign · ${c.name} (${c.status})`, href: "/admin/campaigns", active: c.status === "scheduled" || c.status === "sending" });
   }

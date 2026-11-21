@@ -1,173 +1,131 @@
-// Automated sequences: timed WhatsApp follow-ups to opted-in viewers.
+// Sequence flows: follow-ups we send first (approved templates only), each built on the flow builder canvas:
+// Trigger (stopped mid-series / inactive / finished a series) → Wait / Condition / Template → End.
 
+import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
-import { CtrMeter } from "@/components/admin/CtrMeter";
-import { requireAdmin } from "@/lib/admin/auth";
-import { health } from "@/lib/ctr/ctr";
-import { CTR_DAYS, loadMessageCtr } from "@/lib/ctr/store";
-import { MARKETING_GAP_HOURS, QUIET_END_HOUR, QUIET_START_HOUR } from "@/lib/messaging/policy";
+import { FlowTabs } from "@/components/admin/FlowTabs";
+import { can, requireAdmin } from "@/lib/admin/auth";
+import { sanitizeGraph } from "@/lib/flows/sanitize";
+import { SEQUENCE_TRIGGERS } from "@/lib/flows/types";
+import { templateNamesIn } from "@/lib/flows/validate";
 import { db } from "@/lib/supabase";
-import { deleteSequenceAction, saveSequenceAction, toggleSequenceAction } from "../../messaging-actions";
+import { createSequence, deleteSequence, setSequenceActive } from "../../sequence-actions";
 
 export const dynamic = "force-dynamic";
 
-const TRIGGER_LABEL: Record<string, string> = {
-  stopped_mid_series: "Stopped mid-series (resume reminder)",
-  inactive: "Inactive for a while (win-back)",
-  finished_series: "Finished a series (suggest the next)",
-};
+const delayText = (h: number) => (h % 24 === 0 ? `${h / 24} day${h === 24 ? "" : "s"}` : `${h} hour${h === 1 ? "" : "s"}`);
 
-export default async function SequencesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string; edit?: string }> }) {
+export default async function SequencesPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("messaging");
   const sp = await searchParams;
-  const [{ data: sequences }, { data: templates }, { data: series }, stats] = await Promise.all([
-    db().from("sequences").select("*").eq("tenant_id", admin.tenantId).order("created_at"),
-    db().from("wa_templates").select("name, meta_status, button_text, button_type").eq("tenant_id", admin.tenantId),
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const [{ data: seqs }, { data: series }, { data: runs }, { data: sent }, { data: approved }] = await Promise.all([
+    db().from("sequences").select("id, name, trigger, delay_hours, series_id, active, graph, draft, version, template_name, published_at").eq("tenant_id", admin.tenantId).order("created_at"),
     db().from("series").select("id, code").eq("tenant_id", admin.tenantId),
-    loadMessageCtr(admin.tenantId).catch(() => new Map()),
+    db().from("sequence_runs").select("sequence_id, status").eq("tenant_id", admin.tenantId).in("status", ["wait", "running"]),
+    db().from("wa_messages").select("ref_id, status").eq("source", "sequence").neq("status", "failed").gte("created_at", since),
+    db().from("wa_templates").select("name").eq("tenant_id", admin.tenantId).eq("meta_status", "APPROVED"),
   ]);
-  // Clicks are counted on the template's link button; a template without one can't have a CTR.
-  const hasLink = new Set((templates ?? []).filter((t) => t.button_text && t.button_type !== "quick_reply").map((t) => t.name));
-  const templateNames = [...new Set((templates ?? []).map((t) => t.name))];
-  const approved = new Set((templates ?? []).filter((t) => t.meta_status === "APPROVED").map((t) => t.name));
-  const editing = (sequences ?? []).find((s) => s.id === sp.edit);
+  const codeById = new Map((series ?? []).map((s) => [s.id as string, s.code as string]));
+  const approvedNames = new Set((approved ?? []).map((t) => t.name as string));
+  const count = (list: { [k: string]: unknown }[] | null, key: string, id: string) => (list ?? []).filter((r) => r[key] === id).length;
+  const canEdit = can(admin, "messaging");
 
   return (
     <>
-      <h1>Sequences</h1>
+      <FlowTabs current="sequences" />
       <Flash ok={sp.ok} err={sp.err} />
-      <div className="card muted">
-        Sent automatically every 15 minutes to <strong>opted-in</strong> viewers only, never between {QUIET_START_HOUR}:00 and 0
-        {QUIET_END_HOUR}:00 Gulf time, and at most one marketing message per viewer every {MARKETING_GAP_HOURS} hours. Each viewer gets
-        each moment once.
-      </div>
-      <div className="card muted" style={{ fontSize: 13 }}>
-        <strong style={{ color: "var(--a-text)" }}>CTR meter</strong> (last {CTR_DAYS} days): viewers who opened the message&apos;s link ÷ messages delivered.
-        Working from 15%, fair from 7%; below that the sequence is flagged so you can pause it or change its template or timing. Judged after 30
-        delivered messages. &quot;Watched in 48 h&quot; counts viewers who watched anything within two days of the message.
-      </div>
-      <table className="card">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Trigger</th>
-            <th>After</th>
-            <th>Template</th>
-            <th>Series</th>
-            <th>Sent · read ({CTR_DAYS} days)</th>
-            <th>CTR</th>
-            <th>Watched in 48 h</th>
-            <th>Status</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {(sequences ?? []).map((s) => {
-            const st = stats.get(`sequence:${s.id}`) ?? { sent: 0, delivered: 0, read: 0, failed: 0, clicked: 0, watched: 0 };
-            const low = s.active && hasLink.has(s.template_name) && health(st.clicked, st.delivered, "message") === "low";
-            return (
-            <tr key={s.id} style={low ? { background: "#fef2f2" } : undefined}>
-              <td>{s.name}</td>
-              <td>{TRIGGER_LABEL[s.trigger]}</td>
-              <td>{s.delay_hours} h</td>
-              <td>
-                <code>{s.template_name}</code>
-                {!approved.has(s.template_name) && <div className="muted">⚠ not approved yet</div>}
-              </td>
-              <td>{(series ?? []).find((x) => x.id === s.series_id)?.code ?? "All"}</td>
-              <td>
-                {st.sent} · {st.read}
-                {st.failed > 0 && <div className="muted">{st.failed} failed</div>}
-              </td>
-              <td>
-                <CtrMeter clicks={st.clicked} base={st.delivered} kind="message" measurable={hasLink.has(s.template_name)} />
-              </td>
-              <td>
-                {st.watched}
-                {st.sent > 0 && <span className="muted"> ({Math.round((st.watched / st.sent) * 100)}%)</span>}
-              </td>
-              <td>
-                <span className={`badge ${s.active ? "on" : "off"}`}>{s.active ? "active" : "paused"}</span>
-              </td>
-              <td>
-                <div className="row">
-                  <form action={toggleSequenceAction}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <input type="hidden" name="active" value={String(!s.active)} />
-                    <button type="submit" className="secondary">
-                      {s.active ? "Pause" : "Activate"}
-                    </button>
-                  </form>
-                  <a className="abtn secondary" href={`/admin/sequences?edit=${s.id}`}>
-                    Edit
-                  </a>
-                  <form action={deleteSequenceAction}>
-                    <input type="hidden" name="id" value={s.id} />
-                    <button type="submit" className="secondary">
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      <form action={saveSequenceAction} className="card" key={editing?.id ?? "new"}>
-        <h2 style={{ marginTop: 0 }}>{editing ? `Edit "${editing.name}"` : "New sequence"}</h2>
-        {editing && <input type="hidden" name="id" value={editing.id} />}
-        <div className="grid3">
-          <label>
-            Name
-            <input name="name" defaultValue={editing?.name ?? ""} placeholder="Resume after 24 h" required />
-          </label>
-          <label>
-            Trigger
-            <select name="trigger" defaultValue={editing?.trigger ?? "stopped_mid_series"}>
-              {Object.entries(TRIGGER_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Send after (hours)
-            <input name="delay_hours" type="number" min={1} max={2160} defaultValue={editing?.delay_hours ?? 24} />
-          </label>
-          <label>
-            Template
-            <select name="template_name" defaultValue={editing?.template_name ?? ""} required>
-              <option value="">Choose…</option>
-              {templateNames.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                  {approved.has(n) ? "" : " (not approved yet)"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Series
-            <select name="series_id" defaultValue={editing?.series_id ?? ""}>
-              <option value="">All series</option>
-              {(series ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="inline" style={{ alignSelf: "end" }}>
-            <input type="checkbox" name="active" defaultChecked={editing?.active ?? false} /> Active
-          </label>
-        </div>
-        <p>
-          <button type="submit">Save sequence</button>
+      <div className="card">
+        <p style={{ marginTop: 0 }}>
+          Sequences bring viewers back. They start at a <strong>Trigger</strong> (stopped in the middle of a series, inactive, or finished a series),
+          then you chain <strong>Waits</strong>, <strong>Conditions</strong> (e.g. &quot;came back?&quot;) and <strong>Templates</strong> on the canvas.
         </p>
-      </form>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          WhatsApp only allows approved templates when we message first. Create a template right on a Template card: it&apos;s saved to WhatsApp templates
+          and sent to Meta for approval, and the sequence starts once every template in it is approved. Only viewers with alerts on are included,
+          nothing goes out between 22:00 and 09:00 Gulf time, and each viewer gets at most one marketing message every 20 hours.
+        </p>
+      </div>
+
+      {canEdit && (
+        <form action={createSequence} className="card row">
+          <label style={{ flex: 1 }}>
+            New sequence
+            <input name="name" placeholder="e.g. Bring back viewers who stopped mid-series" maxLength={80} required dir="auto" />
+          </label>
+          <button type="submit">Create & open the builder</button>
+        </form>
+      )}
+
+      {(seqs ?? []).length === 0 ? (
+        <p className="muted">No sequences yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Sequence</th>
+              <th>Starts when</th>
+              <th>Status</th>
+              <th>In it now</th>
+              <th>Sent (30 days)</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {(seqs ?? []).map((s) => {
+              const g = sanitizeGraph(s.graph);
+              const trigger = SEQUENCE_TRIGGERS.find((t) => t.value === s.trigger)?.label ?? s.trigger;
+              const names = g ? templateNamesIn(g) : s.template_name ? [s.template_name as string] : [];
+              const pending = names.filter((n) => !approvedNames.has(n));
+              const status = !g && !s.template_name ? "Draft" : s.active ? (pending.length ? "On · waiting for Meta" : "On") : "Paused";
+              return (
+                <tr key={s.id}>
+                  <td>
+                    <strong dir="auto">{s.name}</strong>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {g ? `Version ${s.version} · ${g.nodes.length} cards · ${names.length} template${names.length === 1 ? "" : "s"}` : s.template_name ? `Single template: ${s.template_name}` : "Not published yet"}
+                    </div>
+                  </td>
+                  <td>
+                    {trigger} · after {delayText(s.delay_hours as number)}
+                    <div className="muted" style={{ fontSize: 12 }}>{s.series_id ? codeById.get(s.series_id as string) : "Any series"}</div>
+                  </td>
+                  <td>
+                    <span className={`badge ${status.startsWith("On") ? (pending.length ? "PENDING" : "on") : status === "Paused" ? "off" : "draft"}`}>{status}</span>
+                    {pending.length > 0 && <div className="muted" style={{ fontSize: 12 }}>Waiting: {pending.join(", ")}</div>}
+                  </td>
+                  <td>{count(runs as { [k: string]: unknown }[] | null, "sequence_id", s.id as string)}</td>
+                  <td>{count(sent as { [k: string]: unknown }[] | null, "ref_id", s.id as string)}</td>
+                  <td>
+                    <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                      <Link className="abtn" href={`/admin/flows/sequence/${s.id}`}>
+                        Open builder
+                      </Link>
+                      {canEdit && (g || s.template_name) && (
+                        <form action={setSequenceActive}>
+                          <input type="hidden" name="id" value={s.id} />
+                          <input type="hidden" name="active" value={s.active ? "0" : "1"} />
+                          <button type="submit" className="secondary">
+                            {s.active ? "Pause" : "Turn on"}
+                          </button>
+                        </form>
+                      )}
+                      {canEdit && (
+                        <form action={deleteSequence}>
+                          <input type="hidden" name="id" value={s.id} />
+                          <button type="submit" className="secondary" style={{ color: "var(--a-coral-text)" }}>
+                            Delete
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }

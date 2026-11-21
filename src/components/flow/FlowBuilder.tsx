@@ -22,13 +22,15 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkFlow, deleteMyCard, loadVersion, publishFlow, renameMyCard, saveFlowDraft, saveMyCards, standardFlow } from "@/app/admin/flow-actions";
+import { checkSequence, publishSequence, saveSequenceDraft } from "@/app/admin/sequence-actions";
+import type { SequenceInfo } from "@/lib/flows/sequence-store";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData, SavedCard } from "@/lib/flows/store";
 import { artUrl } from "@/lib/flows/meta";
 import { CARD_LABELS, portsOf, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
-import { validateFlow, type Issue } from "@/lib/flows/validate";
+import { validateFlow, validateSequence, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
-import { ADDABLE, CARD_STYLE, newCard } from "./cards";
+import { ADDABLE, CARD_STYLE, newCard, SEQUENCE_ADDABLE } from "./cards";
 import { CardNode, type CardFlowNode } from "./CardNode";
 import { ChatPreview } from "./ChatPreview";
 import { Inspector } from "./Inspector";
@@ -39,7 +41,7 @@ const edgeDefaults = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowCl
 
 function toFlow(g: FlowGraph): { nodes: CardFlowNode[]; edges: Edge[] } {
   return {
-    nodes: g.nodes.map((n) => ({ id: n.id, type: "card", position: n.position, deletable: n.data.kind !== "start", data: { card: n.data, name: n.name, thumb: null, errors: 0, warnings: 0 } })),
+    nodes: g.nodes.map((n) => ({ id: n.id, type: "card", position: n.position, deletable: n.data.kind !== "start" && n.data.kind !== "trigger", data: { card: n.data, name: n.name, thumb: null, errors: 0, warnings: 0 } })),
     edges: g.edges.map((e) => ({ id: e.id, source: e.source, sourceHandle: e.sourceHandle, target: e.target, ...edgeDefaults })),
   };
 }
@@ -52,7 +54,10 @@ function toGraph(nodes: CardFlowNode[], edges: Edge[]): FlowGraph {
   };
 }
 
-export function FlowBuilder(props: BuilderData & { canPublish: boolean }) {
+/** A series flow, or (with `sequence`) a sequence flow: Trigger → Wait / Condition / Template → End. */
+type Props = BuilderData & { canPublish: boolean; sequence?: SequenceInfo };
+
+export function FlowBuilder(props: Props) {
   return (
     <ReactFlowProvider>
       <Builder {...props} />
@@ -60,7 +65,8 @@ export function FlowBuilder(props: BuilderData & { canPublish: boolean }) {
   );
 }
 
-function Builder(props: BuilderData & { canPublish: boolean }) {
+function Builder(props: Props) {
+  const seq = props.sequence ?? null;
   const initial = useMemo(() => toFlow(props.draft), [props.draft]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CardFlowNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initial.edges);
@@ -100,11 +106,13 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
   );
   const issues = useMemo(
     () =>
-      validateFlow(graph, {
-        episodeCount: props.series.episodeCount,
-        templates: templates.map((t) => ({ name: t.name, approved: t.approved })),
-        seriesCodes: (props.series.others ?? []).map((o) => o.code),
-      }),
+      seq
+        ? validateSequence(graph, { templates: templates.map((t) => ({ name: t.name, approved: t.approved })), seriesCodes: seq.seriesCodes })
+        : validateFlow(graph, {
+            episodeCount: props.series.episodeCount,
+            templates: templates.map((t) => ({ name: t.name, approved: t.approved })),
+            seriesCodes: (props.series.others ?? []).map((o) => o.code),
+          }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [logicKey, props.series.episodeCount, templates],
   );
@@ -160,14 +168,14 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     const t = setTimeout(async () => {
       setSaveState((s) => ({ ...s, busy: true }));
       const snapshot = fullKey;
-      const r = await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
+      const r = seq ? await saveSequenceDraft(seq.id, JSON.parse(snapshot)) : await saveFlowDraft(props.seriesId, JSON.parse(snapshot));
       if (r.ok) {
         savedKey.current = snapshot;
         setSaveState({ at: r.savedAt, busy: false });
       } else setSaveState((s) => ({ ...s, busy: false, error: r.error }));
     }, 2000);
     return () => clearTimeout(t);
-  }, [fullKey, dirty, props.seriesId]);
+  }, [fullKey, dirty, props.seriesId, seq]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
@@ -247,13 +255,13 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     if (opts.fit !== false) setTimeout(() => flow.fitView({ duration: 300, maxZoom: 1 }), 50);
   };
 
-  const multi = nodes.filter((n) => n.selected && n.data.card.kind !== "start");
+  const multi = nodes.filter((n) => n.selected && n.data.card.kind !== "start" && n.data.card.kind !== "trigger");
   const selectedNode = multi.length > 1 ? null : (nodes.find((n) => n.id === selected) ?? null);
   const selectedTakesMedia = selectedNode && "media" in selectedNode.data.card;
 
   async function onPublish() {
     setMessage(null);
-    const r = await publishFlow(props.seriesId, graph, note);
+    const r = seq ? await publishSequence(seq.id, graph, note) : await publishFlow(props.seriesId, graph, note);
     if (!r.ok) {
       setShowIssues(true);
       setMessage({ kind: "err", text: r.error ?? `Fix ${r.issues.filter((i) => i.level === "error").length} problem(s) before publishing.` });
@@ -264,7 +272,12 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     setPublished({ versionId: r.versionId, version: r.version, graph });
     setVersions([{ id: r.versionId, version: r.version, publishedAt: new Date().toISOString(), note: note || null }, ...versions]);
     setNote("");
-    setMessage({ kind: "ok", text: `Published version ${r.version}. New chats for ${props.code} follow this flow now.` });
+    setMessage({
+      kind: "ok",
+      text: seq
+        ? `Published version ${r.version} and turned the sequence on. It starts viewers once every template in it is approved by Meta.`
+        : `Published version ${r.version}. New chats for ${props.code} follow this flow now.`,
+    });
   }
 
   const time = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }) : "");
@@ -274,12 +287,28 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
     <div className="flow-builder" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 24px)", gap: 8 }}>
       {/* Toolbar */}
       <div className="card" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 12px", margin: 0 }}>
-        <strong>
-          {props.code} · {props.series.titleEn}
-        </strong>
-        <span className="muted" style={{ fontSize: 13 }}>
-          {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published yet · new chats get the standard flow"}
-        </span>
+        {seq ? (
+          <>
+            <a href="/admin/sequences" className="secondary" style={{ fontSize: 13 }}>
+              ← Sequences
+            </a>
+            <strong dir="auto">⚡ {seq.name}</strong>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {published
+                ? `Version ${published.version} · ${seq.active ? "on" : "paused"}${publishedDiffers ? " · draft has unpublished changes" : ""} · ${seq.waiting} viewer(s) waiting`
+                : "Not published yet · publish to turn it on"}
+            </span>
+          </>
+        ) : (
+          <>
+            <strong>
+              {props.code} · {props.series.titleEn}
+            </strong>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {published ? `Live: version ${published.version}${publishedDiffers ? " · draft has unpublished changes" : ""}` : "Not published yet · new chats get the standard flow"}
+            </span>
+          </>
+        )}
         <span className="muted" style={{ fontSize: 13 }}>
           {saveState.busy ? "Saving…" : saveState.error ? `Save failed: ${saveState.error}` : dirty ? "Unsaved changes" : `Draft saved ${time(saveState.at)}`}
         </span>
@@ -298,6 +327,7 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
         <button type="button" className="secondary" onClick={() => setShowIssues(!showIssues)} style={{ color: errors.length ? "#b91c1c" : undefined }}>
           {errors.length ? `⛔ ${errors.length}` : "✓"} {warnings.length ? `⚠️ ${warnings.length}` : ""} Checks
         </button>
+        {!seq && (
         <select
           value=""
           onChange={async (e) => {
@@ -323,11 +353,12 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
           ))}
           <option value="standard">Start from the standard scenario</option>
         </select>
+        )}
         {props.canPublish && (
           <>
             <input placeholder="What changed? (optional)" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 180 }} />
-            <button type="button" onClick={onPublish} disabled={errors.length > 0} title={errors.length ? "Fix the problems first" : "Make this flow live"}>
-              Publish
+            <button type="button" onClick={onPublish} disabled={errors.length > 0} title={errors.length ? "Fix the problems first" : seq ? "Publish and turn the sequence on" : "Make this flow live"}>
+              {seq ? "Publish & turn on" : "Publish"}
             </button>
           </>
         )}
@@ -345,12 +376,16 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
             <button type="button" className={tab === "cards" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("cards")}>
               Add card
             </button>
+            {!seq && (
+            <>
             <button type="button" className={tab === "media" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("media")}>
               Media ({assets.length})
             </button>
             <button type="button" className={tab === "ai" ? "" : "secondary"} style={{ flex: 1, padding: 4 }} onClick={() => setTab("ai")}>
               ✨ AI
             </button>
+            </>
+            )}
           </div>
           {tab === "ai" ? (
             <AiPanel
@@ -369,7 +404,12 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
             />
           ) : tab === "cards" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {ADDABLE.map((k) => (
+              {seq && (
+                <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
+                  Sequences message viewers first, so WhatsApp only allows approved templates. Create a template right on its card: it&apos;s saved to WhatsApp templates and sent to Meta for approval.
+                </p>
+              )}
+              {(seq ? SEQUENCE_ADDABLE : ADDABLE).map((k) => (
                 <button
                   key={k}
                   type="button"
@@ -476,6 +516,8 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
           {selectedNode && (
             <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 340, background: "#fff", borderLeft: "1px solid #e5e7eb", padding: 12, overflowY: "auto", zIndex: 5, boxShadow: "-4px 0 12px #0001" }}>
               <Inspector
+                mode={seq ? "sequence" : "series"}
+                seriesCodes={seq?.seriesCodes ?? []}
                 seriesId={props.seriesId}
                 nodeId={selectedNode.id}
                 data={selectedNode.data.card}
@@ -549,7 +591,7 @@ function Builder(props: BuilderData & { canPublish: boolean }) {
                 className="secondary"
                 style={{ marginTop: 6, padding: "2px 8px", fontSize: 12 }}
                 onClick={async () => {
-                  const server = await checkFlow(props.seriesId, graph);
+                  const server = seq ? await checkSequence(seq.id, graph) : await checkFlow(props.seriesId, graph);
                   setMessage({ kind: server.some((i) => i.level === "error") ? "err" : "ok", text: server.length ? `Server check: ${server.length} item(s), same as listed.` : "Server check passed ✓" });
                 }}
               >

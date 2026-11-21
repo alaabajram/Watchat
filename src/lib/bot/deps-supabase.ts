@@ -388,6 +388,9 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
         case "started":
         case "watched_within":
           return false; // answered from progress in flowEnvFor
+        case "came_back":
+        case "paid_since":
+          return false; // sequence flows only (lib/messaging/sequence-flows)
         case "reached_episode": {
           const { count } = await db()
             .from("progress")

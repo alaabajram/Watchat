@@ -44,7 +44,7 @@ function condition(v: unknown): Condition {
   const c = obj(v);
   if (c.check === "reached_episode") return { check: "reached_episode", episode: num(c.episode, 1, 999, 1) };
   if (c.check === "watched_within") return { check: "watched_within", hours: num(c.hours, 1, 720, 24) };
-  if (c.check === "language_en" || c.check === "paid" || c.check === "started") return { check: c.check };
+  if (c.check === "language_en" || c.check === "paid" || c.check === "started" || c.check === "came_back" || c.check === "paid_since") return { check: c.check };
   return { check: "opted_in" };
 }
 
@@ -82,6 +82,13 @@ function data(v: unknown): NodeData | null {
         });
       return { kind: "choice", body: bi(d.body), options: options.length ? options : [{ code: "AUTO", label: { ar: "", en: "" } }], media: media(d.media) };
     }
+    case "trigger": {
+      const trigger = ["stopped_mid_series", "inactive", "finished_series"].includes(String(d.trigger)) ? (d.trigger as "inactive") : "stopped_mid_series";
+      const code = str(d.seriesCode, 20).toUpperCase();
+      return { kind: "trigger", trigger, delayHours: num(d.delayHours, 1, 2160, 24), seriesCode: /^[A-Z]{3,}\d{1,3}$/.test(code) ? code : null };
+    }
+    case "end":
+      return { kind: "end" };
     default:
       return null;
   }
@@ -120,7 +127,7 @@ export function sanitizeGraph(input: unknown): FlowGraph | null {
 export function sanitizeBlock(input: unknown): FlowGraph | null {
   const g = sanitizeGraph(input);
   if (!g) return null;
-  const nodes = g.nodes.filter((n) => n.data.kind !== "start" && n.data.kind !== "web").slice(0, 30);
+  const nodes = g.nodes.filter((n) => n.data.kind !== "start" && n.data.kind !== "web" && n.data.kind !== "trigger").slice(0, 30);
   if (!nodes.length) return null;
   const ids = new Set(nodes.map((n) => n.id));
   const minX = Math.min(...nodes.map((n) => n.position.x));

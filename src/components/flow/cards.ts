@@ -25,7 +25,15 @@ export const CARD_STYLE: Record<NodeKind, { icon: string; color: string; help: s
     color: "#be185d",
     help: "One message with up to 3 series as buttons. Tapping one starts that series' own flow (from where the viewer is in it). 'Recommended' picks a live series the viewer hasn't started.",
   },
+  trigger: {
+    icon: "⚡",
+    color: "#be123c",
+    help: "Where the sequence begins: the moment (stopped mid-series, inactive, finished a series), how long after it, and which series. Only viewers who turned on alerts are included.",
+  },
+  end: { icon: "⏹", color: "#334155", help: "Ends the sequence for this viewer. Use it after a Condition, e.g. when they came back." },
 };
+
+export const SEQUENCE_ADDABLE: NodeKind[] = ["wait", "condition", "template", "end"];
 
 export const ADDABLE: NodeKind[] = ["message", "episode", "link", "language", "optin", "wait", "condition", "template", "choice", "suggest", "web"];
 
@@ -69,6 +77,9 @@ export function newCard(kind: NodeKind, episodeCount: number): NodeData {
       };
     case "start":
     case "web":
+    case "end":
       return { kind };
+    case "trigger":
+      return { kind, trigger: "stopped_mid_series", delayHours: 24, seriesCode: null };
   }
 }

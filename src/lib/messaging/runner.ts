@@ -11,6 +11,7 @@ import { currentTenantId, db } from "../supabase";
 import { sendWhatsApp } from "../whatsapp/client";
 import { placeholderCount } from "../whatsapp/templates";
 import { isQuietHours, MARKETING_GAP_HOURS, templateLangFor } from "./policy";
+import { runSequenceFlows, type SequenceFlowSummary } from "./sequence-flows";
 
 type Template = {
   name: string;
@@ -33,7 +34,15 @@ export type Recipient = {
   episode: number | null;
 };
 
-export type RunSummary = { quietHours: boolean; sequences: Record<string, number>; campaigns: Record<string, number>; skipped: number; failed: number };
+export type RunSummary = {
+  quietHours: boolean;
+  sequences: Record<string, number>;
+  /** Sequences built on the flow builder canvas. */
+  sequenceFlows?: SequenceFlowSummary;
+  campaigns: Record<string, number>;
+  skipped: number;
+  failed: number;
+};
 
 const MAX_SENDS_PER_RUN = 400;
 
@@ -152,16 +161,23 @@ export async function runMessaging(now = new Date()): Promise<RunSummary> {
   const tenantId = await currentTenantId();
   let budget = MAX_SENDS_PER_RUN;
 
-  // --- Sequences --------------------------------------------------------------------------
+  // --- Sequence flows (built on the canvas) -----------------------------------------------
+  const left = { left: budget };
+  summary.sequenceFlows = await runSequenceFlows(tenantId, now, left);
+  budget = left.left;
+
+  // --- Single-template sequences (no canvas) ----------------------------------------------
   const { data: sequences } = await db()
     .from("sequences")
     .select("id, name, template_name")
     .eq("tenant_id", tenantId)
-    .eq("active", true);
+    .eq("active", true)
+    .is("graph", null)
+    .not("template_name", "is", null);
 
   for (const seq of sequences ?? []) {
     if (budget <= 0) break;
-    const templates = await loadTemplates(tenantId, seq.template_name);
+    const templates = await loadTemplates(tenantId, seq.template_name as string);
     // Don't use up anyone's moment while the template is still waiting for Meta's approval.
     if (![...templates.values()].some((t) => t.meta_status === "APPROVED")) continue;
     const { data: candidates, error } = await db().rpc("sequence_candidates", { p_sequence: seq.id });

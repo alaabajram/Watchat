@@ -2,7 +2,7 @@
 
 import { LIMITS } from "../whatsapp/messages";
 import { pick } from "./engine";
-import { CARD_LABELS, isEntry, isFreeform, portsOf, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
+import { CARD_LABELS, isEntry, isFreeform, portsOf, SEQUENCE_CARDS, SEQUENCE_CHECKS, waitsForInput, type FlowGraph, type FlowNode, type Lang } from "./types";
 
 export type Issue = { level: "error" | "warning"; nodeId?: string; message: string };
 export type ValidateCtx = { episodeCount: number; templates: { name: string; approved: boolean }[]; seriesCodes?: string[] };
@@ -78,6 +78,7 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
         break;
       case "condition":
         if (d.condition.check === "reached_episode") episodeOk(n, d.condition.episode, "Condition");
+        if (d.condition.check === "came_back" || d.condition.check === "paid_since") err("Condition: that check is for sequence flows only.", n.id);
         if (d.condition.check === "watched_within" && (d.condition.hours < 1 || d.condition.hours > 720)) err("Condition: hours must be 1–720.", n.id);
         break;
       case "choice": {
@@ -92,6 +93,9 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
         if (d.options.some((o) => o.code !== "AUTO" && !o.label.ar.trim())) warn("Series choice: long series titles are cut to 20 characters on the button; add a short label if needed.", n.id);
         break;
       }
+      case "trigger":
+        err("Trigger cards belong to sequence flows.", n.id);
+        break;
       case "template": {
         const t = ctx.templates.find((x) => x.name === d.name);
         if (!d.name) err("Template card: pick a template.", n.id);
@@ -190,3 +194,93 @@ export function validateFlow(g: FlowGraph, ctx: ValidateCtx): Issue[] {
 }
 
 export const hasErrors = (issues: Issue[]) => issues.some((i) => i.level === "error");
+
+export type SequenceCtx = { templates: { name: string; approved: boolean }[]; seriesCodes: string[] };
+
+/**
+ * Checks a sequence flow before publishing. Sequences message viewers first (outside the 24-hour window),
+ * so only Template cards may send; the flow begins at exactly one Trigger and must reach a Template.
+ */
+export function validateSequence(g: FlowGraph, ctx: SequenceCtx): Issue[] {
+  const issues: Issue[] = [];
+  const err = (message: string, nodeId?: string) => issues.push({ level: "error", nodeId, message });
+  const warn = (message: string, nodeId?: string) => issues.push({ level: "warning", nodeId, message });
+  const name = (n: FlowNode) => CARD_LABELS[n.data.kind].split(":")[0];
+  const ids = new Set(g.nodes.map((n) => n.id));
+
+  const triggers = g.nodes.filter((n) => n.data.kind === "trigger");
+  if (triggers.length !== 1) err("A sequence needs exactly one Trigger card.");
+
+  for (const n of g.nodes) {
+    const d = n.data;
+    if (!SEQUENCE_CARDS.includes(d.kind)) {
+      err(`${name(n)} can't be used in a sequence: sequences message viewers first, so WhatsApp only allows approved templates.`, n.id);
+      continue;
+    }
+    if (d.kind === "trigger") {
+      if (d.delayHours < 1 || d.delayHours > 2160) err("Trigger: the delay must be between 1 hour and 90 days.", n.id);
+      if (d.seriesCode && !ctx.seriesCodes.includes(d.seriesCode)) err(`Trigger: ${d.seriesCode} isn't one of your series.`, n.id);
+    }
+    if (d.kind === "wait" && (d.minutes < 60 || d.minutes > MAX_WAIT_MINUTES)) err("Wait: between 1 hour and 30 days in a sequence (the scheduler runs every 15 minutes).", n.id);
+    if (d.kind === "condition") {
+      if (!SEQUENCE_CHECKS.includes(d.condition.check)) err("Condition: that check isn't available in sequences.", n.id);
+      if (d.condition.check === "watched_within" && (d.condition.hours < 1 || d.condition.hours > 720)) err("Condition: hours must be 1–720.", n.id);
+    }
+    if (d.kind === "template") {
+      const t = ctx.templates.find((x) => x.name === d.name);
+      if (!d.name) err("Template card: pick a template, or create one here and send it to Meta.", n.id);
+      else if (!t) err(`Template "${d.name}" doesn't exist.`, n.id);
+      else if (!t.approved) warn(`Template "${d.name}" is waiting for Meta's approval. The sequence won't start for new viewers until every template in it is approved.`, n.id);
+    }
+  }
+
+  for (const e of g.edges) {
+    const tgt = g.nodes.find((n) => n.id === e.target);
+    const src = g.nodes.find((n) => n.id === e.source);
+    if (tgt?.data.kind === "trigger") err("Arrows can't point into the Trigger; it's where the sequence begins.", tgt.id);
+    if (!src || !ids.has(e.target)) err("An arrow points to a card that no longer exists.");
+    else if (!portsOf(src.data).some((p) => p.id === e.sourceHandle)) err(`${name(src)}: an arrow starts from an exit that no longer exists.`, src.id);
+  }
+  for (const n of g.nodes) {
+    for (const p of portsOf(n.data)) {
+      if (g.edges.filter((e) => e.source === n.id && e.sourceHandle === p.id).length > 1) err(`${name(n)}: "${p.label}" has more than one arrow.`, n.id);
+    }
+  }
+
+  // Everything reachable from the Trigger; at least one Template on the way.
+  const trigger = triggers[0];
+  if (trigger) {
+    if (!g.edges.some((e) => e.source === trigger.id)) err("Connect the Trigger card to the first card.", trigger.id);
+    const seen = new Set<string>([trigger.id]);
+    const queue = [trigger.id];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const e of g.edges.filter((x) => x.source === id)) if (!seen.has(e.target)) (seen.add(e.target), queue.push(e.target));
+    }
+    for (const n of g.nodes) if (!seen.has(n.id)) warn(`${name(n)} isn't connected to the Trigger, so it never runs.`, n.id);
+    if (!g.nodes.some((n) => seen.has(n.id) && n.data.kind === "template")) err("The sequence never sends anything: add a Template card after the Trigger.");
+  }
+
+  // A loop must contain a Wait, or the sequence would message the viewer again and again at once.
+  const state = new Map<string, 1 | 2>();
+  const visit = (id: string): boolean => {
+    const n = g.nodes.find((x) => x.id === id);
+    if (!n || n.data.kind === "wait") return false;
+    if (state.get(id) === 1) return true;
+    if (state.get(id) === 2) return false;
+    state.set(id, 1);
+    const loop = g.edges.filter((e) => e.source === id).some((e) => visit(e.target));
+    state.set(id, 2);
+    return loop;
+  };
+  for (const n of g.nodes) {
+    if (visit(n.id)) {
+      err("There's a loop with no Wait in it.", n.id);
+      break;
+    }
+  }
+  return issues;
+}
+
+/** Template names a flow uses (to hold a sequence until Meta has approved them all). */
+export const templateNamesIn = (g: FlowGraph) => [...new Set(g.nodes.flatMap((n) => (n.data.kind === "template" && n.data.name ? [n.data.name] : [])))];
