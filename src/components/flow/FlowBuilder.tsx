@@ -408,19 +408,18 @@ function Builder(props: Props) {
               Add card
             </button>
             {mode === "series" && (
-            <>
-            <button type="button" style={tabStyle(tab === "media")} onClick={() => setTab("media")}>
-              Media ({assets.length})
-            </button>
+              <button type="button" style={tabStyle(tab === "media")} onClick={() => setTab("media")}>
+                Media ({assets.length})
+              </button>
+            )}
             <button type="button" style={tabStyle(tab === "ai")} onClick={() => setTab("ai")}>
               ✨ AI
             </button>
-            </>
-            )}
           </div>
           {tab === "ai" ? (
             <AiPanel
-              seriesId={props.seriesId}
+              kind={mode}
+              targetId={seq ? seq.id : shared ? "shared" : props.seriesId}
               aiReady={props.aiReady}
               graph={graph}
               canUndo={Boolean(undo)}

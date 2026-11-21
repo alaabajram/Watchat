@@ -4,7 +4,9 @@
 // sequence's trigger / delay / series so sequence_candidates picks the right viewers), pause / resume, delete.
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { audit, requireAdmin } from "@/lib/admin/auth";
+import { learnLessons, recordPublished } from "@/lib/ai/flow-agent";
 import { sanitizeGraph } from "@/lib/flows/sanitize";
 import { starterSequence } from "@/lib/flows/sequence-store";
 import { hasErrors, validateSequence, type Issue } from "@/lib/flows/validate";
@@ -97,6 +99,10 @@ export async function publishSequence(
     .eq("id", id);
   if (error) return { ok: false, issues, error: error.message };
   await audit(admin, "sequence.published", "sequence", id, { version, cards: clean.nodes.length });
+  // Build with AI learns from what the team changed in its draft before publishing.
+  after(async () => {
+    if (await recordPublished(admin.tenantId, "sequence", id, clean)) await learnLessons(admin.tenantId, admin.id, "sequence");
+  });
   return { ok: true, version, versionId: id, issues };
 }
 
