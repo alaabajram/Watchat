@@ -6,6 +6,8 @@ import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { telegramStatus } from "@/lib/telegram/client";
 import { connectTelegramAction } from "../../telegram-actions";
+import { moveFilesToCloudflareAction, supabaseLinks } from "../../storage-actions";
+import { storageStatus } from "@/lib/storage/cloudflare";
 import { DEFAULT_SITE } from "@/lib/site/brand";
 import { defaultPages } from "@/lib/site/defaults";
 import { getPages, getSite } from "@/lib/site/store";
@@ -21,7 +23,9 @@ function detected(): string | null {
 export default async function SitePage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const admin = await requireAdmin("site");
   const sp = await searchParams;
-  const [site, pages, tg] = await Promise.all([getSite(admin.tenantId), getPages(admin.tenantId), telegramStatus()]);
+  const [site, pages, tg, old] = await Promise.all([getSite(admin.tenantId), getPages(admin.tenantId), telegramStatus(), supabaseLinks()]);
+  const store = storageStatus();
+  const stream = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN && process.env.CLOUDFLARE_STREAM_CUSTOMER_CODE);
   const custom = (v: string, d: string) => (v === d ? null : v);
 
   return (
@@ -80,6 +84,33 @@ export default async function SitePage({ searchParams }: { searchParams: Promise
               viewers pay in Telegram Stars ⭐ (prices in Pricing &amp; Ping).
             </p>
           </>
+        )}
+      </section>
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Storage</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Where uploads go. Pictures (posters, banners, card images, logos) → Cloudflare Images. WhatsApp videos, trailers and subtitles →
+          Cloudflare R2. Full web episodes → Cloudflare Stream. Anything not set up yet still goes to Supabase.
+        </p>
+        <ul style={{ margin: "0 0 12px", paddingInlineStart: 18, lineHeight: 1.8 }}>
+          <li>Cloudflare Images: {store.images ? "✓ connected" : "not set up (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_STREAM_API_TOKEN, CLOUDFLARE_IMAGES_ACCOUNT_HASH)"}</li>
+          <li>Cloudflare R2: {store.r2 ? "✓ connected" : "not set up (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL)"}</li>
+          <li>Cloudflare Stream: {stream ? "✓ connected" : "not set up (CLOUDFLARE_STREAM_CUSTOMER_CODE …)"}</li>
+        </ul>
+        {old === null ? (
+          <p className="muted" style={{ margin: 0 }}>Moving older files needs the storage database update.</p>
+        ) : old.images.length + old.files.length === 0 ? (
+          <p style={{ margin: 0 }}>✓ No files left in Supabase storage.</p>
+        ) : (
+          <form action={moveFilesToCloudflareAction} className="row" style={{ gap: 12, alignItems: "center" }}>
+            <button type="submit" disabled={!store.images && !store.r2}>
+              Move existing files to Cloudflare
+            </button>
+            <span className="muted">
+              Still in Supabase: {old.images.length} picture{old.images.length === 1 ? "" : "s"}, {old.files.length} other file{old.files.length === 1 ? "" : "s"}. Every
+              link (series, episodes, flow cards, library, logos) is updated to the copy; the originals stay in Supabase as a backup.
+            </span>
+          </form>
         )}
       </section>
       <SitePagesEditor pages={pages} defaults={defaultPages(site.nameAr, site.nameEn, site.supportEmail)} />

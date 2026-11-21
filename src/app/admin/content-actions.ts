@@ -6,6 +6,7 @@ import { done, int, num, opt, str, uuid } from "@/lib/admin/forms";
 import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
+import { uploadTarget } from "@/lib/storage/cloudflare";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
 
@@ -220,16 +221,12 @@ export async function ensureEpisodes(seriesId: string, numbers: number[]): Promi
   return Object.fromEntries((all ?? []).map((e) => [e.number, e.id]));
 }
 
-/** Signed URL to upload one file straight from the browser to the public "media" bucket. */
+/** Where the browser sends one file: Cloudflare Images (pictures) or R2 (videos, subtitles); Supabase until those are set up. */
 export async function createMediaUpload(kind: keyof typeof MEDIA_KINDS, seriesCode: string, ext: string) {
   await requireAdmin("content");
   if (!(MEDIA_KINDS[kind] as readonly string[]).includes(ext)) throw new Error("File type not allowed.");
   if (!CODE_RE.test(seriesCode)) throw new Error("Bad series code.");
-  const path = `${seriesCode}/${kind}-${Date.now()}-${randomToken(6)}.${ext}`;
-  const { data, error } = await db().storage.from("media").createSignedUploadUrl(path);
-  if (error || !data) throw new Error(`Upload URL failed: ${error?.message}`);
-  const { data: pub } = db().storage.from("media").getPublicUrl(path);
-  return { uploadUrl: data.signedUrl, publicUrl: pub.publicUrl };
+  return uploadTarget(`${seriesCode}/${kind}-${Date.now()}-${randomToken(6)}.${ext}`);
 }
 
 /** One-time Cloudflare Stream upload URL (web episodes). */

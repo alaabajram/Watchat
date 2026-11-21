@@ -1,17 +1,14 @@
 "use client";
 
-// Browser uploads for the CMS: files go straight to Supabase Storage or Cloudflare Stream (with progress).
+// Browser uploads for the CMS: pictures to Cloudflare Images, videos / subtitles to R2, full episodes to Stream.
 
+import { sendUpload } from "@/lib/storage/send";
 import { createMediaUpload, createStreamUpload, setMediaField } from "@/app/admin/content-actions";
 
 export async function uploadToStorage(kind: "artwork" | "clip" | "poster", seriesCode: string, blob: Blob, ext: string): Promise<string> {
-  const { uploadUrl, publicUrl } = await createMediaUpload(kind, seriesCode, ext);
-  const body = new FormData();
-  body.append("cacheControl", "31536000");
-  body.append("", blob);
-  const res = await fetch(uploadUrl, { method: "PUT", body, headers: { "x-upsert": "false" } });
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return publicUrl;
+  const target = await createMediaUpload(kind, seriesCode, ext);
+  await sendUpload(target, blob);
+  return target.publicUrl;
 }
 
 /** Full episode to Cloudflare Stream (web player). Returns the Stream video id. */
