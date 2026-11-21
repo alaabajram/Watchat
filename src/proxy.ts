@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { businessPath, isBusinessHost } from "@/lib/business-host";
-import { SESSION_COOKIE, SESSION_MAX_AGE_S } from "@/lib/session-cookie";
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/session-cookie";
 
 export default function proxy(req: NextRequest) {
   if (isBusinessHost(req.headers.get("host"))) {
@@ -22,7 +22,7 @@ export default function proxy(req: NextRequest) {
       secure: req.nextUrl.protocol === "https:",
       sameSite: "lax",
       path: "/",
-      maxAge: SESSION_MAX_AGE_S,
+      maxAge: SESSION_COOKIE_MAX_AGE_S,
     });
   }
   return res;

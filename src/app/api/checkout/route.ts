@@ -1,4 +1,4 @@
-// Start a purchase (coin pack or season pass). Needs a trusted device.
+// Start a purchase (coin pack or season pass). Any signed-in viewer can buy (no device confirm).
 // Online (Tap) when TAP_SECRET_KEY is set; otherwise a manual cash / transfer order with a reference code.
 
 import type { NextRequest } from "next/server";
@@ -17,7 +17,6 @@ export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
   const viewer = await getSessionViewer();
   if (!viewer) return err(401, "signed_out");
-  if (!viewer.trusted) return err(409, "confirm_device");
   if (!(await allow(`checkout:${viewer.id}`, 10, 3600))) return err(429, "slow_down");
 
   const body = await readJson<Body>(req);

@@ -1,18 +1,18 @@
-// P1 — opening a personal link from WhatsApp (silent sign-in).
+// P1 — opening a personal link from the Watchat chat. Rules: decideLinkOpen in lib/links.
 //
-//  • Already signed in as the link's owner on this device → straight to the episode (link not used up).
-//  • First open within 24 h of being sent, on a device not signed in to anyone else → sign in, go to episode.
-//  • Anything else (link already opened, too old, or this device belongs to another account)
-//    → /continue: the opener continues in WhatsApp and gets a fresh link for THEIR OWN number.
-//    A forwarded link therefore never opens the sender's account, wallet or progress.
+//  • Signed in here as the owner → the episode.
+//  • Signed in here to another account (a forwarded link) → stays in that account, same episode on the web.
+//  • The owner's own browser whose session went idle → signed in again silently → the episode.
+//  • A brand-new browser, first open within minutes of sending (a new viewer's first link) → signed in.
+//  • Anything else (unknown browser: forwarded, re-opened or expired link) → "Sign in with WhatsApp" page.
+//    An unknown browser never gets the owner's account.
 
 import { siteUrl } from "@/lib/site/store";
 import { NextResponse, type NextRequest } from "next/server";
-import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
-import { ACCOUNT_WORD, canSignIn, isFresh, markLinkOpened, peekLink, redeemLink } from "@/lib/links";
+import { decideLinkOpen, markLinkOpened, peekLink, redeemLink } from "@/lib/links";
 import { allow, clientIp } from "@/lib/security/rate-limit";
-import { createSession, getSessionViewer, SESSION_COOKIE, SESSION_MAX_AGE_S } from "@/lib/session";
+import { browserViewerId, createSession, getSessionViewer, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/session";
 import { db } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -41,57 +41,61 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   const episode = link.episodeNumber ?? 1;
   // A link without a series is an account link: it opens "My account".
   const target = series?.code ? `${base}/watch/${series.code}/${episode}` : `${base}/me`;
-  // Hand-off for anyone this link can't sign in: open the Watchat chat with "شاهد CODE EP" ready to send.
-  // One tap on Send proves their own number; the bot replies with a link to their own account.
-  const continueUrl = !series?.code
-    ? env.waDisplayNumber
-      ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}`
-      : `${base}/me`
-    : env.waDisplayNumber
-      ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(`شاهد ${series.code} ${episode}`)}`
-      : `${base}/continue?s=${series.code}&e=${episode}`;
+  // Anyone this link can't sign in: the "Sign in with WhatsApp" page. The pre-filled message is sent from
+  // their own number, and the bot replies with a link to THEIR account (a new one for a new viewer).
+  const askUrl = series?.code ? `${base}/continue?s=${encodeURIComponent(series.code)}&e=${episode}` : `${base}/me`;
 
   const current = await getSessionViewer();
+  const browser = current ? current.id : await browserViewerId();
+  let decision = decideLinkOpen(link, current?.id ?? null, browser);
 
   // The owner, already signed in here: just open the episode.
-  if (current && current.id === link.viewerId) {
+  if (decision === "open") {
     await markLinkOpened(token);
     return noStore(NextResponse.redirect(target, 303));
   }
 
-  // Someone else's device, a reused link, or an old link: get your own link in WhatsApp.
-  if (current || !canSignIn(link)) {
+  // Someone else's link opened on a browser signed in to their own account: keep them in it.
+  if (decision === "open_as_current" && current) {
+    await trackEvent({ viewerHmac: current.phoneHmac, name: "link_shared_open", seriesId: link.seriesId, episodeNumber: link.episodeNumber });
+    return noStore(NextResponse.redirect(target, 303));
+  }
+
+  // A brand-new browser may sign in only on the link's first open — recorded atomically, so two
+  // simultaneous opens (e.g. owner and a friend) can't both get in.
+  // Only record the first open when this browser is actually being signed in.
+  const signingIn = decision === "sign_in_first_open" || decision === "sign_in_owner";
+  const firstOpen = signingIn && link.usesLeft > 0 ? Boolean(await redeemLink(token)) : false;
+  if (decision === "sign_in_first_open" && !firstOpen) decision = "ask_whatsapp";
+
+  if (decision === "ask_whatsapp") {
     const { data: owner } = await db().from("viewers").select("phone_hmac").eq("id", link.viewerId).maybeSingle();
     await trackEvent({
       viewerHmac: owner?.phone_hmac ?? null,
       name: "link_handoff",
       seriesId: link.seriesId,
       episodeNumber: link.episodeNumber,
-      props: { reason: current ? "other_account_on_device" : link.usesLeft <= 0 ? "already_used" : "too_old" },
+      props: { reason: browser ? "other_account_browser" : link.expired ? "expired" : link.usesLeft <= 0 ? "unknown_browser_reopen" : "unknown_browser_late" },
     });
-    return noStore(NextResponse.redirect(continueUrl, 303));
+    return noStore(NextResponse.redirect(askUrl, 303));
   }
 
-  // First open: use the link up atomically (a simultaneous second open loses the race and is handed off).
-  const redeemed = await redeemLink(token);
-  if (!redeemed) return noStore(NextResponse.redirect(continueUrl, 303));
-
+  // sign_in_owner (the owner's own browser) or sign_in_first_open (first open, just sent).
   await markLinkOpened(token);
-  const fresh = isFresh(link);
-  const sessionToken = await createSession(redeemed.viewerId, { userAgent: req.headers.get("user-agent"), ip, trusted: fresh });
+  const sessionToken = await createSession(link.viewerId, { userAgent: req.headers.get("user-agent"), ip });
   const { data: viewer } = await db()
     .from("viewers")
     .update({ last_seen_at: new Date().toISOString() })
-    .eq("id", redeemed.viewerId)
+    .eq("id", link.viewerId)
     .select("phone_hmac")
     .single();
 
   await trackEvent({
     viewerHmac: viewer?.phone_hmac ?? null,
     name: "link_opened",
-    seriesId: redeemed.seriesId,
-    episodeNumber: redeemed.episodeNumber,
-    props: { fresh },
+    seriesId: link.seriesId,
+    episodeNumber: link.episodeNumber,
+    props: { how: decision },
   });
 
   const res = NextResponse.redirect(target, 303);
@@ -100,7 +104,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     secure: base.startsWith("https://"),
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_MAX_AGE_S,
+    maxAge: SESSION_COOKIE_MAX_AGE_S,
   });
   return noStore(res);
 }

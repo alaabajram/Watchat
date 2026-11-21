@@ -1,21 +1,20 @@
 // Silent sign-in: a personal WhatsApp link is swapped for an HttpOnly cookie on first open.
 // The viewer stays signed in on that device (90 days, extended on each visit) with no form.
 // Max 3 active devices per viewer; a 4th sign-in signs out the oldest.
-// Spending money or coins needs a *trusted* session: a link opened within minutes of being sent,
-// or a session confirmed by sending a code from the viewer's WhatsApp number.
+// Every session can spend: a viewer signed in from their own Watchat link is trusted (no extra confirm).
 
 import { cookies } from "next/headers";
 import { randomToken, sha256Hex } from "./crypto";
 import { db } from "./supabase";
 
-import { SESSION_COOKIE, SESSION_MAX_AGE_S } from "./session-cookie";
-export { SESSION_COOKIE, SESSION_MAX_AGE_S };
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S, SESSION_MAX_AGE_S } from "./session-cookie";
+export { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S, SESSION_MAX_AGE_S };
 export const MAX_DEVICES = 3;
 const TOUCH_EVERY_MS = 10 * 60 * 1000;
 
 export async function createSession(
   viewerId: string,
-  meta: { userAgent?: string | null; ip?: string | null; trusted?: boolean },
+  meta: { userAgent?: string | null; ip?: string | null },
 ): Promise<string> {
   const token = randomToken(32);
   const { error } = await db()
@@ -25,7 +24,7 @@ export async function createSession(
       token_hash: sha256Hex(token),
       user_agent: meta.userAgent?.slice(0, 300) ?? null,
       ip: meta.ip ?? null,
-      trusted_at: meta.trusted ? new Date().toISOString() : null,
+      trusted_at: new Date().toISOString(),
     });
   if (error) throw new Error(`createSession failed: ${error.message}`);
 
@@ -59,7 +58,7 @@ export async function getSessionViewer(): Promise<SessionViewer | null> {
   if (!token) return null;
   const { data } = await db()
     .from("sessions")
-    .select("id, last_seen_at, trusted_at, viewers!inner(id, phone_hmac, ui_locale, language, country)")
+    .select("id, last_seen_at, viewers!inner(id, phone_hmac, ui_locale, language, country)")
     .eq("token_hash", sha256Hex(token))
     .is("revoked_at", null)
     .maybeSingle();
@@ -87,8 +86,20 @@ export async function getSessionViewer(): Promise<SessionViewer | null> {
     uiLocale: v.ui_locale,
     language: v.language,
     country: v.country,
-    trusted: Boolean(data.trusted_at),
+    trusted: true, // every session can spend (no device confirm); trusted_at is kept for the admin history
   };
+}
+
+/**
+ * Whose browser is this? The viewer this browser was signed in to — even if that session has since gone
+ * idle — or null (never signed in here, signed out, or signed out from Settings). Used only to recognise
+ * the owner when they open their own Watchat link again; it never grants access on its own.
+ */
+export async function browserViewerId(): Promise<string | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const { data } = await db().from("sessions").select("viewer_id").eq("token_hash", sha256Hex(token)).is("revoked_at", null).maybeSingle();
+  return (data?.viewer_id as string | undefined) ?? null;
 }
 
 export async function listDevices(viewerId: string) {

@@ -11,7 +11,7 @@ const strings = {
     getFreshLink: "اطلب رابط جديد من واتساب",
     signInFromWhatsApp: "افتح رابطك الشخصي من واتساب للمشاهدة.",
     continueTitle: "كمّل من واتساب",
-    continueBody: "هذا الرابط شخصي واستُخدم من قبل. اضغط الزر، أرسل الرسالة الجاهزة، وبنرسل لك رابطك الخاص على رقمك. مشاهدتك ورصيدك يكونون باسمك.",
+    continueBody: "لحماية الحسابات، ما نفتح حساب من متصفح جديد. اضغط الزر وأرسل الرسالة الجاهزة، وبنرسل لك رابطك الخاص على رقمك — مشاهدتك ورصيدك باسمك.",
     continueButton: "كمّل في واتساب",
     continueManual: (msg: string) => `أو أرسل «${msg}» إلى واتشات في واتساب.`,
     episode: (n: number) => `الحلقة ${n}`,
@@ -123,6 +123,8 @@ const strings = {
     back: "رجوع",
     nothingYet: "ما بدأت أي مسلسل بعد. اختر واحد من الرئيسية.",
     finishedSeries: "مسلسلات خلّصتها",
+    share: "شارك",
+    shareText: (title: string, url: string) => `تابع «${title}» على واتشات — دراما قصيرة تبدأها من الشات 👇\n${url}`,
   },
   en: {
     tagline: "Real drama, in the chat",
@@ -132,7 +134,7 @@ const strings = {
     getFreshLink: "Get a fresh link in WhatsApp",
     signInFromWhatsApp: "Open your personal link from WhatsApp to watch.",
     continueTitle: "Continue in WhatsApp",
-    continueBody: "This personal link has already been used. Tap the button, send the ready-made message, and we'll send your own link to your number — your viewing and wallet stay in your name.",
+    continueBody: "To keep accounts safe, we don't open an account on a new browser. Tap the button and send the ready-made message — we'll send your own link to your number, so your viewing and wallet stay in your name.",
     continueButton: "Continue in WhatsApp",
     continueManual: (msg: string) => `Or send “${msg}” to Watchat on WhatsApp.`,
     episode: (n: number) => `Episode ${n}`,
@@ -244,6 +246,8 @@ const strings = {
     back: "Back",
     nothingYet: "You haven't started a series yet. Pick one from Home.",
     finishedSeries: "Series you finished",
+    share: "Share",
+    shareText: (title: string, url: string) => `Watch “${title}” on Watchat — short dramas you start in the chat 👇\n${url}`,
   },
 };
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Paywall } from "@/components/Paywall";
 import { Player } from "@/components/Player";
+import { ShareButton } from "@/components/ShareButton";
 import { TopBar } from "@/components/TopBar";
 import { canWatch, getEpisodes, getPosition, getSeriesByCode, getUnlocked, streamUrls } from "@/lib/content";
 import { env } from "@/lib/env";
@@ -101,7 +102,8 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
             {t.episode(number)} · {t.of(number, episodes.length)}
           </div>
         </div>
-        <nav style={{ display: "flex", gap: 8 }}>
+        <nav style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <ShareButton code={series.code} title={title} locale={locale} dark />
           {prev && (
             <Link className="btn secondary" href={`/watch/${series.code}/${prev.number}`}>
               {t.previous}

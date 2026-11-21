@@ -87,3 +87,8 @@ export const LogoutIcon = ({ size = 20, color = "currentColor" }: P) => (
     <path d="M14 4H6v16h8M10 12h11M17 8l4 4-4 4" />
   </svg>
 );
+export const ShareIcon = ({ size = 20, color = "currentColor" }: P) => (
+  <svg {...base(size)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 3L3 10.5l7 3 3 7z" />
+  </svg>
+);
