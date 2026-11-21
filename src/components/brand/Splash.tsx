@@ -4,6 +4,7 @@
 // and from then on "/" opens the home screen instead.
 
 /* eslint-disable @next/next/no-img-element */
+import { AnimatedLogo } from "./AnimatedLogo";
 import { ChatIcon } from "./icons";
 import { TelegramSignIn } from "../TelegramSignIn";
 import { webCopy, dirFor, type Locale } from "@/lib/web-copy";
@@ -37,22 +38,7 @@ export function Splash({
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, minHeight: 420 }}>
-        <h1 style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 30, fontSize: "inherit" }}>
-          <span className="wc-logo" aria-hidden="true">
-            <span className="wc-logo-clip">
-              <span className="wc-logo-strip">
-                {[0, 1, 2, 3].map((i) => (
-                  <img key={i} src="/brand/emblem-bubble.png" alt="" />
-                ))}
-              </span>
-            </span>
-            <span className="wc-logo-dot">
-              <span className="wc-ring" />
-              <img src="/brand/emblem-dot.png" alt="" />
-            </span>
-          </span>
-          <img src="/brand/lockup-text.png" alt="Watchat · واتشات" width={200} height={100} style={{ width: 200, height: "auto", display: "block" }} />
-        </h1>
+        <AnimatedLogo />
         <p className="wc-fade-in" style={{ fontSize: 18, color: "#4e4943", textAlign: "center" }}>
           {t.tagline}
         </p>

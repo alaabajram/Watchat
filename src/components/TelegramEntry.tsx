@@ -2,12 +2,11 @@
 
 // Telegram landing: reads Telegram's launch data from the address (#tgWebAppData=…; no Telegram script needed;
 // kept for the tab so later pages can sign in again), signs in through /api/telegram/auth and moves on.
-// Opened outside Telegram, it offers to open the Watchat bot. Telegram blue, not WhatsApp green.
+// Opened outside Telegram, it offers to open the Watchat bot. The animated Watchat logo; only the button is Telegram blue.
 
-/* eslint-disable @next/next/no-img-element */
 import { useEffect, useState } from "react";
+import { AnimatedLogo } from "./brand/AnimatedLogo";
 import { signInWithTelegram, telegramInitData, TelegramPlane } from "./TelegramSignIn";
-import { TG_BLUE } from "@/lib/telegram/brand";
 import { dirFor, webCopy, type Locale } from "@/lib/web-copy";
 
 const TEXT = {
@@ -34,11 +33,8 @@ export function TelegramEntry({ to, botHref, locale }: { to: string | null; botH
   return (
     <div className="wc" dir={dirFor(locale)} lang={locale} style={{ background: "#fff" }}>
       <main style={{ minHeight: "100dvh", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "24px 24px calc(32px + env(safe-area-inset-bottom))", maxWidth: 520, margin: "0 auto" }}>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, textAlign: "center" }}>
-          <span aria-hidden="true" style={{ width: 84, height: 84, borderRadius: "50%", background: TG_BLUE, color: "#fff", display: "grid", placeItems: "center", boxShadow: "0 14px 30px rgba(36,129,204,0.35)" }}>
-            <TelegramPlane size={44} />
-          </span>
-          <img src="/brand/lockup-text.png" alt="Watchat · واتشات" width={180} height={90} style={{ width: 180, height: "auto" }} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, textAlign: "center" }}>
+          <AnimatedLogo />
           <p role="status" style={{ fontSize: 17, color: "#4e4943", margin: 0 }}>
             {state === "working" ? x.working : state === "outside" ? x.outside : x.failed}
           </p>
