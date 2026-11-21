@@ -68,7 +68,7 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
     const { hls, poster } = streamUrls(e.streamUid, env.streamCustomerCode);
     // Locked episodes never get their video link (it would open the video without paying); unlocking refreshes the page.
     // English viewers hear the English dub when the episode has one, otherwise read English subtitles.
-    const langs = playbackLangs(viewer.language, e.tracks);
+    const langs = playbackLangs(viewer.language, e.tracks, series.original);
     return { id: e.id, number: e.number, hls: allowedHere ? hls : null, poster, allowed: allowedHere, price: e.coinPrice ?? series.coinsPerEpisode, audioLang: langs.audio, subsLang: langs.subs };
   });
 

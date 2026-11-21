@@ -1,17 +1,17 @@
 "use client";
 
-// Drop all episode files at once — videos, subtitle files (.vtt / .srt) and dubbed audio (.mp3 / .m4a / .wav).
-// Each file goes to the episode its name says (editable before starting): ep07.mp4, ep07.en.srt, ep07_english.mp3.
-// - Videos go to Cloudflare Stream for the web player; subtitles and audio are attached to that same video, so the
-//   player switches language without a second upload.
-// - Free episodes also get WhatsApp / Telegram versions (under 16 MB, made in this browser): the Arabic one, and an
-//   English one when the episode has an English dub (used as its sound) or English subtitles (burned in).
+// Drop all episode files at once — videos, dubs (audio) and subtitles — named by the naming rule:
+//   EP07.mp4 · EP07_audio_en.mp3 · EP07_audio_gulf.mp3 · EP07_subs_en.srt
+// - Videos go to Cloudflare Stream; every dub and subtitle file is added to that same video, so the player can
+//   switch language (it plays one audio at a time).
+// - Free episodes also get chat versions under 16 MB, made in this browser: Arabic and English. When the video
+//   isn't in that language, its dub becomes the sound (or, for English, the subtitles are burned in).
 // Episodes are created as drafts if they don't exist yet.
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ensureEpisodes } from "@/app/admin/content-actions";
-import { classifyFile, TRACK_ACCEPT, type DroppedKind, type TrackLang } from "@/lib/storage/tracks";
+import { chatVersionPlan, classifyFile, exampleName, LANG_KEYS, LANGS, srtToVtt, TRACK_ACCEPT, type DroppedKind, type EpisodeTracks, type LangKey, type ViewerFamily } from "@/lib/storage/tracks";
 import { compressForWhatsApp } from "./compress";
 import { setMediaField, uploadToStorage, uploadToStream, uploadTrack } from "./uploads";
 
@@ -19,7 +19,7 @@ type Row = {
   file: File;
   kind: DroppedKind;
   number: number | null;
-  lang: TrackLang;
+  lang: LangKey | null;
   web: boolean;
   wa: boolean;
   waEn: boolean;
@@ -27,22 +27,82 @@ type Row = {
   done: boolean;
   error?: boolean;
 };
-/** English material already saved on an episode (links), used for its English chat version. */
-export type EnglishMaterial = Record<number, { subsEn?: string; audioEn?: string }>;
-type Props = { seriesId: string; seriesCode: string; freeUntil: number; streamReady: boolean; existing?: EnglishMaterial };
+/** Dubs and subtitles already saved on each episode (links), reused for its chat versions. */
+export type SavedMaterial = Record<number, EpisodeTracks>;
+type Props = { seriesId: string; seriesCode: string; freeUntil: number; streamReady: boolean; original: LangKey; existing?: SavedMaterial };
 
 const KIND_LABEL: Record<DroppedKind, string> = { video: "Video", sub: "Subtitles", audio: "Audio (dub)" };
-const LANG_LABEL: Record<TrackLang, string> = { en: "English", ar: "Arabic" };
 
-export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, existing = {} }: Props) {
+/** The naming rule, as a small card the content team can follow (and screenshot). */
+export function NamingRules({ original }: { original: LangKey }) {
+  return (
+    <details style={{ border: "1px solid var(--a-line, #ece8e2)", borderRadius: 12, padding: "8px 12px", background: "#fff" }}>
+      <summary style={{ cursor: "pointer", fontWeight: 600 }}>📋 File naming rules for the content team</summary>
+      <div style={{ display: "grid", gap: 10, marginTop: 10, fontSize: 13 }}>
+        <p style={{ margin: 0 }}>
+          One video per episode, in the series&apos; original language (<strong>{LANGS[original].en}</strong>). Every other language is a separate audio
+          file (dub) or subtitle file, named like this:
+        </p>
+        <table style={{ fontSize: 13 }}>
+          <tbody>
+            <tr>
+              <td><code>{exampleName(7, "video")}</code></td>
+              <td>Episode 7 video (original language)</td>
+            </tr>
+            <tr>
+              <td><code>{exampleName(7, "audio", "en")}</code></td>
+              <td>English dub (audio only: mp3, m4a, aac or wav)</td>
+            </tr>
+            <tr>
+              <td><code>{exampleName(7, "audio", "gulf")}</code></td>
+              <td>Gulf Arabic dub</td>
+            </tr>
+            <tr>
+              <td><code>{exampleName(7, "subs", "en")}</code></td>
+              <td>English subtitles (srt or vtt)</td>
+            </tr>
+            <tr>
+              <td><code>{exampleName(7, "subs", "ar")}</code></td>
+              <td>Arabic subtitles</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style={{ margin: 0 }}>
+          Language codes:{" "}
+          {LANG_KEYS.map((k, i) => (
+            <span key={k}>
+              {i > 0 && " · "}
+              <code>{k}</code> {LANGS[k].en.replace(" (Standard)", "")}
+            </span>
+          ))}
+        </p>
+        <p className="muted" style={{ margin: 0 }}>
+          Tips: two digits for the episode (EP07), no spaces, dubs the same length as the video. Viewers hear their own language when there&apos;s a
+          dub (it replaces the original sound), otherwise they get subtitles.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, original, existing = {} }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [running, setRunning] = useState(false);
   const update = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  /** Is there English material (dub or subtitles) for this episode, in this batch or already saved? */
-  const hasEnglish = (list: Row[], n: number | null) =>
-    n !== null && (list.some((r) => r.number === n && r.kind !== "video" && r.lang === "en") || Boolean(existing[n]?.subsEn || existing[n]?.audioEn));
+  /** Tracks for an episode: this batch's files (as a stand-in) plus what's already saved. */
+  const tracksFor = (list: Row[], n: number): EpisodeTracks => {
+    const t: EpisodeTracks = { audio: { ...(existing[n]?.audio ?? {}) }, subs: { ...(existing[n]?.subs ?? {}) } };
+    for (const r of list)
+      if (r.number === n && r.lang && r.kind !== "video") {
+        const stub = { url: "", path: "", stream: "pending" as const };
+        if (r.kind === "audio") t.audio![r.lang] = stub;
+        else t.subs![LANGS[r.lang].tag] = stub;
+      }
+    return t;
+  };
+  const canChat = (list: Row[], n: number | null, family: ViewerFamily) => n !== null && chatVersionPlan(family, original, tracksFor(list, n)) !== null;
 
   function add(files: FileList) {
     const added: Row[] = Array.from(files).flatMap((file) => {
@@ -52,32 +112,30 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
     });
     setRows((rs) => {
       const all = [...rs, ...added].sort((a, b) => (a.number ?? 999) - (b.number ?? 999) || a.kind.localeCompare(b.kind));
-      // Chat versions for the free episodes; the English one only when there's English material for it.
-      return all.map((r) =>
-        r.kind !== "video" || r.done ? r : { ...r, wa: r.number !== null && r.number <= freeUntil, waEn: r.number !== null && r.number <= freeUntil && hasEnglish(all, r.number) },
-      );
+      return all.map((r) => {
+        if (r.kind !== "video" || r.done) return r;
+        const free = r.number !== null && r.number <= freeUntil;
+        return { ...r, wa: free && canChat(all, r.number, "ar"), waEn: free && canChat(all, r.number, "en") };
+      });
     });
   }
 
-  async function englishFor(n: number, list: Row[]): Promise<{ audio?: Blob; subtitlesVtt?: string } | null> {
-    const audioRow = list.find((r) => r.number === n && r.kind === "audio" && r.lang === "en");
-    const subRow = list.find((r) => r.number === n && r.kind === "sub" && r.lang === "en");
-    // A dub replaces the sound (no subtitles needed); otherwise burn in the English subtitles.
-    if (audioRow) return { audio: audioRow.file };
-    if (existing[n]?.audioEn) {
-      const r = await fetch(existing[n].audioEn!);
-      if (r.ok) return { audio: await r.blob() };
+  /** What to feed ffmpeg for one chat version: the dub as the sound, or subtitles to burn in, or nothing. */
+  async function materialFor(n: number, family: ViewerFamily, list: Row[]): Promise<{ audio?: Blob; subtitlesVtt?: string } | null> {
+    const plan = chatVersionPlan(family, original, tracksFor(list, n));
+    if (!plan) return null;
+    if (plan.kind === "original") return {};
+    if (plan.kind === "dub") {
+      const row = list.find((r) => r.number === n && r.kind === "audio" && r.lang === plan.lang);
+      if (row) return { audio: row.file };
+      const saved = existing[n]?.audio?.[plan.lang]?.url;
+      const res = saved ? await fetch(saved) : null;
+      return res?.ok ? { audio: await res.blob() } : null;
     }
-    if (subRow) {
-      const { srtToVtt } = await import("@/lib/storage/tracks");
-      const text = await subRow.file.text();
-      return { subtitlesVtt: text.trimStart().startsWith("WEBVTT") ? text : srtToVtt(text) };
-    }
-    if (existing[n]?.subsEn) {
-      const r = await fetch(existing[n].subsEn!);
-      if (r.ok) return { subtitlesVtt: await r.text() };
-    }
-    return null;
+    const row = list.find((r) => r.number === n && r.kind === "sub" && r.lang && LANGS[r.lang].tag === plan.tag);
+    const text = row ? await row.file.text() : await fetch(existing[n]?.subs?.[plan.tag]?.url ?? "").then((r) => (r.ok ? r.text() : ""), () => "");
+    if (!text) return null;
+    return { subtitlesVtt: text.trimStart().startsWith("WEBVTT") ? text : srtToVtt(text) };
   }
 
   async function start() {
@@ -92,14 +150,15 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
       alert(e instanceof Error ? e.message : "Couldn't create episodes");
       return;
     }
-    // Subtitles and audio first (small), then the videos (they may need the English material).
-    const order = list.map((r, i) => i).sort((a, b) => Number(list[a].kind === "video") - Number(list[b].kind === "video"));
+    // Dubs and subtitles first (the chat versions may need them), then the videos.
+    const order = list.map((_, i) => i).sort((a, b) => Number(list[a].kind === "video") - Number(list[b].kind === "video"));
     for (const i of order) {
       const r = list[i];
       if (r.done || r.number === null) continue;
       const id = ids[r.number];
       try {
         if (r.kind !== "video") {
+          if (!r.lang) throw new Error("Pick the language");
           update(i, { status: "Uploading…" });
           const res = await uploadTrack(id, seriesCode, r.kind === "sub" ? "subs" : "audio", r.lang, r.file);
           update(i, {
@@ -113,21 +172,19 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
           const uid = await uploadToStream(r.file, `${seriesCode} ep ${r.number}`, (p) => update(i, { status: `Uploading to Stream ${p}%` }));
           await setMediaField("episode", id, "stream_uid", uid);
         }
-        if (r.wa) {
-          const blob = await compressForWhatsApp(r.file, (p) => update(i, { status: `Arabic chat version: ${p.stage} ${p.pct}%` }));
-          update(i, { status: "Uploading Arabic chat version…" });
+        for (const [family, want, field] of [
+          ["ar", r.wa, "wa_video_url_ar"],
+          ["en", r.waEn, "wa_video_url_en"],
+        ] as const) {
+          if (!want) continue;
+          const m = await materialFor(r.number, family, list);
+          if (!m) continue;
+          const name = family === "ar" ? "Arabic" : "English";
+          const blob = await compressForWhatsApp(r.file, (p) => update(i, { status: `${name} chat version: ${p.stage} ${p.pct}%` }), m);
+          update(i, { status: `Uploading ${name} chat version…` });
           const url = await uploadToStorage("clip", seriesCode, blob, "mp4");
-          await setMediaField("episode", id, "wa_video_url_ar", url);
-          await setMediaField("episode", id, "wa_size_bytes", String(blob.size));
-        }
-        if (r.waEn) {
-          const en = await englishFor(r.number, list);
-          if (en) {
-            const blob = await compressForWhatsApp(r.file, (p) => update(i, { status: `English chat version: ${p.stage} ${p.pct}%` }), en);
-            update(i, { status: "Uploading English chat version…" });
-            const url = await uploadToStorage("clip", seriesCode, blob, "mp4");
-            await setMediaField("episode", id, "wa_video_url_en", url);
-          }
+          await setMediaField("episode", id, field, url);
+          if (family === "ar") await setMediaField("episode", id, "wa_size_bytes", String(blob.size));
         }
         update(i, { status: "Done ✓", done: true });
       } catch (e) {
@@ -138,8 +195,10 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
     router.refresh();
   }
 
+  const missing = rows.some((r) => !r.done && (r.number === null || (r.kind !== "video" && !r.lang)));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <NamingRules original={original} />
       <label
         style={{ border: "2px dashed #cbd5e1", borderRadius: 10, padding: 16, textAlign: "center", cursor: "pointer", background: "#f8fafc" }}
         onDragOver={(e) => e.preventDefault()}
@@ -148,11 +207,10 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
           if (e.dataTransfer.files.length) add(e.dataTransfer.files);
         }}
       >
-        <strong>⬆ Drop the episode videos here, with any subtitles and dubbed audio</strong>
+        <strong>⬆ Drop the episode videos, dubs and subtitles here</strong>
         <div className="muted" style={{ fontSize: 12 }}>
-          The episode number comes from each file name: ep07.mp4, ep07.en.srt, ep07_english.mp3, حلقة 3.mp4. Subtitles and audio are English unless
-          the name says Arabic (ep07.ar.vtt). Videos go to the web player, and subtitles / dubs are added to that same video. Episodes 1–{freeUntil} also get
-          chat versions under 16 MB: Arabic, plus English when there&apos;s a dub (used as the sound) or English subtitles (shown in the picture).
+          Named like <code>EP07.mp4</code>, <code>EP07_audio_en.mp3</code>, <code>EP07_subs_en.srt</code>. Episodes 1–{freeUntil} also get chat versions
+          (Arabic and English) made here.
         </div>
         <input type="file" accept={`video/*,${TRACK_ACCEPT}`} multiple style={{ display: "none" }} onChange={(e) => e.target.files && add(e.target.files)} />
       </label>
@@ -163,8 +221,8 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
             <thead>
               <tr>
                 <th>File</th>
-                <th style={{ width: 90 }}>Episode</th>
-                <th>What</th>
+                <th style={{ width: 80 }}>Episode</th>
+                <th>What · language</th>
                 <th>Web</th>
                 <th>Arabic chat</th>
                 <th>English chat</th>
@@ -185,16 +243,29 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
                       value={r.number ?? ""}
                       disabled={running || r.done}
                       onChange={(e) => update(i, { number: Number(e.target.value) || null })}
-                      style={{ width: 70, borderColor: r.number === null ? "#dc2626" : undefined }}
+                      style={{ width: 64, borderColor: r.number === null ? "#dc2626" : undefined }}
                     />
                   </td>
                   <td style={{ fontSize: 13 }}>
-                    {KIND_LABEL[r.kind]}
-                    {r.kind !== "video" && (
-                      <select value={r.lang} disabled={running || r.done} onChange={(e) => update(i, { lang: e.target.value as TrackLang })} style={{ marginInlineStart: 6 }}>
-                        <option value="en">{LANG_LABEL.en}</option>
-                        <option value="ar">{LANG_LABEL.ar}</option>
-                      </select>
+                    {r.kind === "video" ? (
+                      <>Video · {LANGS[original].en}</>
+                    ) : (
+                      <>
+                        {KIND_LABEL[r.kind]}{" "}
+                        <select
+                          value={r.lang ?? ""}
+                          disabled={running || r.done}
+                          onChange={(e) => update(i, { lang: (e.target.value || null) as LangKey | null })}
+                          style={{ borderColor: r.lang ? undefined : "#dc2626" }}
+                        >
+                          <option value="">Language?</option>
+                          {LANG_KEYS.filter((k) => r.kind === "audio" || ["ar", "en", "fr", "tr", "hi", "ur", "ko", "es"].includes(k)).map((k) => (
+                            <option key={k} value={k}>
+                              {LANGS[k].en}
+                            </option>
+                          ))}
+                        </select>
+                      </>
                     )}
                   </td>
                   {r.kind === "video" ? (
@@ -203,21 +274,15 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
                         <input type="checkbox" checked={r.web} disabled={running || r.done || !streamReady} onChange={(e) => update(i, { web: e.target.checked })} />
                       </td>
                       <td>
-                        <input type="checkbox" checked={r.wa} disabled={running || r.done} onChange={(e) => update(i, { wa: e.target.checked })} />
+                        <input type="checkbox" checked={r.wa} disabled={running || r.done || !canChat(rows, r.number, "ar")} title={canChat(rows, r.number, "ar") ? "" : "Needs an Arabic dub for this episode"} onChange={(e) => update(i, { wa: e.target.checked })} />
                       </td>
                       <td>
-                        <input
-                          type="checkbox"
-                          checked={r.waEn}
-                          disabled={running || r.done || !hasEnglish(rows, r.number)}
-                          title={hasEnglish(rows, r.number) ? "" : "Add an English dub or English subtitles for this episode"}
-                          onChange={(e) => update(i, { waEn: e.target.checked })}
-                        />
+                        <input type="checkbox" checked={r.waEn} disabled={running || r.done || !canChat(rows, r.number, "en")} title={canChat(rows, r.number, "en") ? "" : "Needs an English dub or English subtitles"} onChange={(e) => update(i, { waEn: e.target.checked })} />
                       </td>
                     </>
                   ) : (
                     <td colSpan={3} className="muted" style={{ fontSize: 12 }}>
-                      Added to the web video{r.lang === "en" ? "; used for the English chat version" : ""}
+                      Added to the web video
                     </td>
                   )}
                   <td style={{ fontSize: 12, color: r.error ? "#b91c1c" : r.done ? "#166534" : undefined }}>{r.status}</td>
@@ -225,8 +290,9 @@ export function BulkEpisodes({ seriesId, seriesCode, freeUntil, streamReady, exi
               ))}
             </tbody>
           </table>
+          {missing && <div style={{ color: "#b91c1c", fontSize: 12 }}>Fill in the red boxes (episode number or language), or rename the files by the rule.</div>}
           <div className="row">
-            <button type="button" disabled={running || rows.every((r) => r.done) || rows.some((r) => r.number === null && !r.done)} onClick={start}>
+            <button type="button" disabled={running || rows.every((r) => r.done) || missing} onClick={start}>
               {running ? "Working… keep this tab open" : `Start (${rows.filter((r) => !r.done).length} files)`}
             </button>
             {!running && (

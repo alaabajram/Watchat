@@ -9,6 +9,7 @@ import { readiness } from "@/lib/admin/readiness";
 import { suggestCode } from "@/lib/admin/readiness";
 import { GENRES } from "@/lib/content-meta";
 import { db } from "@/lib/supabase";
+import { originalLang } from "@/lib/storage/tracks";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
 const launch = (id: string, step: number) => `/admin/series/${id}/launch?step=${step}`;
@@ -45,7 +46,7 @@ export async function createLaunchSeriesAction(fd: FormData) {
       synopsis_en: opt(fd, "synopsis_en", 1000),
       tagline_ar: opt(fd, "tagline_ar", 140),
       tagline_en: opt(fd, "tagline_en", 140),
-      dialect: str(fd, "dialect", 30) || "gulf",
+      dialect: originalLang(str(fd, "dialect", 30)),
       genres,
       status: "draft",
     })

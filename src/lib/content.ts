@@ -1,6 +1,6 @@
 // Read-side helpers for the web player.
 
-import type { EpisodeTracks } from "@/lib/storage/tracks";
+import { originalLang, type EpisodeTracks, type LangKey } from "@/lib/storage/tracks";
 import { compactCount, rankByViews } from "./catalogue-meta";
 export { compactCount, rankByViews };
 import { ipMarket, seriesLicensed } from "./economy/store";
@@ -21,6 +21,8 @@ export type WebSeries = {
   seasonPassPriceAed: number | null;
   seasonPassPriceSar: number | null;
   trailerUrl: string | null;
+  /** Language spoken in the videos (dubs and subtitles are added for the others). */
+  original: LangKey;
 };
 
 export type WebEpisode = {
@@ -39,7 +41,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, trailer_video_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, trailer_video_url, dialect, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
@@ -62,6 +64,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
     seasonPassPriceAed: data.season_pass_price_aed === null ? null : Number(data.season_pass_price_aed),
     seasonPassPriceSar: data.season_pass_price_sar === null ? null : Number(data.season_pass_price_sar),
     trailerUrl: data.trailer_video_url ?? null,
+    original: originalLang(data.dialect),
   };
 }
 

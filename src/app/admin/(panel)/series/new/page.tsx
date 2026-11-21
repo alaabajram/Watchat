@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
+import { OriginalLanguageSelect } from "@/components/admin/OriginalLanguageSelect";
 import { LaunchSteps } from "@/components/admin/ReadinessChecklist";
 import { requireAdmin } from "@/lib/admin/auth";
 import { GENRES, GENRE_LABELS } from "@/lib/content-meta";
@@ -64,15 +65,7 @@ export default async function NewSeries({ searchParams }: { searchParams: Promis
             How many episodes?
             <input name="episodes" type="number" min={1} max={200} defaultValue={30} required />
           </label>
-          <label>
-            Dialect
-            <select name="dialect" defaultValue="gulf">
-              <option value="gulf">Gulf</option>
-              <option value="egyptian">Egyptian</option>
-              <option value="levantine">Levantine</option>
-              <option value="msa">Modern Standard Arabic</option>
-            </select>
-          </label>
+          <OriginalLanguageSelect value="gulf" />
           <label>
             Chat code (optional)
             <input name="code" maxLength={20} placeholder="Made from the title, e.g. DESERT01" style={{ textTransform: "uppercase" }} />

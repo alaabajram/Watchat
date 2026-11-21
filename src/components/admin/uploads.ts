@@ -4,7 +4,7 @@
 
 import { sendUpload } from "@/lib/storage/send";
 import { createMediaUpload, createStreamUpload, setEpisodeTrack, setMediaField } from "@/app/admin/content-actions";
-import { srtToVtt, type TrackLang } from "@/lib/storage/tracks";
+import { srtToVtt, type LangKey } from "@/lib/storage/tracks";
 
 export async function uploadToStorage(kind: "artwork" | "clip" | "poster", seriesCode: string, blob: Blob, ext: string): Promise<string> {
   const target = await createMediaUpload(kind, seriesCode, ext);
@@ -35,7 +35,7 @@ export { episodeNumberFromName } from "@/lib/content-meta";
  * Subtitles (.vtt / .srt, turned into WebVTT here) or an audio track (dub) for one episode: stored, then attached
  * to the episode's web video. Returns where it stands ("attached", or "pending" while Stream processes the video).
  */
-export async function uploadTrack(episodeId: string, seriesCode: string, kind: "subs" | "audio", lang: TrackLang, file: File): Promise<{ state: string; error?: string; vtt?: string }> {
+export async function uploadTrack(episodeId: string, seriesCode: string, kind: "subs" | "audio", lang: LangKey, file: File): Promise<{ state: string; error?: string; vtt?: string }> {
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   let blob: Blob = file;
   let vtt: string | undefined;

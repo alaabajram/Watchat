@@ -12,7 +12,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { readiness } from "@/lib/admin/readiness";
 import { countryName } from "@/lib/economy/countries";
 import { db } from "@/lib/supabase";
-import type { EpisodeTracks } from "@/lib/storage/tracks";
+import { originalLang, type EpisodeTracks } from "@/lib/storage/tracks";
 import { finishLaunchAction, saveLaunchPriceAction } from "../../../../launch-actions";
 
 export const dynamic = "force-dynamic";
@@ -91,7 +91,8 @@ export default async function Launch({ params, searchParams }: { params: Promise
             seriesCode={s.code}
             freeUntil={Math.max(s.wa_episode_count, s.free_web_until_ep)}
             streamReady={streamReady}
-            existing={Object.fromEntries(eps.map((e) => [e.number, { subsEn: (e.tracks as EpisodeTracks)?.subs?.en?.url, audioEn: (e.tracks as EpisodeTracks)?.audio?.en?.url }]))}
+            original={originalLang(s.dialect)}
+            existing={Object.fromEntries(eps.map((e) => [e.number, (e.tracks ?? {}) as EpisodeTracks]))}
           />
           <p style={{ marginBottom: 0 }}>
             <strong>

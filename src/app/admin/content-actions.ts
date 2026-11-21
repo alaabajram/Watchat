@@ -7,9 +7,10 @@ import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
 import { readiness } from "@/lib/admin/readiness";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
+import { originalLang } from "@/lib/storage/tracks";
 import { deleteStored, publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
 import { detachStreamTrack, syncEpisodeTracks } from "@/lib/storage/stream-tracks";
-import type { EpisodeTracks, TrackLang, TrackState } from "@/lib/storage/tracks";
+import { LANG_KEYS, LANGS, type EpisodeTracks, type LangKey, type TrackState } from "@/lib/storage/tracks";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
 
@@ -82,7 +83,7 @@ export async function updateSeriesAction(fd: FormData) {
     title_en: str(fd, "title_en", 120),
     synopsis_ar: opt(fd, "synopsis_ar", 1000),
     synopsis_en: opt(fd, "synopsis_en", 1000),
-    dialect: str(fd, "dialect", 30) || "gulf",
+    dialect: originalLang(str(fd, "dialect", 30)),
     wa_episode_count: waEpisodes,
     free_web_until_ep: freeUntil,
     paywall_ep: paywall,
@@ -280,9 +281,11 @@ export async function setMediaField(target: "episode" | "series", id: string, fi
  * Save an uploaded subtitle file (WebVTT) or audio track (dub) on an episode and attach it to the episode's
  * Stream video. `path` is the storage path the upload target returned; the link is worked out here.
  */
-export async function setEpisodeTrack(episodeId: string, kind: "subs" | "audio", lang: TrackLang, path: string): Promise<{ state: TrackState["stream"]; error?: string }> {
+export async function setEpisodeTrack(episodeId: string, kind: "subs" | "audio", langKey: LangKey, path: string): Promise<{ state: TrackState["stream"]; error?: string }> {
   const admin = await requireAdmin("content");
-  if (!/^[0-9a-f-]{36}$/.test(episodeId) || !["subs", "audio"].includes(kind) || !["en", "ar"].includes(lang)) throw new Error("Bad request.");
+  if (!/^[0-9a-f-]{36}$/.test(episodeId) || !["subs", "audio"].includes(kind) || !LANG_KEYS.includes(langKey)) throw new Error("Bad request.");
+  // Dubs are kept per language (Gulf and Egyptian are different tracks); subtitles per written language (one Arabic).
+  const lang = kind === "audio" ? langKey : LANGS[langKey].tag;
   const { data: ep } = await db().from("episodes").select("series_id, tracks, series(code)").eq("id", episodeId).maybeSingle();
   if (!ep || !(await ownSeries(admin.tenantId, ep.series_id))) throw new Error("Not found.");
   const code = (ep.series as unknown as { code: string } | null)?.code ?? "";
@@ -306,7 +309,7 @@ export async function removeEpisodeTrack(fd: FormData) {
   const admin = await requireAdmin("content");
   const episodeId = uuid(fd, "id");
   const kind = str(fd, "kind", 10) as "subs" | "audio";
-  const lang = str(fd, "lang", 5) as TrackLang;
+  const lang = str(fd, "lang", 8);
   const { data: ep } = await db().from("episodes").select("series_id, stream_uid, tracks").eq("id", episodeId ?? "").maybeSingle();
   if (!episodeId || !ep || !(await ownSeries(admin.tenantId, ep.series_id)) || !["subs", "audio"].includes(kind)) done("/admin/series", "Bad request.", "err");
   const tracks = (ep.tracks ?? {}) as EpisodeTracks;
