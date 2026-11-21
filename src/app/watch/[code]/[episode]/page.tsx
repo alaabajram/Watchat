@@ -63,8 +63,10 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
   const shop = allowed ? null : await storeOffers(viewer.id, await payingMarket(viewer));
   // Every episode is a slide in the full-screen feed; only the one on screen loads its video.
   const feed: FeedEpisode[] = episodes.map((e) => {
+    const allowedHere = canWatch(series, e.number, unlocked);
     const { hls, poster } = streamUrls(e.streamUid, env.streamCustomerCode);
-    return { id: e.id, number: e.number, hls, poster, allowed: canWatch(series, e.number, unlocked), price: e.coinPrice ?? series.coinsPerEpisode };
+    // Locked episodes never get their video link (it would open the video without paying); unlocking refreshes the page.
+    return { id: e.id, number: e.number, hls: allowedHere ? hls : null, poster, allowed: allowedHere, price: e.coinPrice ?? series.coinsPerEpisode };
   });
 
   return (
