@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { AssistantAnswer } from "@/lib/assistant/run";
 import { CHIP_LABEL, MAX_MESSAGE_CHARS, type Chip, type Offer } from "@/lib/assistant/engine";
+import { AgentIcon } from "./AgentIcon";
 import { AlertsOptIn } from "./AlertsOptIn";
 
 type Locale = "ar" | "en";
@@ -167,8 +168,9 @@ function BotAnswer({ answer, locale }: { answer: AssistantAnswer; locale: Locale
   const t = T[locale];
   return (
     <div style={{ alignSelf: "flex-start", width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ alignSelf: "flex-start", maxWidth: "88%", background: "#fff", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", fontSize: 16, lineHeight: 1.5, boxShadow: "0 2px 10px rgba(18,16,20,0.05)" }}>
-        {answer.text}
+      <div style={{ alignSelf: "flex-start", display: "flex", alignItems: "flex-end", gap: 8, maxWidth: "92%" }}>
+        <AgentIcon height={28} />
+        <div style={{ background: "#fff", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", fontSize: 16, lineHeight: 1.5, boxShadow: "0 2px 10px rgba(18,16,20,0.05)" }}>{answer.text}</div>
       </div>
 
       {answer.series.length > 0 && (
