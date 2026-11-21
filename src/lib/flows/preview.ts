@@ -28,7 +28,7 @@ export type PreviewTemplate = { approved: boolean; ar: { body: string; button: s
 export type PreviewTemplates = Record<string, PreviewTemplate>;
 
 /** reachedEpisode: furthest episode watched on the web. watchedRecently: watched on the web in the last hour. */
-export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean; watchedRecently?: boolean; hasSeries?: boolean };
+export type SampleViewer = { language: Lang | null; optIn: "in" | "out" | null; paid: boolean; reachedEpisode: number; withinWindow: boolean; watchedRecently?: boolean; hasSeries?: boolean; onTelegram?: boolean };
 
 /** `items` is a fresh array after every step (handy for React state); the env writes to `sink`. */
 export type PreviewSession = {
@@ -119,6 +119,8 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
           return state.paid;
         case "has_series":
           return state.hasSeries ?? true;
+        case "on_telegram":
+          return Boolean(state.onTelegram);
       }
     },
     suggest: async () => {

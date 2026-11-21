@@ -4,8 +4,9 @@
 // connection dot on the right; drag from it to the next card.
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { createContext, useContext } from "react";
 import { formatMinutes } from "@/lib/flows/preview";
-import { CARD_LABELS, portsOf, type NodeData, SEQUENCE_TRIGGERS, SHARED_ACTIONS } from "@/lib/flows/types";
+import { CARD_LABELS, CHANNEL_COLOR, portsOf, type FlowChannel, type NodeData, SEQUENCE_TRIGGERS, SHARED_ACTIONS } from "@/lib/flows/types";
 import { CLICKABLE_KINDS, ctr, health, HEALTH_COLOR, HEALTH_LABEL, type CardStat } from "@/lib/ctr/ctr";
 import { CARD_STYLE } from "./cards";
 
@@ -31,6 +32,7 @@ const CONDITION_TEXT = {
   came_back: "Came back since the sequence started?",
   paid_since: "Paid since the sequence started?",
   has_series: "Following a series?",
+  on_telegram: "Viewer is on Telegram?",
 } as const;
 
 function summary(d: NodeData, templateBody?: string | null): { text: string; dir: "rtl" | "ltr" } {
@@ -90,7 +92,27 @@ const VIEWER_SIDE = new Set<NodeData["kind"]>(["start", "web", "trigger", "keywo
 const LOGIC = new Set<NodeData["kind"]>(["wait", "condition", "action", "end", "template"]);
 const handle = (color: string) => ({ width: 11, height: 11, background: color, border: "2px solid #fff", boxShadow: "0 0 0 1px #0001" });
 
+/** The chat app the canvas runs for (set by the builder). */
+export const CanvasChannel = createContext<FlowChannel>("both");
+
+/** What a Template card does on each app: a paid, approved template on WhatsApp; a free normal message on Telegram. */
+const TEMPLATE_NOTE: Record<FlowChannel, string> = {
+  both: "WhatsApp: paid template · Telegram: free message",
+  whatsapp: "WhatsApp: paid template (needs Meta approval)",
+  telegram: "Telegram: sent as a free message",
+};
+
+function ChannelNote({ text }: { text: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderTop: "1px solid #f1f5f9", fontSize: 11, color: "#475569" }}>
+      <span aria-hidden="true">ⓘ</span>
+      {text}
+    </div>
+  );
+}
+
 export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
+  const channel = useContext(CanvasChannel);
   const d = data.card;
   const style = CARD_STYLE[d.kind];
   const s = summary(d, data.templateBody);
@@ -194,6 +216,7 @@ export function CardNode({ data, selected }: NodeProps<CardFlowNode>) {
           )}
         </div>
       </div>
+      {d.kind === "template" && <ChannelNote text={TEMPLATE_NOTE[channel]} />}
       {data.stat && CLICKABLE_KINDS.has(d.kind) && <CtrStrip stat={data.stat} />}
       <div style={{ padding: ports.length ? "6px 0 4px" : 0 }}>
         {ports.map((p) => (
@@ -226,6 +249,17 @@ function CtrStrip({ stat }: { stat: CardStat }) {
         <div style={{ width: `${Math.round((rate ?? 0) * 100)}%`, height: 4, background: HEALTH_COLOR[h] }} />
       </div>
       <span>{stat.reached} viewers</span>
+      {stat.byChannel && stat.byChannel.whatsapp && stat.byChannel.telegram && (
+        <span title="CTR on WhatsApp · on Telegram" style={{ display: "inline-flex", gap: 6 }}>
+          <span style={{ color: CHANNEL_COLOR.whatsapp, fontWeight: 700 }}>WA {pctOf(stat.byChannel.whatsapp)}</span>
+          <span style={{ color: CHANNEL_COLOR.telegram, fontWeight: 700 }}>TG {pctOf(stat.byChannel.telegram)}</span>
+        </span>
+      )}
     </div>
   );
 }
+
+const pctOf = (s: { clicked: number; reached: number }) => {
+  const r = ctr(s.clicked, s.reached);
+  return r == null ? "—" : `${Math.round(r * 100)}%`;
+};

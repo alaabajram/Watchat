@@ -2,14 +2,14 @@
 // scenario the first time it's opened.
 
 import type { CardStat } from "../ctr/ctr";
-import { loadFlowCtr } from "../ctr/store";
+import { loadFlowCtr, loadFlowCtrByChannel } from "../ctr/store";
 import { getAiSettings } from "../ai/settings";
 import { listTemplates, type TemplateInfo } from "../messaging/template-store";
 import { db } from "../supabase";
 import type { PreviewSeries } from "./preview";
 import { sanitizeGraph } from "./sanitize";
 import { standardGraph } from "./standard";
-import type { FlowGraph } from "./types";
+import type { FlowChannel, FlowGraph } from "./types";
 
 export type { TemplateInfo };
 /** shared: in the label-wide library (Shared replies, Sequences and every series), not one series'. */
@@ -39,6 +39,9 @@ export type BuilderData = {
   myCards: SavedCard[];
   /** Last 30 days: per card, viewers who got it and who tapped a button or opened its link. */
   stats: Record<string, CardStat>;
+  /** Who this canvas runs for, and whether the series (or shared replies) has a separate Telegram flow. */
+  channel?: FlowChannel;
+  split?: boolean;
 };
 
 export async function listMyCards(tenantId: string): Promise<SavedCard[]> {
@@ -50,7 +53,15 @@ export async function listMyCards(tenantId: string): Promise<SavedCard[]> {
 
 export { standardGraph as standardFlowFor };
 
-export async function loadBuilder(tenantId: string, seriesId: string, adminId: string): Promise<BuilderData | null> {
+/**
+ * The flow row a canvas edits: `telegram` opens the Telegram flow of a split series; anything else opens the
+ * WhatsApp flow of a split series, or the one flow for both apps.
+ */
+export function canvasRow<T extends { channel: FlowChannel }>(rows: T[], want: "telegram" | null): T | null {
+  return want === "telegram" ? (rows.find((r) => r.channel === "telegram") ?? null) : (rows.find((r) => r.channel !== "telegram") ?? null);
+}
+
+export async function loadBuilder(tenantId: string, seriesId: string, adminId: string, want: "telegram" | null = null): Promise<BuilderData | null> {
   const { data: s } = await db()
     .from("series")
     .select(
@@ -61,13 +72,16 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     .maybeSingle();
   if (!s) return null;
 
-  let { data: flow } = await db().from("flows").select("id, draft, draft_updated_at, published_version_id").eq("series_id", seriesId).maybeSingle();
+  const { data: rows } = await db().from("flows").select("id, draft, draft_updated_at, published_version_id, channel").eq("series_id", seriesId);
+  const split = (rows ?? []).some((r) => r.channel === "telegram");
+  let flow = canvasRow((rows ?? []) as { id: string; draft: unknown; draft_updated_at: string; published_version_id: string | null; channel: FlowChannel }[], want);
+  if (!flow && want === "telegram") return null; // no separate Telegram flow
   if (!flow) {
     const draft = await standardGraph(tenantId, seriesId);
     const { data: created, error } = await db()
       .from("flows")
       .insert({ tenant_id: tenantId, series_id: seriesId, draft, draft_updated_by: adminId })
-      .select("id, draft, draft_updated_at, published_version_id")
+      .select("id, draft, draft_updated_at, published_version_id, channel")
       .single();
     if (error) throw new Error(`Couldn't create the flow: ${error.message}`);
     flow = created;
@@ -81,6 +95,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     listMyCards(tenantId),
     loadFlowCtr(tenantId).catch(() => ({}) as Record<string, Record<string, CardStat>>),
   ]);
+  const byChannel = await loadFlowCtrByChannel(tenantId).catch(() => ({}) as Awaited<ReturnType<typeof loadFlowCtrByChannel>>);
 
   const { data: others } = await db().from("series").select("code, title_ar, title_en").eq("tenant_id", tenantId).eq("status", "live").neq("id", seriesId).order("created_at").limit(50);
   const pub = (versions ?? []).find((v) => v.id === flow!.published_version_id);
@@ -109,6 +124,20 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     templates,
     aiReady: ai.connected && ai.enabled,
     myCards,
-    stats: ctr[seriesId] ?? {},
+    stats: channelStats(ctr[seriesId] ?? {}, byChannel[seriesId] ?? {}, flow!.channel),
+    channel: flow!.channel,
+    split,
   };
+}
+
+/** A canvas shows its own app's numbers: a one-for-both flow gets the total plus the split per app. */
+export function channelStats(
+  total: Record<string, CardStat>,
+  split: Record<string, NonNullable<CardStat["byChannel"]>>,
+  channel: FlowChannel,
+): Record<string, CardStat> {
+  if (channel !== "both") {
+    return Object.fromEntries(Object.entries(split).flatMap(([node, s]) => (s[channel] ? [[node, { ...s[channel]! }]] : [])));
+  }
+  return Object.fromEntries(Object.entries(total).map(([node, s]) => [node, { ...s, byChannel: split[node] }]));
 }

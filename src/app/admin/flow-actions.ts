@@ -10,19 +10,61 @@ import type { TemplateDraft } from "@/lib/whatsapp/template-rules";
 import { wabaConfigured } from "@/lib/whatsapp/templates";
 import { randomToken } from "@/lib/crypto";
 import { assetIdsIn, sanitizeBlock, sanitizeGraph } from "@/lib/flows/sanitize";
-import { listMyCards, loadBuilder, standardFlowFor, type Asset, type SavedCard } from "@/lib/flows/store";
+import { canvasRow, listMyCards, loadBuilder, standardFlowFor, type Asset, type SavedCard } from "@/lib/flows/store";
 import { allow } from "@/lib/security/rate-limit";
-import type { FlowGraph } from "@/lib/flows/types";
+import type { FlowChannel, FlowGraph } from "@/lib/flows/types";
 import { hasErrors, validateFlow, type Issue } from "@/lib/flows/validate";
 import { db } from "@/lib/supabase";
 
 const UUID = /^[0-9a-f-]{36}$/;
 
-async function flowFor(tenantId: string, seriesId: string) {
+/** The canvas being edited: the Telegram flow of a split series, or its WhatsApp / one-for-both flow. */
+async function flowFor(tenantId: string, seriesId: string, want: "telegram" | null = null) {
   if (!UUID.test(seriesId)) throw new Error("Bad series id");
-  const { data } = await db().from("flows").select("id, published_version_id, draft").eq("tenant_id", tenantId).eq("series_id", seriesId).maybeSingle();
+  const { data: rows } = await db().from("flows").select("id, published_version_id, draft, channel").eq("tenant_id", tenantId).eq("series_id", seriesId);
+  const data = canvasRow((rows ?? []) as { id: string; published_version_id: string | null; draft: unknown; channel: FlowChannel }[], want);
   if (!data) throw new Error("Open the flow builder for this series first.");
   return data;
+}
+
+const asWant = (channel?: string | null): "telegram" | null => (channel === "telegram" ? "telegram" : null);
+
+/**
+ * Give Telegram its own flow: the series' flow (draft and live version) is copied to a Telegram flow, and the
+ * original becomes the WhatsApp flow. Both start identical; edit either on its own from then on.
+ */
+export async function splitFlow(seriesId: string): Promise<{ ok: boolean; error?: string }> {
+  const admin = await requireAdmin("bot");
+  const flow = await flowFor(admin.tenantId, seriesId);
+  if (flow.channel === "whatsapp") return { ok: true }; // already split
+  const { data: tg, error } = await db()
+    .from("flows")
+    .insert({ tenant_id: admin.tenantId, series_id: seriesId, channel: "telegram", draft: flow.draft, draft_updated_by: admin.id })
+    .select("id")
+    .single();
+  if (error || !tg) return { ok: false, error: error?.message ?? "Couldn't create the Telegram flow." };
+  if (flow.published_version_id) {
+    const { data: live } = await db().from("flow_versions").select("graph").eq("id", flow.published_version_id).single();
+    const { data: v } = await db()
+      .from("flow_versions")
+      .insert({ tenant_id: admin.tenantId, flow_id: tg.id, version: 1, graph: live?.graph, note: "Copied from the WhatsApp + Telegram flow", published_by: admin.id })
+      .select("id")
+      .single();
+    if (v) await db().from("flows").update({ published_version_id: v.id }).eq("id", tg.id);
+  }
+  await db().from("flows").update({ channel: "whatsapp" }).eq("id", flow.id);
+  await audit(admin, "flow.split", "series", seriesId, {});
+  return { ok: true };
+}
+
+/** One flow for both apps again: the Telegram flow is removed and the WhatsApp flow runs for everyone. */
+export async function mergeFlow(seriesId: string): Promise<{ ok: boolean; error?: string }> {
+  const admin = await requireAdmin("bot");
+  if (!UUID.test(seriesId)) return { ok: false, error: "Bad series id" };
+  await db().from("flows").delete().eq("tenant_id", admin.tenantId).eq("series_id", seriesId).eq("channel", "telegram");
+  await db().from("flows").update({ channel: "both" }).eq("tenant_id", admin.tenantId).eq("series_id", seriesId).eq("channel", "whatsapp");
+  await audit(admin, "flow.merged", "series", seriesId, {});
+  return { ok: true };
 }
 
 async function checkCtx(tenantId: string, seriesId: string) {
@@ -36,11 +78,11 @@ async function checkCtx(tenantId: string, seriesId: string) {
   return { episodeCount: count ?? 0, templates: [...names].map(([name, approved]) => ({ name, approved })), seriesCodes: (live ?? []).map((s) => s.code as string) };
 }
 
-export async function saveFlowDraft(seriesId: string, graph: unknown): Promise<{ ok: true; savedAt: string } | { ok: false; error: string }> {
+export async function saveFlowDraft(seriesId: string, graph: unknown, channel?: string | null): Promise<{ ok: true; savedAt: string } | { ok: false; error: string }> {
   const admin = await requireAdmin("bot");
   const clean = sanitizeGraph(graph);
   if (!clean) return { ok: false, error: "The flow is too big or malformed." };
-  const flow = await flowFor(admin.tenantId, seriesId);
+  const flow = await flowFor(admin.tenantId, seriesId, asWant(channel));
   const savedAt = new Date().toISOString();
   const { error } = await db().from("flows").update({ draft: clean, draft_updated_at: savedAt, draft_updated_by: admin.id }).eq("id", flow.id);
   return error ? { ok: false, error: error.message } : { ok: true, savedAt };
@@ -57,6 +99,7 @@ export async function publishFlow(
   seriesId: string,
   graph: unknown,
   note: string,
+  channel?: string | null,
 ): Promise<{ ok: true; version: number; versionId: string; issues: Issue[] } | { ok: false; issues: Issue[]; error?: string }> {
   const admin = await requireAdmin("bot");
   const clean = sanitizeGraph(graph);
@@ -64,7 +107,7 @@ export async function publishFlow(
   const issues = validateFlow(clean, await checkCtx(admin.tenantId, seriesId));
   if (hasErrors(issues)) return { ok: false, issues };
 
-  const flow = await flowFor(admin.tenantId, seriesId);
+  const flow = await flowFor(admin.tenantId, seriesId, asWant(channel));
   const { data: last } = await db().from("flow_versions").select("version").eq("flow_id", flow.id).order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (last?.version ?? 0) + 1;
   const { data: v, error } = await db()
@@ -74,7 +117,7 @@ export async function publishFlow(
     .single();
   if (error || !v) return { ok: false, issues, error: error?.message ?? "Publish failed" };
   await db().from("flows").update({ draft: clean, draft_updated_at: new Date().toISOString(), draft_updated_by: admin.id, published_version_id: v.id }).eq("id", flow.id);
-  await audit(admin, "flow.published", "series", seriesId, { version, cards: clean.nodes.length });
+  await audit(admin, "flow.published", "series", seriesId, { version, cards: clean.nodes.length, channel: flow.channel });
   // Build with AI learns from what the team changed in its draft before publishing.
   after(async () => {
     if (await recordPublished(admin.tenantId, "series", seriesId, clean)) await learnLessons(admin.tenantId, admin.id, "series");
@@ -82,9 +125,9 @@ export async function publishFlow(
   return { ok: true, version, versionId: v.id, issues };
 }
 
-export async function loadVersion(seriesId: string, versionId: string): Promise<FlowGraph | null> {
+export async function loadVersion(seriesId: string, versionId: string, channel?: string | null): Promise<FlowGraph | null> {
   const admin = await requireAdmin("bot");
-  const flow = await flowFor(admin.tenantId, seriesId);
+  const flow = await flowFor(admin.tenantId, seriesId, asWant(channel));
   if (!UUID.test(versionId)) return null;
   const { data } = await db().from("flow_versions").select("graph").eq("flow_id", flow.id).eq("id", versionId).maybeSingle();
   return data ? sanitizeGraph(data.graph) : null;

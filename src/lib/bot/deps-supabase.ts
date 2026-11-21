@@ -5,6 +5,7 @@ import { seriesLicensed, storedViewerMarket } from "../economy/store";
 import { publishedSharedFlow } from "../flows/shared-store";
 import { siteUrl } from "../site/store";
 import { ensurePublishedFlow } from "../flows/standard";
+import { channelOfAddress, type ViewerChannel } from "../flows/types";
 import type { SeriesProgress } from "../flows/engine";
 import { sanitizeGraph } from "../flows/sanitize";
 import { sendNamedTemplate } from "../messaging/runner";
@@ -107,6 +108,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
   const source = opts.source ?? "bot";
   // Licensing in chat follows the viewer's last web country (IP), else their number's country.
   let viewerId: string | null = null;
+  let viewerChannel: ViewerChannel = "whatsapp"; // which app this chat is on: picks the WhatsApp or Telegram flows
   const licensed = async (row: { license_countries?: string[] | null }) => {
     if (!row.license_countries?.length || !viewerId) return true;
     return seriesLicensed(row.license_countries, await storedViewerMarket(viewerId));
@@ -114,6 +116,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
   return {
     async upsertViewer(msg: InboundMessage): Promise<Viewer> {
       const tenantId = await currentTenantId();
+      viewerChannel = channelOfAddress(msg.from);
       const hmac = phoneHmac(msg.from);
       const { data: existing } = await db()
         .from("viewers")
@@ -262,7 +265,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
     },
 
     async getSharedFlow() {
-      return publishedSharedFlow(await currentTenantId());
+      return publishedSharedFlow(await currentTenantId(), viewerChannel);
     },
 
     async getCopyOverrides(seriesId: string | null, lang: CopyLang): Promise<CopyOverrides> {
@@ -334,7 +337,7 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
     },
 
     async getPublishedFlow(seriesId) {
-      return ensurePublishedFlow(await currentTenantId(), seriesId);
+      return ensurePublishedFlow(await currentTenantId(), seriesId, viewerChannel);
     },
 
     async getFlowVersion(versionId) {
@@ -410,6 +413,8 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
         case "started":
         case "watched_within":
           return false; // answered from progress in flowEnvFor
+        case "on_telegram":
+          return viewer.waId.replace(/^\+/, "").startsWith("tg:");
         case "came_back":
         case "paid_since":
           return false; // sequence flows only (lib/messaging/sequence-flows)

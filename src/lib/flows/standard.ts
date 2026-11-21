@@ -6,7 +6,7 @@ import { COPY, COPY_KEYS, isCopyKey, type CopyKey } from "../bot/copy";
 import { db } from "../supabase";
 import { defaultFlow } from "./defaults";
 import { sanitizeGraph } from "./sanitize";
-import type { Bi, FlowGraph } from "./types";
+import { pickChannelFlow, type Bi, type FlowChannel, type FlowGraph, type ViewerChannel } from "./types";
 
 export async function standardGraph(tenantId: string, seriesId: string): Promise<FlowGraph | null> {
   const { data: s } = await db()
@@ -38,9 +38,11 @@ export async function standardGraph(tenantId: string, seriesId: string): Promise
 }
 
 /** The series' live flow. If none was ever published, publish the standard flow as the next version. */
-export async function ensurePublishedFlow(tenantId: string, seriesId: string): Promise<{ versionId: string; graph: FlowGraph } | null> {
+export async function ensurePublishedFlow(tenantId: string, seriesId: string, viewer: ViewerChannel = "whatsapp"): Promise<{ versionId: string; graph: FlowGraph } | null> {
   const live = async () => {
-    const { data: f } = await db().from("flows").select("id, published_version_id").eq("series_id", seriesId).maybeSingle();
+    // The viewer's own app flow when the series has a WhatsApp + Telegram pair, else the one flow for both.
+    const { data: rows } = await db().from("flows").select("id, published_version_id, channel").eq("series_id", seriesId);
+    const f = pickChannelFlow((rows ?? []) as { id: string; published_version_id: string | null; channel: FlowChannel }[], viewer);
     if (!f?.published_version_id) return { flowId: f?.id ?? null, live: null };
     const { data: v } = await db().from("flow_versions").select("graph").eq("id", f.published_version_id).maybeSingle();
     const graph = sanitizeGraph(v?.graph);

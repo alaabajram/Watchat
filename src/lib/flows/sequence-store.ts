@@ -6,9 +6,9 @@ import { db } from "../supabase";
 import { newId } from "./defaults";
 import { sanitizeGraph } from "./sanitize";
 import { listMyCards, sharedAssets, type BuilderData } from "./store";
-import type { FlowGraph } from "./types";
+import type { FlowGraph , FlowChannel } from "./types";
 
-export type SequenceInfo = { id: string; name: string; active: boolean; seriesCodes: string[]; running: number; waiting: number };
+export type SequenceInfo = { id: string; name: string; active: boolean; seriesCodes: string[]; running: number; waiting: number; channel: FlowChannel };
 
 /** A useful first sequence: reminder → wait 2 days → came back? → end, or a last-chance template. */
 export function starterSequence(): FlowGraph {
@@ -39,7 +39,7 @@ export function starterSequence(): FlowGraph {
 export async function loadSequenceBuilder(tenantId: string, id: string): Promise<(BuilderData & { sequence: SequenceInfo }) | null> {
   const { data: s } = await db()
     .from("sequences")
-    .select("id, name, active, draft, graph, version, published_at, created_at, updated_at")
+    .select("id, name, active, draft, graph, version, published_at, created_at, updated_at, channel")
     .eq("tenant_id", tenantId)
     .eq("id", id)
     .maybeSingle();
@@ -82,6 +82,7 @@ export async function loadSequenceBuilder(tenantId: string, id: string): Promise
       name: s.name as string,
       active: Boolean(s.active),
       seriesCodes: (series ?? []).map((x) => x.code as string),
+      channel: ((s as { channel?: FlowChannel }).channel ?? "both") as FlowChannel,
       running: (runs ?? []).filter((r) => r.status === "running").length,
       waiting: (runs ?? []).filter((r) => r.status === "wait").length,
     },

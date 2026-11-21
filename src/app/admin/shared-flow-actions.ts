@@ -13,6 +13,7 @@ import { standardSharedFlow } from "@/lib/flows/shared";
 import { FIXED_TEXT_KEYS, sharedTexts } from "@/lib/flows/shared-store";
 import type { FlowGraph } from "@/lib/flows/types";
 import { hasErrors, validateShared, type Issue } from "@/lib/flows/validate";
+import type { FlowChannel } from "@/lib/flows/types";
 import { db } from "@/lib/supabase";
 
 async function seriesCodes(tenantId: string): Promise<string[]> {
@@ -20,14 +21,22 @@ async function seriesCodes(tenantId: string): Promise<string[]> {
   return (data ?? []).map((s) => s.code as string);
 }
 
-export async function saveSharedDraft(graph: unknown): Promise<{ ok: true; savedAt: string } | { ok: false; error: string }> {
+/** Which shared-replies row a canvas edits: "telegram" when split, else the WhatsApp row of a pair or the one for both. */
+async function sharedChannel(tenantId: string, channel?: string | null): Promise<FlowChannel> {
+  if (channel === "telegram") return "telegram";
+  const { data } = await db().from("shared_flows").select("channel").eq("tenant_id", tenantId).neq("channel", "telegram");
+  return ((data ?? [])[0]?.channel as FlowChannel | undefined) ?? "both";
+}
+
+export async function saveSharedDraft(graph: unknown, channel?: string | null): Promise<{ ok: true; savedAt: string } | { ok: false; error: string }> {
   const admin = await requireAdmin("bot");
   const clean = sanitizeGraph(graph);
   if (!clean) return { ok: false, error: "The flow is too big or malformed." };
   const savedAt = new Date().toISOString();
+  const ch = await sharedChannel(admin.tenantId, channel);
   const { error } = await db()
     .from("shared_flows")
-    .upsert({ tenant_id: admin.tenantId, draft: clean, draft_updated_at: savedAt, updated_at: savedAt }, { onConflict: "tenant_id" });
+    .upsert({ tenant_id: admin.tenantId, channel: ch, draft: clean, draft_updated_at: savedAt, updated_at: savedAt }, { onConflict: "tenant_id,channel" });
   return error ? { ok: false, error: error.message } : { ok: true, savedAt };
 }
 
@@ -41,30 +50,64 @@ export async function checkShared(graph: unknown): Promise<Issue[]> {
 export async function publishShared(
   graph: unknown,
   note: string,
+  channel?: string | null,
 ): Promise<{ ok: true; version: number; versionId: string; issues: Issue[] } | { ok: false; issues: Issue[]; error?: string }> {
   const admin = await requireAdmin("bot");
+  const ch = await sharedChannel(admin.tenantId, channel);
   const clean = sanitizeGraph(graph);
   if (!clean) return { ok: false, issues: [], error: "The flow is too big or malformed." };
   const issues = validateShared(clean, { seriesCodes: await seriesCodes(admin.tenantId) });
   if (hasErrors(issues)) return { ok: false, issues };
 
-  const { data: row } = await db().from("shared_flows").select("version").eq("tenant_id", admin.tenantId).maybeSingle();
+  const { data: row } = await db().from("shared_flows").select("version").eq("tenant_id", admin.tenantId).eq("channel", ch).maybeSingle();
   const version = ((row?.version as number | undefined) ?? 0) + 1;
   const now = new Date().toISOString();
   const { error } = await db()
     .from("shared_flows")
     .upsert(
-      { tenant_id: admin.tenantId, draft: clean, draft_updated_at: now, graph: clean, version, published_at: now, published_by: admin.id, updated_at: now },
-      { onConflict: "tenant_id" },
+      { tenant_id: admin.tenantId, channel: ch, draft: clean, draft_updated_at: now, graph: clean, version, published_at: now, published_by: admin.id, updated_at: now },
+      { onConflict: "tenant_id,channel" },
     );
   if (error) return { ok: false, issues, error: error.message };
-  await audit(admin, "shared_flow.published", "shared_flows", null, { version, cards: clean.nodes.length, note: note.slice(0, 300) || null });
+  await audit(admin, "shared_flow.published", "shared_flows", null, { version, cards: clean.nodes.length, note: note.slice(0, 300) || null, channel: ch });
   revalidatePath("/admin/bot");
   // Build with AI learns from what the team changed in its draft before publishing.
   after(async () => {
     if (await recordPublished(admin.tenantId, "shared", "shared", clean)) await learnLessons(admin.tenantId, admin.id, "shared");
   });
   return { ok: true, version, versionId: "shared", issues };
+}
+
+/**
+ * Give Telegram its own shared replies: the current ones (draft and live) are copied to Telegram and the
+ * originals become WhatsApp's. If nothing was ever saved, both start from the standard replies.
+ */
+export async function splitShared(): Promise<{ ok: boolean; error?: string }> {
+  const admin = await requireAdmin("bot");
+  const { data: rows } = await db().from("shared_flows").select("*").eq("tenant_id", admin.tenantId);
+  if ((rows ?? []).some((r) => r.channel === "telegram")) return { ok: true };
+  const base = (rows ?? [])[0] as Record<string, unknown> | undefined;
+  const now = new Date().toISOString();
+  const copy = base
+    ? { draft: base.draft, draft_updated_at: base.draft_updated_at, graph: base.graph, version: base.version, published_at: base.published_at, published_by: base.published_by }
+    : { draft: await standardShared(), draft_updated_at: now, graph: null, version: 0 };
+  const { error } = await db().from("shared_flows").insert({ tenant_id: admin.tenantId, channel: "telegram", ...copy, updated_at: now });
+  if (error) return { ok: false, error: error.message };
+  if (base) await db().from("shared_flows").update({ channel: "whatsapp" }).eq("tenant_id", admin.tenantId).eq("channel", "both");
+  else await db().from("shared_flows").insert({ tenant_id: admin.tenantId, channel: "whatsapp", ...copy, updated_at: now });
+  await audit(admin, "shared_flow.split", "shared_flows", null, {});
+  revalidatePath("/admin/bot");
+  return { ok: true };
+}
+
+/** One set of shared replies for both apps again (Telegram's own are removed). */
+export async function mergeShared(): Promise<{ ok: boolean }> {
+  const admin = await requireAdmin("bot");
+  await db().from("shared_flows").delete().eq("tenant_id", admin.tenantId).eq("channel", "telegram");
+  await db().from("shared_flows").update({ channel: "both" }).eq("tenant_id", admin.tenantId).eq("channel", "whatsapp");
+  await audit(admin, "shared_flow.merged", "shared_flows", null, {});
+  revalidatePath("/admin/bot");
+  return { ok: true };
 }
 
 /** The standard shared replies (menu, link, account, STOP, deletion), with the saved texts. */

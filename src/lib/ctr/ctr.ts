@@ -47,7 +47,7 @@ export const HEALTH_COLOR: Record<Health, string> = {
 /** Cards whose messages carry something to tap or open; others (text, waits, conditions) have no CTR. */
 export const CLICKABLE_KINDS = new Set(["language", "message", "episode", "link", "optin", "choice", "template"]);
 
-export type CardStat = { reached: number; clicked: number };
+export type CardStat = { reached: number; clicked: number; byChannel?: Partial<Record<"whatsapp" | "telegram", { reached: number; clicked: number }>> };
 
 /** Whole-flow CTR over its clickable cards, and the weakest card with enough sample. */
 export function flowSummary(stats: Record<string, CardStat>, kinds: Record<string, string>): { reached: number; clicked: number; weakest: string | null } {

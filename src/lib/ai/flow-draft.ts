@@ -16,9 +16,9 @@ export const AI_KINDS: Record<FlowKind, NodeKind[]> = {
   shared: ["keyword", "message", "list", "link", "account", "language", "optin", "condition", "action", "choice", "suggest"],
 };
 const AI_CHECKS: Record<FlowKind, string[]> = {
-  series: ["none", "opted_in", "language_en", "paid", "reached_episode", "started", "watched_within"],
-  sequence: ["none", "came_back", "paid_since", "opted_in", "language_en", "paid", "watched_within"],
-  shared: ["none", "has_series", "opted_in", "language_en", "paid"],
+  series: ["none", "opted_in", "language_en", "paid", "reached_episode", "started", "watched_within", "on_telegram"],
+  sequence: ["none", "came_back", "paid_since", "opted_in", "language_en", "paid", "watched_within", "on_telegram"],
+  shared: ["none", "has_series", "opted_in", "language_en", "paid", "on_telegram"],
 };
 const TRIGGERS = SEQUENCE_TRIGGERS.map((t) => t.value);
 const ACTIONS = SHARED_ACTIONS.map((a) => a.value);
@@ -362,7 +362,7 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
             ? { check: "reached_episode", episode: ep }
             : check === "watched_within"
               ? { check: "watched_within", hours: Math.max(1, Math.min(720, Math.round((s.minutes || 1440) / 60))) }
-              : (["language_en", "paid", "started", "came_back", "paid_since", "has_series"] as const).includes(check as "paid")
+              : (["language_en", "paid", "started", "came_back", "paid_since", "has_series", "on_telegram"] as const).includes(check as "paid")
                 ? { check: check as "paid" }
                 : { check: "opted_in" };
         data = { kind, condition };
@@ -453,7 +453,7 @@ Rules (the sequence is checked against these before it can be published):
 - Sequences message viewers first, so the only step that sends anything is template. No free-form messages, links or buttons.
 - Use only template names listed above; prefer approved ones and say in notes which templates the team should create or get approved.
 - wait steps: between 60 minutes and 30 days. A loop must contain a wait.
-- condition checks: came_back (active again since the sequence started), paid_since, opted_in, language_en, paid, watched_within (minutes = window).
+- condition checks: came_back (active again since the sequence started), paid_since, opted_in, language_en, paid, watched_within (minutes = window), on_telegram (yes = the viewer uses Telegram, no = WhatsApp).
 - End branches with an end step when the viewer came back or paid, so they aren't messaged again.
 - Be respectful of the viewer's time: two or three templates at most, spaced at least a day apart.
 - When changing an existing sequence, keep the ids of steps you don't need to change.
