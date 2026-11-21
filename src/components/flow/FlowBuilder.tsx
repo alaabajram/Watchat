@@ -353,7 +353,7 @@ function Builder(props: Props) {
           </>
         ) : shared ? (
           <>
-            <strong>💬 Shared replies</strong>
+            <strong>💬 Menu & common replies</strong>
             <StatusPill live={Boolean(published)} text={published ? `Live · v${published.version}${publishedDiffers ? " · unpublished changes" : ""}` : "Standard replies are live · publish to use yours"} />
             <ChannelBar mode="shared" seriesId="" channel={canvasChannel} split={Boolean(props.split)} dirty={dirty} />
           </>

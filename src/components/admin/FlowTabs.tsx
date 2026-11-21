@@ -3,15 +3,15 @@
 import Link from "next/link";
 
 const TABS = [
-  { key: "series", href: "/admin/flows", label: "Series flows", help: "The chat for each series: starts when a viewer sends the code" },
-  { key: "sequences", href: "/admin/sequences", label: "Sequence flows", help: "Follow-ups we send first: approved templates after a trigger" },
-  { key: "replies", href: "/admin/bot", label: "Shared replies", help: "Texts every series uses (menu, help, errors…)" },
+  { key: "series", href: "/admin/flows", label: "Series chats", help: "What each series' chat sends, step by step, after a viewer sends its code." },
+  { key: "sequences", href: "/admin/sequences", label: "Follow-ups", help: "Messages Watchat sends by itself later, e.g. a reminder 24 h after someone stops watching." },
+  { key: "replies", href: "/admin/bot", label: "Menu & common replies", help: "Answers every series shares: the menu, my account, help, stop and unknown messages." },
 ] as const;
 
 export function FlowTabs({ current }: { current: (typeof TABS)[number]["key"] }) {
   return (
     <>
-      <h1 style={{ marginBottom: 12 }}>Flow builder</h1>
+      <h1 style={{ marginBottom: 12 }}>Chat flows</h1>
       <nav aria-label="Flow builder sections" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
         {TABS.map((t) => {
           const on = t.key === current;
@@ -36,6 +36,7 @@ export function FlowTabs({ current }: { current: (typeof TABS)[number]["key"] })
           );
         })}
       </nav>
+      <p className="muted" style={{ margin: "-8px 0 18px" }}>{TABS.find((t) => t.key === current)?.help}</p>
     </>
   );
 }

@@ -39,10 +39,10 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <h1>Pricing &amp; Ping</h1>
+      <h1>Prices &amp; Ping</h1>
       <Flash ok={sp.ok} err={sp.err} />
       <p className="muted">
-        Ping (بينج) is the viewer currency. New viewers get free Ping (set in <Link href="/admin/offers">Offers &amp; promotions</Link>), each paid
+        Ping (بينج) is the viewer currency. New viewers get free Ping (set in <Link href="/admin/offers">Offers &amp; rewards</Link>), each paid
         episode costs Ping, and the weekly / yearly passes open every series with no Ping. Viewers see the prices of the country their IP is in
         (else their WhatsApp number&apos;s country; anywhere else gets the <em>Rest of world</em> prices).
       </p>

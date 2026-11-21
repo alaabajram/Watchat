@@ -81,7 +81,7 @@ export default async function SitePage({ searchParams }: { searchParams: Promise
             </form>
             <p className="muted" style={{ marginBottom: 0 }}>
               Connecting sets the webhook, the bot&apos;s menu button «شاهد» (opens Watchat inside Telegram, signed in) and its commands. Telegram
-              viewers pay in Telegram Stars ⭐ (prices in Pricing &amp; Ping).
+              viewers pay in Telegram Stars ⭐ (prices in Prices &amp; Ping).
             </p>
           </>
         )}
