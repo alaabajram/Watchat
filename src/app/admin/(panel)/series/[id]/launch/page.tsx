@@ -12,6 +12,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { readiness } from "@/lib/admin/readiness";
 import { countryName } from "@/lib/economy/countries";
 import { db } from "@/lib/supabase";
+import type { EpisodeTracks } from "@/lib/storage/tracks";
 import { finishLaunchAction, saveLaunchPriceAction } from "../../../../launch-actions";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export default async function Launch({ params, searchParams }: { params: Promise
 
   const [{ data: s }, { data: episodes }, { count: licences }, { data: review }, { data: markets }] = await Promise.all([
     db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
-    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar").eq("series_id", id).order("number"),
+    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar, tracks").eq("series_id", id).order("number"),
     db().from("licences").select("id", { count: "exact", head: true }).eq("series_id", id),
     db().from("content_reviews").select("decision").eq("series_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db().from("markets").select("country").eq("tenant_id", admin.tenantId).order("sort"),
@@ -81,10 +82,17 @@ export default async function Launch({ params, searchParams }: { params: Promise
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Episodes</h2>
           <p className="muted" style={{ marginTop: 0 }}>
-            Drop all the episode videos at once. The episode number is read from each file name (ep07.mp4, حلقة 3.mp4). Each one goes to the web player,
-            and the episodes sent in the chat also get a small WhatsApp version, made in this browser. Keep this tab open while it works.
+            Drop all the episode videos at once, with any English subtitles (.srt / .vtt) and English dubs (.mp3). The episode number is read from each
+            file name (ep07.mp4, ep07.en.srt). Each video goes to the web player with its subtitles and dub, and the free episodes also get small chat
+            versions (Arabic, and English when there&apos;s a dub or subtitles), made in this browser. Keep this tab open while it works.
           </p>
-          <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={Math.max(s.wa_episode_count, s.free_web_until_ep)} streamReady={streamReady} />
+          <BulkEpisodes
+            seriesId={s.id}
+            seriesCode={s.code}
+            freeUntil={Math.max(s.wa_episode_count, s.free_web_until_ep)}
+            streamReady={streamReady}
+            existing={Object.fromEntries(eps.map((e) => [e.number, { subsEn: (e.tracks as EpisodeTracks)?.subs?.en?.url, audioEn: (e.tracks as EpisodeTracks)?.audio?.en?.url }]))}
+          />
           <p style={{ marginBottom: 0 }}>
             <strong>
               {withVideo}/{eps.length}

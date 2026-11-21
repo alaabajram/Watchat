@@ -10,6 +10,7 @@ import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
 import { payingMarket, storeOffers } from "@/lib/economy/store";
 import { getSessionViewer } from "@/lib/session";
+import { playbackLangs } from "@/lib/storage/tracks";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, formatMoney, webCopy } from "@/lib/web-copy";
 
@@ -66,7 +67,9 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
     const allowedHere = canWatch(series, e.number, unlocked);
     const { hls, poster } = streamUrls(e.streamUid, env.streamCustomerCode);
     // Locked episodes never get their video link (it would open the video without paying); unlocking refreshes the page.
-    return { id: e.id, number: e.number, hls: allowedHere ? hls : null, poster, allowed: allowedHere, price: e.coinPrice ?? series.coinsPerEpisode };
+    // English viewers hear the English dub when the episode has one, otherwise read English subtitles.
+    const langs = playbackLangs(viewer.language, e.tracks);
+    return { id: e.id, number: e.number, hls: allowedHere ? hls : null, poster, allowed: allowedHere, price: e.coinPrice ?? series.coinsPerEpisode, audioLang: langs.audio, subsLang: langs.subs };
   });
 
   return (

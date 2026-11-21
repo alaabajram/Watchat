@@ -1,5 +1,6 @@
 // Read-side helpers for the web player.
 
+import type { EpisodeTracks } from "@/lib/storage/tracks";
 import { ipMarket, seriesLicensed } from "./economy/store";
 import { currentTenantId, db } from "./supabase";
 
@@ -26,6 +27,8 @@ export type WebEpisode = {
   titleEn: string | null;
   streamUid: string | null;
   coinPrice: number | null;
+  /** Subtitles / dub attached to the video (the player picks by the viewer's language). */
+  tracks: EpisodeTracks;
 };
 
 export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
@@ -61,7 +64,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
 export async function getEpisodes(seriesId: string): Promise<WebEpisode[]> {
   const { data } = await db()
     .from("episodes")
-    .select("id, number, title_ar, title_en, stream_uid, coin_price_override")
+    .select("id, number, title_ar, title_en, stream_uid, coin_price_override, tracks")
     .eq("series_id", seriesId)
     .eq("status", "live")
     .or(`release_at.is.null,release_at.lte.${new Date().toISOString()}`) // scheduled episodes appear at their release time
@@ -73,6 +76,7 @@ export async function getEpisodes(seriesId: string): Promise<WebEpisode[]> {
     titleEn: e.title_en,
     streamUid: e.stream_uid,
     coinPrice: e.coin_price_override,
+    tracks: (e.tracks ?? {}) as EpisodeTracks,
   }));
 }
 

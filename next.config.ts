@@ -13,7 +13,7 @@ const cspWith = (frameAncestors: string) => [
   "font-src 'self' data:",
   "worker-src 'self' blob:",
   // Admin uploads go straight from the browser to Cloudflare (Images, R2, Stream), or Supabase Storage before that is set up.
-  "connect-src 'self' https://*.supabase.co https://upload.cloudflarestream.com https://upload.videodelivery.net https://*.cloudflarestream.com https://*.videodelivery.net https://upload.imagedelivery.net https://*.r2.cloudflarestorage.com",
+  `connect-src 'self' https://*.supabase.co https://upload.cloudflarestream.com https://upload.videodelivery.net https://*.cloudflarestream.com https://*.videodelivery.net https://upload.imagedelivery.net https://*.r2.cloudflarestorage.com https://*.r2.dev${r2Origin()}`,
   "frame-src https://*.cloudflarestream.com https://iframe.videodelivery.net",
   `frame-ancestors ${frameAncestors}`,
   "form-action 'self' https://*.tap.company",
@@ -36,6 +36,16 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self \"https://*.tap.company\")" },
 ];
+
+/** " https://media.watchat.pro" when R2 has its own domain (the admin reads saved subtitles / dubs from it). */
+function r2Origin(): string {
+  try {
+    const u = new URL(process.env.R2_PUBLIC_URL ?? "");
+    return u.hostname.endsWith(".r2.dev") ? "" : ` ${u.origin}`;
+  } catch {
+    return "";
+  }
+}
 
 /** R2 custom domain (e.g. media.watchat.pro) for next/image, read from R2_PUBLIC_URL at build time. */
 function r2Host(): { protocol: "https"; hostname: string }[] {

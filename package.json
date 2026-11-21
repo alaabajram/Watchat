@@ -22,6 +22,7 @@
     "@supabase/supabase-js": "^2.119.2",
     "@xyflow/react": "^12.12.1",
     "aws4fetch": "^1.0.20",
+    "dejavu-fonts-ttf": "^2.37.3",
     "hls.js": "^1.7.4",
     "next": "^16.4.6",
     "react": "^19.3.1",
