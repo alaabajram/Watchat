@@ -105,7 +105,30 @@ function mediaKey(m: MediaRef | null): string {
   return m.source === "poster" ? "art:poster" : "trailer";
 }
 
-function MediaField({ value, onChange, seriesId, assets, addAsset, series, imageOnly }: { value: MediaRef | null; onChange: (m: MediaRef | null) => void; seriesId: string; assets: Asset[]; addAsset: (a: Asset) => void; series: PreviewSeries; imageOnly?: boolean }) {
+function MediaField({
+  value,
+  onChange,
+  seriesId,
+  assets,
+  addAsset,
+  series,
+  imageOnly,
+  cms = true,
+  label,
+  note,
+}: {
+  value: MediaRef | null;
+  onChange: (m: MediaRef | null) => void;
+  seriesId: string;
+  assets: Asset[];
+  addAsset: (a: Asset) => void;
+  series: PreviewSeries;
+  imageOnly?: boolean;
+  /** Offer the series' artwork, trailer and clips (series flows only). */
+  cms?: boolean;
+  label?: string;
+  note?: string;
+}) {
   const [status, setStatus] = useState<string | null>(null);
   const has = (slot: ArtSlot) => ({ poster: series.posterUrl, banner_wa: series.art?.bannerWa, banner_wide: series.art?.bannerWide, square: series.art?.square })[slot];
   const clips = Object.entries(series.clips)
@@ -115,7 +138,7 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
   const choices = assets.filter((a) => !imageOnly || a.kind === "image");
   return (
     <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-      <legend style={{ fontSize: 12 }}>{imageOnly ? "Image" : "Image or video"} (optional)</legend>
+      <legend style={{ fontSize: 12 }}>{label ?? `${imageOnly ? "Image" : "Image or video"} (optional)`}</legend>
       <select
         value={mediaKey(value)}
         onChange={(e) => {
@@ -131,6 +154,7 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
         }}
       >
         <option value="none">No media</option>
+        {cms && (
         <optgroup label="Series artwork (from the CMS)">
           {ART_OPTIONS.map((o) => (
             <option key={o.slot} value={`art:${o.slot}`}>
@@ -139,7 +163,8 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
             </option>
           ))}
         </optgroup>
-        {!imageOnly && (
+        )}
+        {!imageOnly && cms && (
           <optgroup label="Videos (from the CMS)">
             <option value="trailer">Trailer{series.trailerUrl ? "" : " (not uploaded)"}</option>
             {clips.map((n) => (
@@ -174,7 +199,7 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
               const a = await uploadAsset(seriesId, f);
               addAsset(a);
               onChange({ assetId: a.id, url: a.url, type: a.kind, name: a.name });
-              setStatus("Added to the card and the series media library ✓");
+              setStatus(seriesId ? "Added to the card and the series media library ✓" : "Added to the card and the media library ✓");
             } catch (err) {
               setStatus(err instanceof Error ? err.message : "Upload failed");
             }
@@ -182,6 +207,7 @@ function MediaField({ value, onChange, seriesId, assets, addAsset, series, image
         />
       </label>
       {status && <span className="muted" style={{ fontSize: 12 }}>{status}</span>}
+      {note && <span className="muted" style={{ fontSize: 11 }}>{note}</span>}
     </fieldset>
   );
 }
@@ -191,7 +217,7 @@ export function Inspector(p: Props) {
   const set = (patch: Partial<NodeData>) => p.onChange({ ...d, ...patch } as NodeData);
   const style = CARD_STYLE[d.kind];
   const epOptions = Array.from({ length: Math.max(p.series.episodeCount, 1) }, (_, i) => i + 1);
-  const mediaProps = { seriesId: p.seriesId, assets: p.assets, addAsset: p.addAsset, series: p.series };
+  const mediaProps = { seriesId: p.seriesId, assets: p.assets, addAsset: p.addAsset, series: p.series, cms: (p.mode ?? "series") === "series" };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -222,7 +248,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "message" && (
         <>
-          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
+          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
           <BiText label={d.media && !d.buttons.length ? "Caption" : "Message"} value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
           <Buttons value={d.buttons} onChange={(buttons) => set({ buttons })} />
         </>
@@ -230,7 +256,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "language" && (
         <>
-          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
+          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
           <Text label="Message (everyone sees this one; write it in Arabic and English)" value={d.body.ar} onChange={(ar) => set({ body: { ar, en: ar } })} max={1024} rows={5} dir="rtl" />
           <Text label="Arabic button" value={d.btnAr} onChange={(btnAr) => set({ btnAr })} max={20} rows={1} dir="rtl" />
           <Text label="English subtitles button" value={d.btnEn} onChange={(btnEn) => set({ btnEn })} max={20} rows={1} dir="ltr" />
@@ -289,7 +315,7 @@ export function Inspector(p: Props) {
               they&apos;re further ahead
             </label>
           )}
-          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} imageOnly />}
+          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} imageOnly />
           <BiText label="Message ({title} = series, {n} = episode)" value={d.body} onChange={(body) => set({ body })} max={1024} rows={4} />
           <BiText label="Button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
         </>
@@ -297,6 +323,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "optin" && (
         <>
+          <MediaField value={d.media ?? null} onChange={(media) => set({ media })} {...mediaProps} />
           <BiText label="Question" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
           <BiText label="Yes button" value={d.yes} onChange={(yes) => set({ yes })} max={20} rows={1} />
           <BiText label="No button" value={d.no} onChange={(no) => set({ no })} max={20} rows={1} />
@@ -381,7 +408,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "choice" && (
         <>
-          {p.mode !== "shared" && <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />}
+          <MediaField value={d.media} onChange={(media) => set({ media })} {...mediaProps} />
           <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
           <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
             <legend style={{ fontSize: 12 }}>Series ({d.options.length}/3) · a tap starts that series&apos; own flow</legend>
@@ -474,6 +501,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "list" && (
         <>
+          <MediaField value={d.media ?? null} onChange={(media) => set({ media })} {...mediaProps} note="WhatsApp menus can't carry media, so it's sent just before the menu." />
           <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
           <BiText label="Menu button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
           <BiText label="List heading" value={d.section} onChange={(section) => set({ section })} max={24} rows={1} />
@@ -483,6 +511,7 @@ export function Inspector(p: Props) {
 
       {d.kind === "account" && (
         <>
+          <MediaField value={d.media ?? null} onChange={(media) => set({ media })} {...mediaProps} imageOnly />
           <BiText label="Message" value={d.body} onChange={(body) => set({ body })} max={1024} rows={3} />
           <BiText label="Button" value={d.button} onChange={(button) => set({ button })} max={20} rows={1} />
           <p className="muted" style={{ fontSize: 12, margin: 0 }}>
@@ -507,7 +536,21 @@ export function Inspector(p: Props) {
       )}
 
       {d.kind === "template" && (
-        <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
+        <>
+          <TemplatePanel value={d.name} onPick={(name) => set({ name })} templates={p.templates} setTemplates={p.setTemplates} seriesTitle={{ ar: p.series.titleAr, en: p.series.titleEn }} />
+          <MediaField
+            value={d.media ?? null}
+            onChange={(media) => set({ media })}
+            {...mediaProps}
+            imageOnly
+            label="Header image (optional)"
+            note="Used when the template has an image header. Empty = the viewer's series WhatsApp banner (or poster)."
+          />
+        </>
+      )}
+
+      {d.kind === "suggest" && (
+        <MediaField value={d.media ?? null} onChange={(media) => set({ media })} {...mediaProps} note="Sent just before the list of other series." />
       )}
 
       {d.kind !== "start" && d.kind !== "trigger" && (

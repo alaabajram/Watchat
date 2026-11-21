@@ -209,14 +209,22 @@ const ASSET_TYPES = {
   "video/mp4": { kind: "video", ext: "mp4", max: 16 * 1048576 },
 } as const;
 
+/** Where an upload goes: one series' library, or (no series id) the label-wide library. */
+async function libraryOf(tenantId: string, seriesId: string): Promise<{ seriesId: string | null; prefix: string }> {
+  if (!seriesId) return { seriesId: null, prefix: "shared/library/" };
+  if (!UUID.test(seriesId)) throw new Error("Series not found.");
+  const { data: s } = await db().from("series").select("code").eq("tenant_id", tenantId).eq("id", seriesId).maybeSingle();
+  if (!s) throw new Error("Series not found.");
+  return { seriesId, prefix: `${s.code}/library/` };
+}
+
 export async function createAssetUpload(seriesId: string, mime: string, size: number): Promise<{ uploadUrl: string; path: string; publicUrl: string }> {
   const admin = await requireAdmin("bot");
   const type = ASSET_TYPES[mime as keyof typeof ASSET_TYPES];
   if (!type) throw new Error("WhatsApp accepts JPG or PNG images and MP4 videos.");
   if (size > type.max) throw new Error(`Too big for WhatsApp: ${type.kind === "video" ? "videos up to 16 MB" : "images up to 5 MB"}.`);
-  const { data: s } = await db().from("series").select("code").eq("tenant_id", admin.tenantId).eq("id", seriesId).maybeSingle();
-  if (!s) throw new Error("Series not found.");
-  const path = `${s.code}/library/${Date.now()}-${randomToken(6)}.${type.ext}`;
+  const lib = await libraryOf(admin.tenantId, seriesId);
+  const path = `${lib.prefix}${Date.now()}-${randomToken(6)}.${type.ext}`;
   const { data, error } = await db().storage.from("media").createSignedUploadUrl(path);
   if (error || !data) throw new Error(`Upload URL failed: ${error?.message}`);
   return { uploadUrl: data.signedUrl, path, publicUrl: db().storage.from("media").getPublicUrl(path).data.publicUrl };
@@ -225,17 +233,33 @@ export async function createAssetUpload(seriesId: string, mime: string, size: nu
 export async function registerAsset(seriesId: string, a: { path: string; name: string; mime: string; size: number }): Promise<Asset> {
   const admin = await requireAdmin("bot");
   const type = ASSET_TYPES[a.mime as keyof typeof ASSET_TYPES];
-  const { data: s } = await db().from("series").select("code").eq("tenant_id", admin.tenantId).eq("id", seriesId).maybeSingle();
-  if (!type || !s || !a.path.startsWith(`${s.code}/library/`) || a.path.includes("..")) throw new Error("Bad upload.");
+  const lib = await libraryOf(admin.tenantId, seriesId);
+  if (!type || !a.path.startsWith(lib.prefix) || a.path.includes("..")) throw new Error("Bad upload.");
   const url = db().storage.from("media").getPublicUrl(a.path).data.publicUrl;
   const { data, error } = await db()
     .from("media_assets")
-    .insert({ tenant_id: admin.tenantId, series_id: seriesId, kind: type.kind, name: a.name.slice(0, 120) || "Untitled", url, path: a.path, mime: a.mime, size_bytes: a.size, created_by: admin.id })
+    .insert({ tenant_id: admin.tenantId, series_id: lib.seriesId, kind: type.kind, name: a.name.slice(0, 120) || "Untitled", url, path: a.path, mime: a.mime, size_bytes: a.size, created_by: admin.id })
     .select("id, kind, name, url, size_bytes, created_at")
     .single();
   if (error || !data) throw new Error(`Couldn't save the file: ${error?.message}`);
-  await audit(admin, "media.uploaded", "series", seriesId, { asset: data.id, kind: type.kind });
-  return { id: data.id, kind: data.kind, name: data.name, url: data.url, sizeBytes: data.size_bytes, createdAt: data.created_at };
+  await audit(admin, "media.uploaded", lib.seriesId ? "series" : "media_library", lib.seriesId, { asset: data.id, kind: type.kind });
+  return { id: data.id, kind: data.kind, name: data.name, url: data.url, sizeBytes: data.size_bytes, createdAt: data.created_at, shared: lib.seriesId === null };
+}
+
+/** Every saved canvas of the label (series drafts and versions, sequences, shared replies) that uses this file. */
+async function assetUsedAnywhere(tenantId: string, assetId: string): Promise<string | null> {
+  const has = (g: unknown) => assetIdsIn(sanitizeGraph(g)).has(assetId);
+  const [{ data: flows }, { data: versions }, { data: seqs }, { data: shared }] = await Promise.all([
+    db().from("flows").select("draft").eq("tenant_id", tenantId),
+    db().from("flow_versions").select("graph").eq("tenant_id", tenantId),
+    db().from("sequences").select("name, draft, graph").eq("tenant_id", tenantId),
+    db().from("shared_flows").select("draft, graph").eq("tenant_id", tenantId).maybeSingle(),
+  ]);
+  if (shared && (has(shared.draft) || has(shared.graph))) return "Shared replies";
+  const seq = (seqs ?? []).find((q) => has(q.draft) || has(q.graph));
+  if (seq) return `the sequence "${seq.name}"`;
+  if ((flows ?? []).some((f) => has(f.draft)) || (versions ?? []).some((v) => has(v.graph))) return "a series flow";
+  return null;
 }
 
 export async function renameAsset(assetId: string, name: string): Promise<void> {
@@ -246,18 +270,14 @@ export async function renameAsset(assetId: string, name: string): Promise<void> 
 
 export async function deleteAsset(seriesId: string, assetId: string, currentDraft: unknown): Promise<{ ok: boolean; error?: string }> {
   const admin = await requireAdmin("bot");
-  const flow = await flowFor(admin.tenantId, seriesId);
-  const inDraft = assetIdsIn(sanitizeGraph(currentDraft)).has(assetId) || assetIdsIn(sanitizeGraph(flow.draft)).has(assetId);
-  let inPublished = false;
-  if (flow.published_version_id) {
-    const { data } = await db().from("flow_versions").select("graph").eq("id", flow.published_version_id).maybeSingle();
-    inPublished = assetIdsIn(sanitizeGraph(data?.graph)).has(assetId);
-  }
-  if (inDraft || inPublished) return { ok: false, error: `It's used in the ${inPublished ? "published flow" : "draft"}. Remove it from those cards first.` };
-  const { data: a } = await db().from("media_assets").select("path").eq("tenant_id", admin.tenantId).eq("id", assetId).maybeSingle();
+  if (!UUID.test(assetId)) return { ok: true };
+  if (assetIdsIn(sanitizeGraph(currentDraft)).has(assetId)) return { ok: false, error: "It's used on this canvas. Remove it from those cards first." };
+  const used = await assetUsedAnywhere(admin.tenantId, assetId);
+  if (used) return { ok: false, error: `It's used in ${used}. Remove it from those cards first.` };
+  const { data: a } = await db().from("media_assets").select("path, series_id").eq("tenant_id", admin.tenantId).eq("id", assetId).maybeSingle();
   if (!a) return { ok: true };
   await db().storage.from("media").remove([a.path]);
   await db().from("media_assets").delete().eq("id", assetId);
-  await audit(admin, "media.deleted", "series", seriesId, { asset: assetId });
+  await audit(admin, "media.deleted", a.series_id ? "series" : "media_library", a.series_id ?? seriesId ?? null, { asset: assetId });
   return { ok: true };
 }

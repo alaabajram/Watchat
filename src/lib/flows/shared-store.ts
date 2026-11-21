@@ -6,7 +6,7 @@ import { listTemplates } from "../messaging/template-store";
 import { db } from "../supabase";
 import { sanitizeGraph } from "./sanitize";
 import { standardSharedFlow, type TextOf } from "./shared";
-import { listMyCards, type BuilderData } from "./store";
+import { listMyCards, sharedAssets, type BuilderData } from "./store";
 import type { Bi, FlowGraph } from "./types";
 
 /** The team's saved Shared reply texts (bot_messages without a series), over the built-in defaults. */
@@ -60,7 +60,7 @@ export async function loadSharedBuilder(tenantId: string): Promise<BuilderData &
     draftUpdatedAt: (row?.draft_updated_at as string | null) ?? new Date(0).toISOString(),
     published: published ? { versionId: "shared", version: row?.version as number, graph: published } : null,
     versions: [],
-    assets: [],
+    assets: await sharedAssets(tenantId),
     templates,
     aiReady: ai.connected && ai.enabled,
     myCards: myCards.filter((c) => c.block.nodes.every((n) => !["episode", "wait", "template", "start", "web", "trigger", "end"].includes(n.data.kind))),

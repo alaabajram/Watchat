@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { deleteAsset, renameAsset } from "@/app/admin/flow-actions";
 import type { Asset } from "@/lib/flows/store";
-import type { FlowGraph, MediaRef } from "@/lib/flows/types";
+import { mediaOf, type FlowGraph, type MediaRef } from "@/lib/flows/types";
 import { ACCEPT, formatSize, uploadAsset } from "./upload";
 
 type Props = {
@@ -23,10 +23,15 @@ type Props = {
   /** Flow builder: artwork, trailer and episode clips from the series CMS (nothing to upload twice). */
   cms?: { key: string; label: string; url: string; type: "image" | "video"; ref: MediaRef }[];
   onAttachRef?: (ref: MediaRef) => void;
+  /** Sequences and Shared replies: the label-wide library (files every series can use too). */
+  sharedLibrary?: boolean;
 };
 
 function uses(g: FlowGraph | null, assetId: string): string[] {
-  return (g?.nodes ?? []).filter((n) => "media" in n.data && n.data.media && "assetId" in n.data.media && n.data.media.assetId === assetId).map((n) => n.id);
+  return (g?.nodes ?? []).filter((n) => {
+    const m = mediaOf(n.data);
+    return Boolean(m && "assetId" in m && m.assetId === assetId);
+  }).map((n) => n.id);
 }
 
 export function MediaLibrary(p: Props) {
@@ -88,6 +93,7 @@ export function MediaLibrary(p: Props) {
         <strong>⬆ Upload images & video cuts</strong>
         <div className="muted" style={{ fontSize: 12 }}>
           Drop files or click. JPG/PNG ≤ 5 MB · MP4 ≤ 16 MB (540×960, H.264)
+          {p.sharedLibrary ? " · goes to the label-wide library, usable in every series too" : ""}
         </div>
         <input type="file" accept={ACCEPT} multiple style={{ display: "none" }} onChange={(e) => e.target.files && void onFiles(e.target.files)} />
       </label>
@@ -99,7 +105,7 @@ export function MediaLibrary(p: Props) {
           </button>
         ))}
       </div>
-      {list.length === 0 && <p className="muted" style={{ fontSize: 12 }}>No files yet for this series.</p>}
+      {list.length === 0 && <p className="muted" style={{ fontSize: 12 }}>{p.sharedLibrary ? "No files yet. Upload one, then select a card and use it." : "No files yet for this series."}</p>}
       <div style={p.compact ? { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 } : { display: "contents" }}>
       {list.map((a) => {
         const draftUses = uses(p.graph, a.id);
@@ -125,6 +131,7 @@ export function MediaLibrary(p: Props) {
               />
               <span className="muted">
                 {a.kind === "image" ? "Image" : "Video"} · {formatSize(a.sizeBytes)}
+                {a.shared && !p.sharedLibrary ? " · all series" : ""}
               </span>
               {!p.compact && <span>
                 {draftUses.length ? (

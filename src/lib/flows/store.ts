@@ -12,7 +12,14 @@ import { standardGraph } from "./standard";
 import type { FlowGraph } from "./types";
 
 export type { TemplateInfo };
-export type Asset = { id: string; kind: "image" | "video"; name: string; url: string; sizeBytes: number | null; createdAt: string };
+/** shared: in the label-wide library (Shared replies, Sequences and every series), not one series'. */
+export type Asset = { id: string; kind: "image" | "video"; name: string; url: string; sizeBytes: number | null; createdAt: string; shared?: boolean };
+
+/** The label-wide media library (files not tied to one series). */
+export async function sharedAssets(tenantId: string): Promise<Asset[]> {
+  const { data } = await db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", tenantId).is("series_id", null).order("created_at", { ascending: false });
+  return (data ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at, shared: true }));
+}
 export type SavedCard = { id: string; name: string; cardCount: number; block: FlowGraph };
 export type VersionInfo = { id: string; version: number; publishedAt: string; note: string | null };
 
@@ -68,7 +75,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
 
   const [{ data: versions }, { data: assets }, templates, ai, myCards, ctr] = await Promise.all([
     db().from("flow_versions").select("id, version, published_at, note, graph").eq("flow_id", flow!.id).order("version", { ascending: false }).limit(30),
-    db().from("media_assets").select("id, kind, name, url, size_bytes, created_at").eq("tenant_id", tenantId).eq("series_id", seriesId).order("created_at", { ascending: false }),
+    db().from("media_assets").select("id, kind, name, url, size_bytes, created_at, series_id").eq("tenant_id", tenantId).or(`series_id.eq.${seriesId},series_id.is.null`).order("created_at", { ascending: false }),
     listTemplates(tenantId),
     getAiSettings(tenantId),
     listMyCards(tenantId),
@@ -98,7 +105,7 @@ export async function loadBuilder(tenantId: string, seriesId: string, adminId: s
     draftUpdatedAt: flow!.draft_updated_at,
     published: pub ? { versionId: pub.id, version: pub.version, graph: sanitizeGraph(pub.graph) ?? { v: 1, nodes: [], edges: [] } } : null,
     versions: (versions ?? []).map((v) => ({ id: v.id, version: v.version, publishedAt: v.published_at, note: v.note })),
-    assets: (assets ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at })),
+    assets: (assets ?? []).map((a) => ({ id: a.id, kind: a.kind, name: a.name, url: a.url, sizeBytes: a.size_bytes, createdAt: a.created_at, shared: a.series_id === null })),
     templates,
     aiReady: ai.connected && ai.enabled,
     myCards,

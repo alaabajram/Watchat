@@ -78,7 +78,7 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
       return ref.source === "poster" ? series.posterUrl : series.trailerUrl;
     },
     meta: (l) => metaVars(series.meta, l),
-    template: async (name, nodeId) => {
+    template: async (name, nodeId, headerImage) => {
       const t = templates[name];
       const lang = env.lang;
       const v = t ? (t[lang] ?? t.ar ?? t.en) : null;
@@ -91,7 +91,11 @@ export function previewEnv(series: PreviewSeries, viewer: SampleViewer, template
       sink.items.push({
         from: "bot",
         nodeId,
-        msg: v.button ? { kind: "cta_url", body, buttonText: v.button, url: "https://watchat.pro/w/your-personal-link" } : { kind: "text", body },
+        msg: v.button
+          ? { kind: "cta_url", body, buttonText: v.button, url: "https://watchat.pro/w/your-personal-link", ...(headerImage ? { header: { type: "image" as const, link: headerImage } } : {}) }
+          : headerImage
+            ? { kind: "image", link: headerImage, caption: body }
+            : { kind: "text", body },
       });
       return t.approved ? "sent" : "skipped";
     },

@@ -97,7 +97,7 @@ export function pushText(body: string, params: string[]): string {
 }
 
 /** Send a template by name from a flow's Template card. Marketing templates need the viewer's opt-in. */
-type SendOpts = { quickReplyPayload?: string; source?: SendSource; ref?: MsgRef };
+type SendOpts = { quickReplyPayload?: string; source?: SendSource; ref?: MsgRef; headerImage?: string | null };
 /** What sent a template, for the spend meter. */
 export type SendSource = "flow" | "sequence" | "campaign" | "growth" | "admin";
 
@@ -106,7 +106,7 @@ export async function sendNamedTemplate(r: Recipient, name: string, optedIn: boo
   const templates = await loadTemplates(tenantId, name);
   const t = templates.get(templateLangFor(r.language)) ?? templates.get("ar");
   if (t?.category === "marketing" && !optedIn) return "skipped";
-  const result = await sendTemplate(r, templates, { quickReplyPayload: opts.quickReplyPayload, source: opts.source ?? "flow", ref: opts.ref });
+  const result = await sendTemplate(r, templates, { quickReplyPayload: opts.quickReplyPayload, source: opts.source ?? "flow", ref: opts.ref, headerImage: opts.headerImage });
   return result.ok ? "sent" : result.skipped ? "skipped" : "failed";
 }
 
@@ -120,7 +120,7 @@ export async function sendNamedTemplateDetailed(r: Recipient, name: string, opts
 async function sendTemplate(
   r: Recipient,
   templates: Map<string, Template>,
-  { quickReplyPayload, source, ref }: { quickReplyPayload?: string; source: SendSource; ref?: MsgRef },
+  { quickReplyPayload, source, ref, headerImage }: { quickReplyPayload?: string; source: SendSource; ref?: MsgRef; headerImage?: string | null },
 ): Promise<{ ok: boolean; id?: string; error?: string; skipped?: boolean }> {
   const lang = templateLangFor(r.language);
   const template = templates.get(lang) ?? templates.get("ar");
@@ -129,7 +129,7 @@ async function sendTemplate(
   // Web push first: viewers who turned on alerts in the web app get it free instead of a paid WhatsApp template.
   // If no device accepts it, the WhatsApp template goes out as before.
   if (template.category === "marketing") {
-    const pushed = await tryPush(r, template, source, ref);
+    const pushed = await tryPush(r, template, source, ref, headerImage);
     if (pushed) return { ok: true, id: "push" };
   }
   if (template.category === "marketing" && (await marketingBudgetReached(await currentTenantId()))) {
@@ -151,7 +151,7 @@ async function sendTemplate(
     kind: "template",
     name: template.name,
     language: template.lang,
-    ...(template.header_type === "image" && (series?.banner_wa_url || series?.poster_url) ? { headerImage: series.banner_wa_url || series.poster_url! } : {}),
+    ...(template.header_type === "image" && (headerImage || series?.banner_wa_url || series?.poster_url) ? { headerImage: headerImage || series?.banner_wa_url || series!.poster_url! } : {}),
     bodyParams: params,
     ...(urlParam ? { urlButtonParam: urlParam } : {}),
     ...(template.button_type === "quick_reply" && template.button_text && quickReplyPayload ? { quickReplyPayload } : {}),
@@ -175,7 +175,7 @@ async function sendTemplate(
   return result.ok ? { ok: true, id: result.waMessageId } : { ok: false, error: result.error };
 }
 
-async function tryPush(r: Recipient, template: Template, source: SendSource, ref?: MsgRef): Promise<boolean> {
+async function tryPush(r: Recipient, template: Template, source: SendSource, ref?: MsgRef, headerImage?: string | null): Promise<boolean> {
   const tenantId = await currentTenantId();
   if (!(await hasPush(r.viewerId))) return false;
   try {
@@ -196,7 +196,7 @@ async function tryPush(r: Recipient, template: Template, source: SendSource, ref
     body: pushText(template.body, [title, String(r.episode ?? episode ?? "")]),
     url,
     tag: template.name,
-    image: series?.banner_wa_url || series?.poster_url || null,
+    image: headerImage || series?.banner_wa_url || series?.poster_url || null,
   });
   await db().from("push_messages").insert({
     tenant_id: tenantId,

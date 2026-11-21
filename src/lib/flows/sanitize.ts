@@ -1,7 +1,7 @@
 // Rebuilds a flow from untrusted JSON (the browser), keeping only known fields with safe sizes.
 // Anything unrecognised is dropped; the result is always a well-formed FlowGraph or null.
 
-import type { Bi, Condition, FlowButton, FlowEdge, FlowGraph, FlowNode, ListRow, MediaRef, NodeData } from "./types";
+import { mediaOf, type Bi, type Condition, type FlowButton, type FlowEdge, type FlowGraph, type FlowNode, type ListRow, type MediaRef, type NodeData } from "./types";
 
 const MAX_NODES = 200;
 const MAX_EDGES = 600;
@@ -30,6 +30,10 @@ function media(v: unknown): MediaRef | null {
   if (!/^https:\/\//.test(url) || !/^[0-9a-f-]{36}$/.test(assetId)) return null;
   return { assetId, url, type, name: str(m.name, 120) || undefined };
 }
+
+/** Optional media: left out when there is none, so cards without media stay as they were. */
+const opt = (m: MediaRef | null) => (m ? { media: m } : {});
+const image = (m: MediaRef | null) => (m && m.type === "image" ? m : null);
 
 function buttons(v: unknown): FlowButton[] {
   const out: FlowButton[] = [];
@@ -82,15 +86,15 @@ function data(v: unknown): NodeData | null {
     case "link":
       return { kind: "link", episode: d.episode === "resume" ? "resume" : num(d.episode, 1, 999, 1), body: bi(d.body), button: bi(d.button, 40), media: media(d.media), resumeIfFurther: bool(d.resumeIfFurther, true) };
     case "optin":
-      return { kind: "optin", body: bi(d.body), yes: bi(d.yes, 40), no: bi(d.no, 40), skipIfAnswered: bool(d.skipIfAnswered, true) };
+      return { kind: "optin", body: bi(d.body), yes: bi(d.yes, 40), no: bi(d.no, 40), skipIfAnswered: bool(d.skipIfAnswered, true), ...opt(media(d.media)) };
     case "wait":
       return { kind: "wait", minutes: num(d.minutes, 1, 43200, 60) };
     case "condition":
       return { kind: "condition", condition: condition(d.condition) };
     case "template":
-      return { kind: "template", name: /^[a-z0-9_]{0,512}$/.test(str(d.name, 512)) ? str(d.name, 512) : "" };
+      return { kind: "template", name: /^[a-z0-9_]{0,512}$/.test(str(d.name, 512)) ? str(d.name, 512) : "", ...opt(image(media(d.media))) };
     case "suggest":
-      return { kind: "suggest" };
+      return { kind: "suggest", ...opt(media(d.media)) };
     case "choice": {
       const options = (Array.isArray(d.options) ? d.options : [])
         .slice(0, 3)
@@ -110,9 +114,9 @@ function data(v: unknown): NodeData | null {
     case "keyword":
       return { kind: "keyword", words: words(d.words), anythingElse: bool(d.anythingElse, false) };
     case "list":
-      return { kind: "list", body: bi(d.body), button: bi(d.button, 40), section: bi(d.section, 40), rows: rows(d.rows) };
+      return { kind: "list", body: bi(d.body), button: bi(d.button, 40), section: bi(d.section, 40), rows: rows(d.rows), ...opt(media(d.media)) };
     case "account":
-      return { kind: "account", body: bi(d.body), button: bi(d.button, 40) };
+      return { kind: "account", body: bi(d.body), button: bi(d.button, 40), ...opt(image(media(d.media))) };
     case "action":
       return { kind: "action", action: d.action === "opt_in" || d.action === "delete_data" ? d.action : "opt_out" };
     default:
@@ -169,7 +173,7 @@ export function sanitizeBlock(input: unknown): FlowGraph | null {
 export function assetIdsIn(g: FlowGraph | null): Set<string> {
   const out = new Set<string>();
   for (const n of g?.nodes ?? []) {
-    const m = "media" in n.data ? n.data.media : null;
+    const m = mediaOf(n.data);
     if (m && "assetId" in m) out.add(m.assetId);
   }
   return out;

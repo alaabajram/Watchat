@@ -5,7 +5,7 @@ import { listTemplates } from "../messaging/template-store";
 import { db } from "../supabase";
 import { newId } from "./defaults";
 import { sanitizeGraph } from "./sanitize";
-import { listMyCards, type BuilderData } from "./store";
+import { listMyCards, sharedAssets, type BuilderData } from "./store";
 import type { FlowGraph } from "./types";
 
 export type SequenceInfo = { id: string; name: string; active: boolean; seriesCodes: string[]; running: number; waiting: number };
@@ -72,7 +72,7 @@ export async function loadSequenceBuilder(tenantId: string, id: string): Promise
     draftUpdatedAt: (s.updated_at ?? s.created_at) as string,
     published: published ? { versionId: s.id as string, version: s.version as number, graph: published } : null,
     versions: [],
-    assets: [],
+    assets: await sharedAssets(tenantId),
     templates,
     aiReady: ai.connected && ai.enabled,
     myCards: myCards.filter((c) => c.block.nodes.every((n) => ["wait", "condition", "template", "end"].includes(n.data.kind))),
