@@ -1,39 +1,22 @@
-// Shown when a personal link can't sign this person in (already opened, too old, or this phone belongs
-// to another account). They continue in WhatsApp and the bot sends a link for THEIR OWN number.
+// "Sign in with WhatsApp" — shown when a Watchat link is opened on a browser we can't tie to its owner
+// (a forwarded link on another phone, a re-opened or expired link). Sending the pre-filled message
+// proves the opener's own number; the bot replies with a link to THEIR account (new viewers get a new one).
+// The owner's account is never opened here.
 
+import { Splash } from "@/components/brand/Splash";
 import { env } from "@/lib/env";
-import { dirFor, webCopy } from "@/lib/web-copy";
+import { webCopy } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
 
-export default async function ContinuePage({ searchParams }: { searchParams: Promise<{ s?: string; e?: string }> }) {
+export default async function ContinuePage({ searchParams }: { searchParams: Promise<{ s?: string; e?: string; lang?: string }> }) {
   const sp = await searchParams;
-  const code = /^[A-Z]{3,}\d{1,3}$/.test(sp.s ?? "") ? sp.s! : null;
+  const locale = sp.lang === "en" ? "en" : "ar";
+  const t = webCopy(locale);
+  const code = /^[A-Za-z0-9_-]{2,40}$/.test(sp.s ?? "") ? sp.s! : null;
   const ep = /^\d{1,3}$/.test(sp.e ?? "") ? sp.e! : null;
   const message = code ? `شاهد ${code}${ep ? ` ${ep}` : ""}` : "LINK";
   const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(message)}` : null;
-  const ar = webCopy("ar");
-  const en = webCopy("en");
-
-  return (
-    <main className="page center">
-      <section dir={dirFor("ar")} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <h1 style={{ margin: 0 }}>{ar.continueTitle}</h1>
-        <p style={{ margin: 0 }}>{ar.continueBody}</p>
-        {wa && (
-          <a className="btn" href={wa}>
-            {ar.continueButton}
-          </a>
-        )}
-        <p className="muted" style={{ margin: 0 }}>
-          {ar.continueManual(message)}
-        </p>
-      </section>
-      <section dir={dirFor("en")} className="muted" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-        <strong>{en.continueTitle}</strong>
-        <span>{en.continueBody}</span>
-        <span>{en.continueManual(message)}</span>
-      </section>
-    </main>
-  );
+  const path = code ? `/continue?s=${encodeURIComponent(code)}${ep ? `&e=${ep}` : ""}` : "/continue";
+  return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.continueBody : t.continueManual(message)} path={path} />;
 }

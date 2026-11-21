@@ -7,8 +7,8 @@ import { cookies } from "next/headers";
 import { randomToken, sha256Hex } from "./crypto";
 import { db } from "./supabase";
 
-import { SESSION_COOKIE, SESSION_MAX_AGE_S } from "./session-cookie";
-export { SESSION_COOKIE, SESSION_MAX_AGE_S };
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S, SESSION_MAX_AGE_S } from "./session-cookie";
+export { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S, SESSION_MAX_AGE_S };
 export const MAX_DEVICES = 3;
 const TOUCH_EVERY_MS = 10 * 60 * 1000;
 
@@ -88,6 +88,18 @@ export async function getSessionViewer(): Promise<SessionViewer | null> {
     country: v.country,
     trusted: true, // every session can spend (no device confirm); trusted_at is kept for the admin history
   };
+}
+
+/**
+ * Whose browser is this? The viewer this browser was signed in to — even if that session has since gone
+ * idle — or null (never signed in here, signed out, or signed out from Settings). Used only to recognise
+ * the owner when they open their own Watchat link again; it never grants access on its own.
+ */
+export async function browserViewerId(): Promise<string | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  const { data } = await db().from("sessions").select("viewer_id").eq("token_hash", sha256Hex(token)).is("revoked_at", null).maybeSingle();
+  return (data?.viewer_id as string | undefined) ?? null;
 }
 
 export async function listDevices(viewerId: string) {
