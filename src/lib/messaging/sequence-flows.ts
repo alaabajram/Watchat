@@ -92,9 +92,9 @@ function sequenceEnv(seq: Seq, v: ViewerRow, run: Run, now: number, budget: { le
     progress: async () => ({ maxStarted: 0, maxCompleted: 0, lastWatchedAt: null }),
     noteChatEpisode: () => {},
     clip: async () => ({ url: null, title: null }),
-    mediaUrl: () => null,
+    mediaUrl: (ref) => ("assetId" in ref ? ref.url : null), // library pictures for template headers
     meta: () => ({ tagline: "", genre: "", cast: "" }),
-    template: async (name, nodeId) => {
+    template: async (name, nodeId, headerImage) => {
       if (budget.left <= 0) return "skipped";
       budget.left--;
       const { data: opt } = await db().from("viewer_opt_in").select("status").eq("viewer_id", v.id).maybeSingle();
@@ -102,7 +102,7 @@ function sequenceEnv(seq: Seq, v: ViewerRow, run: Run, now: number, budget: { le
         { viewerId: v.id, phone: v.phone_e164, language: v.language, seriesId: run.seriesId, episode: run.episode },
         name,
         opt?.status === "in",
-        { source: "sequence", ref: { type: "sequence", id: seq.id, node: nodeId } },
+        { source: "sequence", ref: { type: "sequence", id: seq.id, node: nodeId }, headerImage },
       );
       if (r === "sent") summary.sent++;
       else if (r === "skipped") summary.skipped++;

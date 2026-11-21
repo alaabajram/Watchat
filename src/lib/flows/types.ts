@@ -59,11 +59,13 @@ export type NodeData =
   | { kind: "episode"; episode: number; caption: Bi; buttons: FlowButton[]; skipIfWatched: boolean }
   // resumeIfFurther: open where the viewer left off when that's past `episode`.
   | { kind: "link"; episode: number | "resume"; body: Bi; button: Bi; media: MediaRef | null; resumeIfFurther: boolean }
-  | { kind: "optin"; body: Bi; yes: Bi; no: Bi; skipIfAnswered: boolean }
+  | { kind: "optin"; body: Bi; yes: Bi; no: Bi; skipIfAnswered: boolean; media?: MediaRef | null }
   | { kind: "wait"; minutes: number }
   | { kind: "condition"; condition: Condition }
-  | { kind: "template"; name: string }
-  | { kind: "suggest" }
+  // media: header picture for templates with an image header (default: the series' WhatsApp banner).
+  | { kind: "template"; name: string; media?: MediaRef | null }
+  // media: sent just before the list of series (a list message can't carry media itself).
+  | { kind: "suggest"; media?: MediaRef | null }
   // Up to 3 series as buttons; tapping one starts that series' own flow. "AUTO" = a series the viewer hasn't started.
   | { kind: "choice"; body: Bi; options: ChoiceOption[]; media: MediaRef | null }
   // Sequence flows: where the sequence begins (the moment, how long after it, which series; null = any) and where it ends.
@@ -72,11 +74,20 @@ export type NodeData =
   // Shared flows: where a reply begins (the words a viewer sends; "anything else" catches what nothing matches),
   // a menu list (up to 10 rows, each its own port), a personal sign-in link to the account page, and built-in actions.
   | { kind: "keyword"; words: string[]; anythingElse: boolean }
-  | { kind: "list"; body: Bi; button: Bi; section: Bi; rows: ListRow[] }
-  | { kind: "account"; body: Bi; button: Bi }
+  | { kind: "list"; body: Bi; button: Bi; section: Bi; rows: ListRow[]; media?: MediaRef | null }
+  | { kind: "account"; body: Bi; button: Bi; media?: MediaRef | null }
   | { kind: "action"; action: SharedAction };
 
 export const AUTO_SERIES = "AUTO";
+
+/** Cards that can show a picture or video (every card that sends something). */
+export const MEDIA_KINDS = ["message", "language", "link", "optin", "choice", "list", "account", "suggest", "template"] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+export const takesMedia = (d: NodeData): d is Extract<NodeData, { kind: MediaKind }> => (MEDIA_KINDS as readonly string[]).includes(d.kind);
+/** Cards whose media must be an image (WhatsApp link buttons and template headers). */
+export const IMAGE_ONLY_KINDS: NodeKind[] = ["link", "account", "template"];
+/** Media of a card, if any. */
+export const mediaOf = (d: NodeData): MediaRef | null => (takesMedia(d) ? (d.media ?? null) : null);
 export type ChoiceOption = { code: string; label: Bi };
 
 export type NodeKind = NodeData["kind"];

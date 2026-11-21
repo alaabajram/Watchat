@@ -370,13 +370,13 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       return seriesProgress(viewerId, seriesId);
     },
 
-    async sendFlowTemplate(viewer, series, name, nodeId) {
+    async sendFlowTemplate(viewer, series, name, nodeId, headerImage) {
       const optedIn = (await this.getOptIn(viewer.id)) === "in";
       return sendNamedTemplate(
         { viewerId: viewer.id, phone: `+${viewer.waId}`, language: viewer.language, seriesId: series.id, episode: series.waEpisodeCount + 1 },
         name,
         optedIn,
-        { source: "flow", ref: { type: "flow", id: series.id, node: nodeId } },
+        { source: "flow", ref: { type: "flow", id: series.id, node: nodeId }, headerImage },
       );
     },
 

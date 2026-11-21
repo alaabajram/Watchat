@@ -118,7 +118,7 @@ export function flowTool(mode: FlowKind = "series"): Tool {
               minutes: { type: "integer", description: "wait: minutes to wait (1440 = 1 day). trigger: delay after the moment, in minutes (at least 60). condition watched_within: the time window in minutes. Otherwise 0." },
               check: { type: "string", enum: AI_CHECKS[mode], description: "condition only; otherwise none." },
               template: str("template only: the template name. Otherwise empty."),
-              media: str("message/language: none, banner_wa, poster, square, banner_wide, trailer, episode:N (that episode's chat clip) or a media library id. link: none, banner_wa, poster, square, banner_wide or an image id. Otherwise none."),
+              media: str("message/language/optin/list/suggest/choice: none, banner_wa, poster, square, banner_wide, trailer, episode:N (that episode's chat clip) or a media library id. link/account/template (image only): none, banner_wa, poster, square, banner_wide or an image id. Otherwise none."),
               skip: {
                 type: "boolean",
                 description:
@@ -164,11 +164,11 @@ export function graphToSteps(g: FlowGraph): Step[] {
         Object.assign(s, { words: d.words, anything_else: d.anythingElse, next: target(g, n.id, "next") });
         break;
       case "list":
-        Object.assign(s, { ar: d.body.ar, en: d.body.en, extra_ar: d.button.ar, extra_en: d.button.en });
+        Object.assign(s, { ar: d.body.ar, en: d.body.en, extra_ar: d.button.ar, extra_en: d.button.en, media: mediaKey(d.media ?? null) });
         s.buttons = d.rows.map((r) => ({ ar: r.title.ar, en: r.title.en, goto: target(g, n.id, r.id) }));
         break;
       case "account":
-        Object.assign(s, { ar: d.body.ar, en: d.body.en, next: target(g, n.id, "next") });
+        Object.assign(s, { ar: d.body.ar, en: d.body.en, next: target(g, n.id, "next"), media: mediaKey(d.media ?? null) });
         s.buttons = [{ ar: d.button.ar, en: d.button.en, goto: "" }];
         break;
       case "action":
@@ -200,7 +200,7 @@ export function graphToSteps(g: FlowGraph): Step[] {
         s.buttons = [{ ar: d.button.ar, en: d.button.en, goto: "" }];
         break;
       case "optin":
-        Object.assign(s, { ar: d.body.ar, en: d.body.en, skip: d.skipIfAnswered });
+        Object.assign(s, { ar: d.body.ar, en: d.body.en, skip: d.skipIfAnswered, media: mediaKey(d.media ?? null) });
         s.buttons = [
           { ar: d.yes.ar, en: d.yes.en, goto: target(g, n.id, "yes") },
           { ar: d.no.ar, en: d.no.en, goto: target(g, n.id, "no") },
@@ -219,7 +219,7 @@ export function graphToSteps(g: FlowGraph): Step[] {
         });
         break;
       case "template":
-        Object.assign(s, { template: d.name, next: target(g, n.id, "next") });
+        Object.assign(s, { template: d.name, next: target(g, n.id, "next"), media: mediaKey(d.media ?? null) });
         break;
       case "choice":
         Object.assign(s, { ar: d.body.ar, en: d.body.en, media: mediaKey(d.media) });
@@ -385,6 +385,12 @@ export function stepsToGraph(steps: Step[], ctx: AgentContext, previous: FlowGra
       }
       default:
         data = { kind: "suggest" };
+    }
+    // Cards that gained media later: the step's media, or keep what the card already had.
+    if (data.kind === "optin" || data.kind === "list" || data.kind === "account" || data.kind === "suggest" || data.kind === "template") {
+      const imageOnly = data.kind === "account" || data.kind === "template";
+      const m = toMedia(s.media ?? "none", ctx, imageOnly) ?? (old && old.kind === data.kind && "media" in old ? (old.media ?? null) : null);
+      if (m) (data as { media?: MediaRef | null }).media = m;
     }
     const keptName = prevNode(id)?.name;
     nodes.push({ id, position: prevNode(id)?.position ?? { x: 0, y: 0 }, data, ...(keptName ? { name: keptName } : {}) });

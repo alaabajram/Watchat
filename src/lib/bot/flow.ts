@@ -118,7 +118,8 @@ export interface BotDeps {
   /** What the viewer watched of a series on the web. */
   seriesProgress(viewerId: string, seriesId: string): Promise<SeriesProgress>;
   /** Send an approved template (respects opt-in and the marketing frequency cap). */
-  sendFlowTemplate(viewer: Viewer, series: Series, name: string, nodeId?: string): Promise<"sent" | "skipped" | "failed">;
+  /** headerImage: the Template card's own picture for an image header (default: the series' WhatsApp banner). */
+  sendFlowTemplate(viewer: Viewer, series: Series, name: string, nodeId?: string, headerImage?: string | null): Promise<"sent" | "skipped" | "failed">;
   checkCondition(viewer: Viewer, series: Series, condition: Condition): Promise<boolean>;
   /** Series codes the growth agent picked for this viewer (marks the suggestion as answered). */
   getGrowthPicks(viewerId: string, suggestionId: string): Promise<string[] | null>;
@@ -464,7 +465,7 @@ export function flowEnvFor(
       return ref.source === "poster" ? series.posterUrl : series.trailerUrl;
     },
     meta: (l) => metaVars(series.meta, l),
-    template: (name, nodeId) => deps.sendFlowTemplate(v, series, name, nodeId),
+    template: (name, nodeId, headerImage) => deps.sendFlowTemplate(v, series, name, nodeId, headerImage),
     check: async (cond) => {
       if (cond.check === "started") {
         const p = await progress();

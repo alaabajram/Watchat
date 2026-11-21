@@ -30,7 +30,7 @@ import type { SequenceInfo } from "@/lib/flows/sequence-store";
 import { newId } from "@/lib/flows/defaults";
 import type { BuilderData, SavedCard } from "@/lib/flows/store";
 import { artUrl } from "@/lib/flows/meta";
-import { CARD_LABELS, portsOf, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
+import { CARD_LABELS, IMAGE_ONLY_KINDS, mediaOf, portsOf, takesMedia, type FlowGraph, type MediaRef, type NodeData, type NodeKind } from "@/lib/flows/types";
 import { validateFlow, validateSequence, validateShared, type Issue } from "@/lib/flows/validate";
 import { AiPanel } from "./AiPanel";
 import { ADDABLE, CARD_STYLE, newCard, SEQUENCE_ADDABLE, SHARED_ADDABLE } from "./cards";
@@ -161,7 +161,7 @@ function Builder(props: Props) {
     setNodes((ns) =>
       ns.map((n) => {
         const d = n.data.card;
-        const media = "media" in d ? d.media : null;
+        const media = mediaOf(d);
         const thumb = media ? mediaThumb(media) : null;
         const e = issues.filter((i) => i.nodeId === n.id && i.level === "error").length;
         const w = issues.filter((i) => i.nodeId === n.id && i.level === "warning").length;
@@ -299,7 +299,7 @@ function Builder(props: Props) {
 
   const multi = nodes.filter((n) => n.selected && n.data.card.kind !== "start" && n.data.card.kind !== "trigger");
   const selectedNode = multi.length > 1 ? null : (nodes.find((n) => n.id === selected) ?? null);
-  const selectedTakesMedia = selectedNode && "media" in selectedNode.data.card;
+  const selectedTakesMedia = Boolean(selectedNode && takesMedia(selectedNode.data.card));
 
   async function onPublish() {
     setMessage(null);
@@ -438,11 +438,9 @@ function Builder(props: Props) {
             <button type="button" style={tabStyle(tab === "cards")} onClick={() => setTab("cards")}>
               Add card
             </button>
-            {mode === "series" && (
-              <button type="button" style={tabStyle(tab === "media")} onClick={() => setTab("media")}>
-                Media ({assets.length})
-              </button>
-            )}
+            <button type="button" style={tabStyle(tab === "media")} onClick={() => setTab("media")}>
+              Media ({assets.length})
+            </button>
             <button type="button" style={tabStyle(tab === "ai")} onClick={() => setTab("ai")}>
               ✨ AI
             </button>
@@ -544,16 +542,17 @@ function Builder(props: Props) {
               onAttach={(a) => {
                 if (!selectedNode) return;
                 const d = selectedNode.data.card;
-                if (d.kind === "link" && a.kind === "video") return setMessage({ kind: "err", text: "Web link cards can only show an image." });
-                if ("media" in d) updateCard(selectedNode.id, { ...d, media: { assetId: a.id, url: a.url, type: a.kind, name: a.name } } as NodeData);
+                if (IMAGE_ONLY_KINDS.includes(d.kind) && a.kind === "video") return setMessage({ kind: "err", text: `${CARD_LABELS[d.kind].split(":")[0]} cards can only show an image.` });
+                if (takesMedia(d)) updateCard(selectedNode.id, { ...d, media: { assetId: a.id, url: a.url, type: a.kind, name: a.name } } as NodeData);
               }}
               onShowCard={focusCard}
-              cms={cmsItems}
+              cms={mode === "series" ? cmsItems : []}
+              sharedLibrary={mode !== "series"}
               onAttachRef={(ref) => {
                 if (!selectedNode) return;
                 const d = selectedNode.data.card;
-                if (d.kind === "link" && ref.type === "video") return setMessage({ kind: "err", text: "Web link cards can only show an image." });
-                if ("media" in d) updateCard(selectedNode.id, { ...d, media: ref } as NodeData);
+                if (IMAGE_ONLY_KINDS.includes(d.kind) && ref.type === "video") return setMessage({ kind: "err", text: `${CARD_LABELS[d.kind].split(":")[0]} cards can only show an image.` });
+                if (takesMedia(d)) updateCard(selectedNode.id, { ...d, media: ref } as NodeData);
               }}
             />
           )}

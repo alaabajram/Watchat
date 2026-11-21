@@ -24,7 +24,8 @@ export interface FlowEnv {
   mediaUrl(ref: MediaRef): string | null | Promise<string | null>;
   /** Series details from the CMS for {tagline} {genre} {cast}. */
   meta(lang: Lang): { tagline: string; genre: string; cast: string };
-  template(name: string, nodeId: string): Promise<"sent" | "skipped" | "failed">;
+  /** headerImage: picture for templates with an image header (default: the series' WhatsApp banner). */
+  template(name: string, nodeId: string, headerImage?: string | null): Promise<"sent" | "skipped" | "failed">;
   check(condition: Condition): Promise<boolean>;
   suggest(): Promise<void>;
   /** Resolve series choice options (AUTO = live series the viewer hasn't started, not this one). Unknown codes are dropped. */
@@ -67,6 +68,12 @@ async function header(env: FlowEnv, media: MediaRef | null) {
   return link && media ? { type: media.type, link } : null;
 }
 
+/** A picture or video on its own, just before a message that can't carry one (menu lists, the series list). */
+async function sendMediaFirst(env: FlowEnv, media: MediaRef | null, nodeId: string) {
+  const h = await header(env, media);
+  if (h) await env.send({ kind: h.type, link: h.link }, nodeId);
+}
+
 /** Execute cards starting at `nodeId` until one waits for the viewer, waits for time, or the flow ends. */
 export async function runFrom(g: FlowGraph, nodeId: string | null, env: FlowEnv): Promise<RunResult> {
   let id = nodeId;
@@ -100,6 +107,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
 
     case "list": {
       if (!d.rows.length) return { next: null, stop: { status: "done" } };
+      await sendMediaFirst(env, d.media ?? null, node.id); // list messages can't carry media themselves
       await env.send(
         {
           kind: "list",
@@ -115,7 +123,8 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
     case "account": {
       const url = env.accountLink ? await env.accountLink() : null;
       if (!url) return next();
-      await env.send({ kind: "cta_url", body: renderCopy(pick(d.body, lang), vars), buttonText: pick(d.button, lang), url }, node.id);
+      const h = await header(env, d.media ?? null);
+      await env.send({ kind: "cta_url", body: renderCopy(pick(d.body, lang), vars), buttonText: pick(d.button, lang), url, ...(h && h.type === "image" ? { header: h } : {}) }, node.id);
       await env.track("link_sent", { props: { purpose: "account" } });
       return next();
     }
@@ -206,6 +215,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
         const current = await env.optIn();
         if (current !== null) return next(current === "in" ? "yes" : "no");
       }
+      const h = await header(env, d.media ?? null);
       await env.send(
         {
           kind: "buttons",
@@ -214,6 +224,7 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
             { id: rid("yes"), title: pick(d.yes, lang) },
             { id: rid("no"), title: pick(d.no, lang) },
           ],
+          ...(h ? { header: h } : {}),
         },
         node.id,
       );
@@ -226,11 +237,14 @@ async function execute(g: FlowGraph, node: FlowNode, env: FlowEnv): Promise<{ ne
     case "condition":
       return next((await env.check(d.condition)) ? "yes" : "no");
 
-    case "template":
-      await env.template(d.name, node.id);
+    case "template": {
+      const h = await header(env, d.media ?? null);
+      await env.template(d.name, node.id, h && h.type === "image" ? h.link : null);
       return next();
+    }
 
     case "suggest":
+      await sendMediaFirst(env, d.media ?? null, node.id);
       await env.suggest();
       return { next: null, stop: { status: "done" } };
 
