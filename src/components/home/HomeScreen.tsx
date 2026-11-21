@@ -6,7 +6,6 @@ import Link from "next/link";
 import { BannerCarousel, type Slide } from "./BannerCarousel";
 import { BottomNav } from "./BottomNav";
 import { ChevronIcon, GiftIcon, PlayIcon } from "@/components/brand/icons";
-import { AgentIcon } from "@/components/assistant/AgentIcon";
 import type { HomeSeries, HomeWatching } from "@/lib/content";
 import { GENRE_LABELS, GENRES } from "@/lib/content-meta";
 import { dirFor, webCopy, type Locale } from "@/lib/web-copy";
@@ -169,32 +168,6 @@ export function HomeScreen({ locale, balance, catalogue, watching, genre, logo =
           )}
         </main>
       </div>
-      {/* The Watchat chat agent: find a series, offers, continue watching. */}
-      <Link
-        href="/assistant"
-        aria-label={locale === "en" ? "Chat with Watchat" : "شات مع واتشات"}
-        className="wc-agent-float"
-        style={{
-          position: "fixed",
-          insetInlineEnd: 16,
-          bottom: "calc(96px + env(safe-area-inset-bottom))",
-          zIndex: 20,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "8px 18px 8px 12px",
-          borderRadius: 999,
-          background: "#fff",
-          color: "var(--wc-ink)",
-          fontWeight: 700,
-          fontSize: 16,
-          textDecoration: "none",
-          boxShadow: "0 12px 28px rgba(18,16,20,0.18)",
-        }}
-      >
-        <AgentIcon height={38} />
-        {locale === "en" ? "Chat" : "شات"}
-      </Link>
       <BottomNav locale={locale} current="home" />
     </div>
   );

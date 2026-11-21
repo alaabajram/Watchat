@@ -15,7 +15,7 @@ import { dirFor, webCopy } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
 
-export default async function AssistantPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
+export default async function AssistantPage({ searchParams }: { searchParams: Promise<{ lang?: string; back?: string }> }) {
   const viewer = await getSessionViewer();
   if (!viewer) {
     const locale = (await searchParams).lang === "en" ? "en" : "ar";
@@ -24,6 +24,9 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
     return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/assistant" />;
   }
   const locale = viewer.uiLocale;
+  // Opened from the chat button on another page: the back arrow returns there.
+  const { back } = await searchParams;
+  const backHref = back && back.startsWith("/") && !back.startsWith("//") && !back.startsWith("/assistant") ? back : undefined;
   const [ctx, balance] = await Promise.all([assistantContext(viewer), getBalance(viewer.id)]);
   // The opening message: a greeting with picks (no AI).
   const picks = answerChip(ctx.watching.some((w) => w.resume !== null) ? "continue" : "recommend", ctx);
@@ -31,7 +34,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
-      <TopBar locale={locale} balance={balance} />
+      <TopBar locale={locale} balance={balance} backHref={backHref} />
       <main className="page" style={{ paddingTop: 4, paddingBottom: "calc(110px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 8 }}>
         <header style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0 8px" }}>
           <AgentIcon height={48} float />

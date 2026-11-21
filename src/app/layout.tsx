@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ChatFab } from "@/components/assistant/ChatFab";
 import { brandCss } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import "./globals.css";
@@ -36,7 +37,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* Brand colours from Admin → Brand & site (hex values validated on save and here). */}
         <style>{brandCss(site)}</style>
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* The chat agent on every viewer page (hidden on the watch feed, the assistant and admin). */}
+        <ChatFab />
+      </body>
     </html>
   );
 }
