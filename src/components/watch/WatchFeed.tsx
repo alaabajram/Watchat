@@ -12,7 +12,22 @@ import { Paywall } from "@/components/Paywall";
 import { webCopy, type Locale } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
 
-export type FeedEpisode = { id: string; number: number; hls: string | null; poster: string | null; allowed: boolean; price: number };
+export type FeedEpisode = {
+  id: string;
+  number: number;
+  hls: string | null;
+  poster: string | null;
+  allowed: boolean;
+  price: number;
+  /** Language of the extra audio track to play (English dub), and of the subtitles to show; null = none. */
+  audioLang?: "en" | "ar" | null;
+  subsLang?: "en" | "ar" | null;
+};
+
+/** A track in the stream matches a language by its tag (en, en-US) or its label (English / العربية). */
+const LANG_NAME: Record<string, RegExp> = { en: /english/i, ar: /arabic|العربية/i };
+const matchesLang = (lang: string, tag?: string | null, label?: string | null) =>
+  Boolean((tag && tag.toLowerCase().startsWith(lang)) || (label && LANG_NAME[lang]?.test(label)));
 
 type Props = {
   locale: Locale;
@@ -311,9 +326,22 @@ function EpisodeVideo(p: {
     const v = video.current;
     if (!v || !p.ep.hls) return;
     let hls: { destroy(): void } | null = null;
+    // Subtitles: this episode's choice (English viewers get English subtitles unless it has an English dub).
+    const subs = p.ep.subsLang === undefined ? (p.subtitleLang === "en" ? "en" : null) : p.ep.subsLang;
+    const audio = p.ep.audioLang ?? null;
+    const pickNative = () => {
+      for (const track of Array.from(v.textTracks)) track.mode = subs && matchesLang(subs, track.language, track.label) ? "showing" : "disabled";
+      // Safari plays HLS itself and lists the dub in audioTracks.
+      const tracks = (v as HTMLVideoElement & { audioTracks?: ArrayLike<{ language: string; label: string; enabled: boolean }> }).audioTracks;
+      if (audio && tracks?.length) {
+        const list = Array.from(tracks);
+        const want = list.findIndex((t) => matchesLang(audio, t.language, t.label));
+        if (want >= 0) list.forEach((t, i) => (t.enabled = i === want));
+      }
+    };
     const onMeta = () => {
       if (p.startAt > 5 && p.startAt < v.duration - 5) v.currentTime = p.startAt;
-      for (const track of Array.from(v.textTracks)) track.mode = p.subtitleLang === "en" && track.language?.startsWith("en") ? "showing" : "disabled";
+      pickNative();
       v.play().catch(() => setNeedsTap(true));
     };
     v.addEventListener("loadedmetadata", onMeta);
@@ -322,6 +350,15 @@ function EpisodeVideo(p: {
       void import("hls.js").then(({ default: Hls }) => {
         if (!Hls.isSupported()) return void (v.src = p.ep.hls!);
         const instance = new Hls({ startLevel: 0, capLevelToPlayerSize: true });
+        instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (audio) {
+            const i = instance.audioTracks.findIndex((t) => matchesLang(audio, t.lang, t.name));
+            if (i >= 0) instance.audioTrack = i;
+          }
+          const s = subs ? instance.subtitleTracks.findIndex((t) => matchesLang(subs, t.lang, t.name)) : -1;
+          instance.subtitleTrack = s;
+          instance.subtitleDisplay = s >= 0;
+        });
         instance.loadSource(p.ep.hls!);
         instance.attachMedia(v);
         hls = instance;
@@ -332,7 +369,7 @@ function EpisodeVideo(p: {
       hls?.destroy();
       onPlaying(false);
     };
-  }, [p.ep.hls, p.startAt, p.subtitleLang, report, onPlaying]);
+  }, [p.ep.hls, p.ep.audioLang, p.ep.subsLang, p.startAt, p.subtitleLang, report, onPlaying]);
 
   useEffect(() => {
     const v = video.current;

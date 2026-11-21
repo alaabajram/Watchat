@@ -4,7 +4,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
 import { ArtworkSlots } from "@/components/admin/ArtworkSlots";
-import { BulkEpisodes } from "@/components/admin/BulkEpisodes";
+import { BulkEpisodes, type EnglishMaterial } from "@/components/admin/BulkEpisodes";
+import { TrackBadges } from "@/components/admin/TrackBadges";
+import { syncSeriesTracks } from "@/lib/storage/stream-tracks";
+import type { EpisodeTracks } from "@/lib/storage/tracks";
 import { MediaUpload } from "@/components/admin/MediaUpload";
 import { WhatsAppVersion } from "@/components/admin/WhatsAppVersion";
 import { SeriesMediaLibrary } from "@/components/flow/SeriesMediaLibrary";
@@ -32,6 +35,8 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
 
+  // Subtitles / dubs uploaded before their video finished processing: attach them now (quick when none wait).
+  await syncSeriesTracks(id).catch(() => undefined);
   const [{ data: s }, { data: episodes }, { data: licences }, { data: reviews }, { data: assets }, { data: markets }] = await Promise.all([
     db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("episodes").select("*").eq("series_id", id).order("number"),
@@ -46,6 +51,12 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const cast = (s?.cast_members ?? []) as CastMember[];
   const castRows = Array.from({ length: Math.min(12, Math.max(3, cast.length + 2)) }, (_, i) => cast[i] ?? { name_ar: "", name_en: "", role: "" });
   const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
+  const englishMaterial: EnglishMaterial = Object.fromEntries(
+    eps.map((e) => {
+      const t = (e.tracks ?? {}) as EpisodeTracks;
+      return [e.number, { subsEn: t.subs?.en?.url, audioEn: t.audio?.en?.url }];
+    }),
+  );
   const ready = readiness(s, eps, licences?.length ?? 0, lastReview?.decision ?? null);
   const gulfInput = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 16) : "");
 
@@ -231,11 +242,11 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Episodes ({eps.length})</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Every episode needs the full video on Cloudflare Stream for the web. Free episodes (1–{s.free_web_until_ep}) can also be sent in WhatsApp: make
-          their WhatsApp version here (under 16 MB, made in your browser). English WhatsApp versions need subtitles burned in, so upload those ready-made.
+          Every episode has one video for the web; English subtitles and an English dub are added to that same video (drop them with the videos). Free
+          episodes (1–{s.free_web_until_ep}) also get chat versions under 16 MB, made in your browser: Arabic, and English when there&apos;s a dub or English subtitles.
           Drafts are hidden from viewers; a release time keeps a ready episode hidden until then (Gulf time).
         </p>
-        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} />
+        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} existing={englishMaterial} />
         <table>
           <thead>
             <tr>
@@ -309,6 +320,10 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                       )}
                     </div>
                   </form>
+                  {/* Outside the episode form (its remove buttons are forms of their own). */}
+                  <div style={{ marginTop: 4 }}>
+                    <TrackBadges episodeId={e.id} tracks={(e.tracks ?? {}) as EpisodeTracks} hasEnClip={Boolean(e.wa_video_url_en)} chat={e.number <= s.wa_episode_count} />
+                  </div>
                 </td>
               </tr>
             ))}

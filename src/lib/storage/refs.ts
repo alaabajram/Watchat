@@ -32,6 +32,10 @@ export const CONTENT_TYPES: Record<string, string> = {
   webp: "image/webp",
   mp4: "video/mp4",
   vtt: "text/vtt",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  wav: "audio/wav",
 };
 
 export const imageUrl = (accountHash: string, id: string) => `https://imagedelivery.net/${accountHash}/${id}/${IMAGE_VARIANT}`;

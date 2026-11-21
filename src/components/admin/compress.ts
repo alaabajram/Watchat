@@ -46,7 +46,29 @@ export function bitrateFor(seconds: number, targetBytes = TARGET_BYTES): number 
   return Math.floor(Math.min(1500, totalKbps - AUDIO_KBPS - 16));
 }
 
-export async function compressForWhatsApp(file: File, onProgress?: (p: { stage: string; pct: number }) => void): Promise<Blob> {
+/**
+ * English chat version: the same picture with the English dub as its sound, and / or English subtitles burned
+ * into the picture (WhatsApp and Telegram can't switch subtitles or audio on a video).
+ */
+export type ChatVersionOptions = { audio?: Blob; subtitlesVtt?: string };
+
+/** ffmpeg arguments for one WhatsApp version (exported for tests). */
+export function whatsappArgs(kbps: number, opts: { audio: boolean; subtitles: boolean }): string[] {
+  const scale = "scale='if(gt(iw,ih),960,-2)':'if(gt(iw,ih),-2,960)'";
+  const burn = "subtitles=subs.vtt:fontsdir=/fonts:force_style='FontName=DejaVu Sans,Bold=1,FontSize=11,Outline=2,Shadow=0,MarginV=36'";
+  return [
+    "-i", "in",
+    ...(opts.audio ? ["-i", "aud", "-map", "0:v:0", "-map", "1:a:0"] : []),
+    "-vf", opts.subtitles ? `${scale},${burn}` : scale,
+    "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "main", "-pix_fmt", "yuv420p",
+    "-b:v", `${kbps}k`, "-maxrate", `${Math.round(kbps * 1.2)}k`, "-bufsize", `${kbps * 2}k`,
+    "-c:a", "aac", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
+    "-movflags", "+faststart",
+    "-y", "out.mp4",
+  ];
+}
+
+export async function compressForWhatsApp(file: File, onProgress?: (p: { stage: string; pct: number }) => void, opts: ChatVersionOptions = {}): Promise<Blob> {
   onProgress?.({ stage: "Loading converter (first time ~30 MB)…", pct: 0 });
   const seconds = await videoDuration(file);
   let kbps = bitrateFor(seconds);
@@ -56,16 +78,16 @@ export async function compressForWhatsApp(file: File, onProgress?: (p: { stage: 
   f.on("progress", onP);
   try {
     await f.writeFile("in", new Uint8Array(await file.arrayBuffer()));
+    if (opts.audio) await f.writeFile("aud", new Uint8Array(await opts.audio.arrayBuffer()));
+    if (opts.subtitlesVtt) {
+      await f.writeFile("subs.vtt", opts.subtitlesVtt);
+      await f.createDir("/fonts").catch(() => undefined);
+      const font = await fetch(`${location.origin}/ffmpeg/fonts/DejaVuSans-Bold.ttf`);
+      if (!font.ok) throw new Error("Couldn't load the subtitle font.");
+      await f.writeFile("/fonts/DejaVuSans-Bold.ttf", new Uint8Array(await font.arrayBuffer()));
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
-      await f.exec([
-        "-i", "in",
-        "-vf", "scale='if(gt(iw,ih),960,-2)':'if(gt(iw,ih),-2,960)'",
-        "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "main", "-pix_fmt", "yuv420p",
-        "-b:v", `${kbps}k`, "-maxrate", `${Math.round(kbps * 1.2)}k`, "-bufsize", `${kbps * 2}k`,
-        "-c:a", "aac", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
-        "-movflags", "+faststart",
-        "-y", "out.mp4",
-      ]);
+      await f.exec(whatsappArgs(kbps, { audio: Boolean(opts.audio), subtitles: Boolean(opts.subtitlesVtt) }));
       const out = await f.readFile("out.mp4");
       const bytes = out as Uint8Array;
       const blob = new Blob([new Uint8Array(bytes)], { type: "video/mp4" }); // copy into a plain ArrayBuffer
@@ -79,6 +101,8 @@ export async function compressForWhatsApp(file: File, onProgress?: (p: { stage: 
   } finally {
     f.off("progress", onP);
     await f.deleteFile("in").catch(() => {});
+    await f.deleteFile("aud").catch(() => {});
+    await f.deleteFile("subs.vtt").catch(() => {});
     await f.deleteFile("out.mp4").catch(() => {});
   }
 }

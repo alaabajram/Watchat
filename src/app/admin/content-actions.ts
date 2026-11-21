@@ -7,7 +7,9 @@ import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
 import { readiness } from "@/lib/admin/readiness";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
-import { uploadTarget } from "@/lib/storage/cloudflare";
+import { deleteStored, publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
+import { detachStreamTrack, syncEpisodeTracks } from "@/lib/storage/stream-tracks";
+import type { EpisodeTracks, TrackLang, TrackState } from "@/lib/storage/tracks";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
 
@@ -212,7 +214,7 @@ export async function addEpisodesAction(fd: FormData) {
 // Uploads (called from the browser upload components)
 // ---------------------------------------------------------------------------
 
-const MEDIA_KINDS = { poster: ["jpg", "png", "webp"], artwork: ["jpg", "png", "webp"], clip: ["mp4"], subtitle: ["vtt"] } as const;
+const MEDIA_KINDS = { poster: ["jpg", "png", "webp"], artwork: ["jpg", "png", "webp"], clip: ["mp4"], subtitle: ["vtt"], audio: ["mp3", "m4a", "aac", "wav"] } as const;
 
 /** Bulk upload: make sure episodes with these numbers exist (as drafts); returns number → id. */
 export async function ensureEpisodes(seriesId: string, numbers: number[]): Promise<Record<number, string>> {
@@ -269,5 +271,52 @@ export async function setMediaField(target: "episode" | "series", id: string, fi
   const v = field === "wa_size_bytes" ? Math.max(0, Math.round(Number(value) || 0)) : value.slice(0, 500);
   await db().from(target === "episode" ? "episodes" : "series").update({ [field]: v }).eq("id", id);
   await audit(admin, "media.set", target, id, { field });
+  // A new web video: attach the episode's subtitles / dub to it (or keep them waiting until it's processed).
+  if (target === "episode" && field === "stream_uid") await syncEpisodeTracks(id).catch(() => undefined);
   revalidatePath("/admin/series");
+}
+
+/**
+ * Save an uploaded subtitle file (WebVTT) or audio track (dub) on an episode and attach it to the episode's
+ * Stream video. `path` is the storage path the upload target returned; the link is worked out here.
+ */
+export async function setEpisodeTrack(episodeId: string, kind: "subs" | "audio", lang: TrackLang, path: string): Promise<{ state: TrackState["stream"]; error?: string }> {
+  const admin = await requireAdmin("content");
+  if (!/^[0-9a-f-]{36}$/.test(episodeId) || !["subs", "audio"].includes(kind) || !["en", "ar"].includes(lang)) throw new Error("Bad request.");
+  const { data: ep } = await db().from("episodes").select("series_id, tracks, series(code)").eq("id", episodeId).maybeSingle();
+  if (!ep || !(await ownSeries(admin.tenantId, ep.series_id))) throw new Error("Not found.");
+  const code = (ep.series as unknown as { code: string } | null)?.code ?? "";
+  const key = path.startsWith("r2:") ? path.slice(3) : path;
+  const url = key.startsWith(`${code}/`) && !key.includes("..") ? publicUrlFor(path) : null;
+  if (!url) throw new Error("Bad upload.");
+  const tracks = (ep.tracks ?? {}) as EpisodeTracks;
+  const old = tracks[kind]?.[lang];
+  tracks[kind] = { ...(tracks[kind] ?? {}), [lang]: { url, path, stream: "pending" } };
+  await db().from("episodes").update({ tracks }).eq("id", episodeId);
+  if (old?.path && old.path !== path) await deleteStored(old.path).catch(() => undefined);
+  await audit(admin, "episode.track_set", "episode", episodeId, { kind, lang });
+  const synced = await syncEpisodeTracks(episodeId).catch(() => tracks);
+  const st = synced[kind]?.[lang];
+  revalidatePath(`/admin/series/${ep.series_id}`);
+  return { state: st?.stream ?? "pending", error: st?.error };
+}
+
+/** Remove an episode's subtitles or dub (from Stream, storage and the episode). */
+export async function removeEpisodeTrack(fd: FormData) {
+  const admin = await requireAdmin("content");
+  const episodeId = uuid(fd, "id");
+  const kind = str(fd, "kind", 10) as "subs" | "audio";
+  const lang = str(fd, "lang", 5) as TrackLang;
+  const { data: ep } = await db().from("episodes").select("series_id, stream_uid, tracks").eq("id", episodeId ?? "").maybeSingle();
+  if (!episodeId || !ep || !(await ownSeries(admin.tenantId, ep.series_id)) || !["subs", "audio"].includes(kind)) done("/admin/series", "Bad request.", "err");
+  const tracks = (ep.tracks ?? {}) as EpisodeTracks;
+  const t = tracks[kind]?.[lang];
+  if (t) {
+    await detachStreamTrack(ep.stream_uid, kind, lang, t.audio_uid).catch(() => undefined);
+    await deleteStored(t.path).catch(() => undefined);
+    delete tracks[kind]![lang];
+    await db().from("episodes").update({ tracks }).eq("id", episodeId);
+    await audit(admin, "episode.track_removed", "episode", episodeId, { kind, lang });
+  }
+  done(`/admin/series/${ep.series_id}#ep-${episodeId}`, "Removed.");
 }
