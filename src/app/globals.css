@@ -1,20 +1,20 @@
-/* Viewer app: the light theme from the design team's screens (warm off-white, white cards, mint actions,
-   coral accents). Colours are CSS variables so a partner brand can override them. The video player stays dark. */
+/* Viewer app: the dark theme (night background, raised dark cards, mint actions, coral accents).
+   Colours are CSS variables so a partner brand can override them. Admin and business keep their light theme. */
 :root {
-  --bg: #f4f2ee;
-  --surface: #ffffff;
-  --text: #121014;
-  --muted: #5f5a55;
-  --line: #ece8e2;
+  --bg: #0f0d14;
+  --surface: #1c1824;
+  --text: #f5f2f8;
+  --muted: #a39cae;
+  --line: #2c2636;
   --brand: var(--brand-primary, #31e5a0);
   --brand-ink: var(--brand-primary-ink, #0b2e20);
-  --brand-text: var(--brand-primary-text, #0b6b49);
+  --brand-text: var(--brand-primary, #31e5a0);
   --accent-coral: var(--brand-accent, #ff5a48);
-  --coral-text: var(--brand-accent-text, #c9341f);
+  --coral-text: #ff7a6b;
   --night: #13101a;
   --radius: 18px;
-  --shadow: 0 8px 26px rgba(18, 16, 20, 0.06);
-  color-scheme: light;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 * {
@@ -77,10 +77,10 @@ a {
 .btn.secondary {
   background: var(--surface);
   color: var(--text);
-  border-color: #e2ddd6;
+  border-color: var(--line);
   box-shadow: none;
 }
-.btn.danger { background: var(--surface); color: var(--coral-text); border-color: #ffd3cc; box-shadow: none; }
+.btn.danger { background: var(--surface); color: var(--coral-text); border-color: rgba(255, 90, 72, 0.45); box-shadow: none; }
 
 /* Player (always dark) */
 .player {
@@ -135,12 +135,12 @@ a {
   background: var(--surface);
   text-decoration: none;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(18, 16, 20, 0.05);
+  border: 1px solid var(--line);
 }
 
 .tile.locked {
-  background: #ebe7e1;
-  color: #8a847e;
+  background: #15121b;
+  color: #7a7385;
   box-shadow: none;
 }
 
@@ -215,7 +215,7 @@ a {
 }
 
 .tile.done {
-  background: #e3fbf1;
+  background: rgba(49, 229, 160, 0.14);
   color: var(--brand-text);
 }
 
@@ -257,7 +257,7 @@ a {
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 999px;
-  background: #ffece8;
+  background: rgba(255, 90, 72, 0.16);
   color: var(--coral-text);
 }
 
@@ -282,6 +282,14 @@ h2 { font-size: 19px; font-weight: 600; }
   --a-night: #13101a;
   --a-radius: 20px;
   --a-shadow: 0 8px 30px rgba(18, 16, 20, 0.05);
+  /* The shared classes (.muted, .btn, .chip …) stay light in the admin. */
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --text: #121014;
+  --muted: #5f5a55;
+  --line: #ece8e2;
+  --brand-text: #0b6b49;
+  --coral-text: #c9341f;
   min-height: 100dvh;
   background: var(--a-bg);
   color: var(--a-text);
@@ -410,7 +418,7 @@ h2 { font-size: 19px; font-weight: 600; }
 .wc-ladder-day.is-today { background: #fff4dc; outline: 2px solid #f5b323; }
 
 /* Floating chat button (every viewer page except the watch feed) */
-.wc-chat-fab { position: fixed; inset-inline-end: 16px; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 8px 18px 8px 12px; border-radius: 999px; background: #fff; color: var(--wc-ink); font-weight: 700; font-size: 16px; text-decoration: none; box-shadow: 0 12px 28px rgba(18, 16, 20, 0.18); }
+.wc-chat-fab { position: fixed; inset-inline-end: 16px; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 8px 18px 8px 12px; border-radius: 999px; background: #1c1824; border: 1px solid #2c2636; color: #f5f2f8; font-weight: 700; font-size: 16px; text-decoration: none; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45); }
 @media print { .wc-chat-fab { display: none; } }
 
 /* Telegram landing spinner (Telegram blue) */

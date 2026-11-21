@@ -128,7 +128,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           {stars ? t.starsNote : paymentMode() === "cash" ? t.storeNoteCash : t.storeNote}
         </p>
       </div>
-      <BottomNav locale={locale} current="coins" />
+      <BottomNav locale={locale} current={null} />
     </div>
   );
 }

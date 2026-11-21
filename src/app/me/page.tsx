@@ -6,7 +6,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { BookmarkIcon, ChevronIcon, DocIcon, GiftIcon, GlobeIcon, HelpIcon, PlusIcon, SettingsIcon, ShieldIcon } from "@/components/brand/icons";
+import { BookmarkIcon, ChevronIcon, DocIcon, GiftIcon, GlobeIcon, HelpIcon, PlusIcon, SettingsIcon, ShieldIcon, WalletIcon } from "@/components/brand/icons";
 import { Splash } from "@/components/brand/Splash";
 import { BottomNav } from "@/components/home/BottomNav";
 import { SignOutRow } from "@/components/SignOutRow";
@@ -53,7 +53,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
         ? `https://wa.me/${env.waDisplayNumber}`
         : null;
   const shortId = viewer.id.replace(/-/g, "").slice(0, 8).toUpperCase();
-  const chevron = <ChevronIcon color="#8a847e" rtl={rtl} />;
+  const chevron = <ChevronIcon color="#6f6879" rtl={rtl} />;
 
   return (
     <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
@@ -63,7 +63,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
 
         {/* Profile card */}
         <section className="wc-card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 16 }}>
-          <span aria-hidden="true" style={{ width: 76, height: 76, flexShrink: 0, borderRadius: "50%", background: "#e3fbf1", border: "4px solid #bff5de", display: "grid", placeItems: "center" }}>
+          <span aria-hidden="true" style={{ width: 76, height: 76, flexShrink: 0, borderRadius: "50%", background: "rgba(49,229,160,0.14)", border: "4px solid rgba(49,229,160,0.35)", display: "grid", placeItems: "center" }}>
             <img src={site.icon} alt="" style={{ width: 38, height: "auto" }} />
           </span>
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -71,7 +71,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
             <span style={{ fontSize: 13, color: "var(--wc-muted)" }}>
               {t.accountIdLabel} <bdi dir="ltr" style={{ fontFamily: "ui-monospace, monospace", letterSpacing: "0.04em" }}>{shortId}</bdi>
             </span>
-            <span style={{ alignSelf: "flex-start", marginTop: 4, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: "#ffece8", border: "1px solid #ffcfc6", color: "var(--wc-coral-text)", fontSize: 13, fontWeight: 600 }}>
+            <span style={{ alignSelf: "flex-start", marginTop: 4, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 999, background: "var(--wc-coral-soft)", border: "1px solid rgba(255,90,72,0.4)", color: "var(--wc-coral-text)", fontSize: 13, fontWeight: 600 }}>
               <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="var(--wc-coral)"><path d="M12 2.5l2.9 6 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.2 1.3-6.6-4.9-4.6 6.6-.8z" /></svg>
               {passes ? t.passHolder : t.freeMember}
             </span>
@@ -108,22 +108,30 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
         {/* Menu */}
         <ul className="wc-menu">
           <li>
+            <Link href="/wallet">
+              <span className="wc-tile" style={{ background: "rgba(245,179,35,0.16)" }}><WalletIcon size={20} color="#f5b323" /></span>
+              <span className="wc-grow">{t.wallet}</span>
+              <span className="wc-value">{t.coins(balance)}</span>
+              {chevron}
+            </Link>
+          </li>
+          <li>
             <Link href="/store?back=/me">
-              <span className="wc-tile" style={{ background: "#ffece8" }}><GiftIcon color="#d6402e" /></span>
+              <span className="wc-tile" style={{ background: "rgba(255,90,72,0.16)" }}><GiftIcon color="#ff7a6b" /></span>
               <span className="wc-grow">{t.getCoins}</span>
               {chevron}
             </Link>
           </li>
           <li>
             <Link href="/list">
-              <span className="wc-tile" style={{ background: "#e3fbf1" }}><BookmarkIcon size={20} color="#0e9a6a" /></span>
+              <span className="wc-tile" style={{ background: "rgba(49,229,160,0.14)" }}><BookmarkIcon size={20} color="#31e5a0" /></span>
               <span className="wc-grow">{t.myList}</span>
               {chevron}
             </Link>
           </li>
           <li>
             <Link href="/settings">
-              <span className="wc-tile" style={{ background: "#e8f2ff" }}><GlobeIcon color="#1f6fd1" /></span>
+              <span className="wc-tile" style={{ background: "rgba(84,150,255,0.16)" }}><GlobeIcon color="#7fb0ff" /></span>
               <span className="wc-grow">{t.language}</span>
               <span className="wc-value">{t.languageName}</span>
               {chevron}
@@ -131,7 +139,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
           </li>
           <li>
             <Link href="/settings">
-              <span className="wc-tile" style={{ background: "#f1eaff" }}><SettingsIcon size={20} color="#7a3fe0" /></span>
+              <span className="wc-tile" style={{ background: "rgba(160,110,255,0.18)" }}><SettingsIcon size={20} color="#b896ff" /></span>
               <span className="wc-grow">{t.settings}</span>
               {chevron}
             </Link>
@@ -139,7 +147,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
           {support && (
             <li>
               <a href={support}>
-                <span className="wc-tile" style={{ background: "#fff1e3" }}><HelpIcon color="#c4620c" /></span>
+                <span className="wc-tile" style={{ background: "rgba(255,160,60,0.16)" }}><HelpIcon color="#ffb066" /></span>
                 <span className="wc-grow">{t.helpSupport}</span>
                 {chevron}
               </a>
@@ -147,7 +155,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
           )}
           <li>
             <Link href="/privacy">
-              <span className="wc-tile" style={{ background: "#e2f7f3" }}><ShieldIcon color="#0e9a7e" /></span>
+              <span className="wc-tile" style={{ background: "rgba(49,229,190,0.14)" }}><ShieldIcon color="#4fe0c2" /></span>
               <span className="wc-grow">{t.privacyPolicy}</span>
               {chevron}
             </Link>
@@ -155,7 +163,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
           {terms && (
             <li>
               <Link href="/terms">
-                <span className="wc-tile" style={{ background: "#f1eee9" }}><DocIcon color="#4e4943" /></span>
+                <span className="wc-tile" style={{ background: "rgba(255,255,255,0.08)" }}><DocIcon color="#cfc8d8" /></span>
                 <span className="wc-grow">{t.terms}</span>
                 {chevron}
               </Link>

@@ -29,7 +29,7 @@ export function Splash({
   const sep = path.includes("?") ? "&" : "?";
   const other = locale === "ar" ? { href: `${path}${sep}lang=en`, label: "EN", aria: "English" } : { href: path, label: "عربي", aria: "العربية" };
   return (
-    <div className="wc" dir={dirFor(locale)} lang={locale} style={{ background: "#fff" }} data-no-chat="">
+    <div className="wc" dir={dirFor(locale)} lang={locale} data-no-chat="">
     <main style={{ minHeight: "100dvh", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "20px 24px calc(32px + env(safe-area-inset-bottom))", maxWidth: 520, margin: "0 auto" }}>
       <div>
         <a href={other.href} aria-label={other.aria} lang={locale === "ar" ? "en" : "ar"} className="wc-pill" style={{ background: "var(--wc-bg)", fontSize: 14 }}>
@@ -39,7 +39,7 @@ export function Splash({
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, minHeight: 420 }}>
         <AnimatedLogo />
-        <p className="wc-fade-in" style={{ fontSize: 18, color: "#4e4943", textAlign: "center" }}>
+        <p className="wc-fade-in" style={{ fontSize: 18, color: "var(--wc-muted)", textAlign: "center" }}>
           {t.tagline}
         </p>
       </div>
@@ -55,7 +55,7 @@ export function Splash({
             </a>
           )
         )}
-        <p style={{ fontSize: 15, lineHeight: 1.9, color: "#4e4943", textAlign: "start", whiteSpace: "pre-line", background: telegram ? "#e8f3fb" : "var(--wc-bg)", borderRadius: 16, padding: "12px 16px" }}>
+        <p style={{ fontSize: 15, lineHeight: 1.9, color: "var(--wc-muted)", textAlign: "start", whiteSpace: "pre-line", background: telegram ? "rgba(36,129,204,0.16)" : "var(--wc-card)", borderRadius: 16, padding: "12px 16px" }}>
           {telegram ? t.telegramHint : (hint ?? t.splashHint)}
         </p>
       </div>

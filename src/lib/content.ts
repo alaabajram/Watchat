@@ -1,6 +1,8 @@
 // Read-side helpers for the web player.
 
 import type { EpisodeTracks } from "@/lib/storage/tracks";
+import { compactCount, rankByViews } from "./catalogue-meta";
+export { compactCount, rankByViews };
 import { ipMarket, seriesLicensed } from "./economy/store";
 import { currentTenantId, db } from "./supabase";
 
@@ -18,6 +20,7 @@ export type WebSeries = {
   coinsPerEpisode: number;
   seasonPassPriceAed: number | null;
   seasonPassPriceSar: number | null;
+  trailerUrl: string | null;
 };
 
 export type WebEpisode = {
@@ -36,7 +39,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, trailer_video_url, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
@@ -58,6 +61,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
     coinsPerEpisode: data.coins_per_episode,
     seasonPassPriceAed: data.season_pass_price_aed === null ? null : Number(data.season_pass_price_aed),
     seasonPassPriceSar: data.season_pass_price_sar === null ? null : Number(data.season_pass_price_sar),
+    trailerUrl: data.trailer_video_url ?? null,
   };
 }
 
@@ -161,7 +165,7 @@ export type LibraryItem = {
 };
 
 /** "My account": the viewer's series, most recently watched first, plus the rest of the live catalogue. */
-export async function getLibrary(viewerId: string): Promise<{ watching: LibraryItem[]; more: Omit<LibraryItem, "resume" | "lastWatchedAt">[] }> {
+export async function getLibrary(viewerId: string): Promise<{ watching: LibraryItem[]; more: Omit<LibraryItem, "resume" | "lastWatchedAt">[]; saved: Omit<LibraryItem, "resume" | "lastWatchedAt">[] }> {
   const tenantId = await currentTenantId();
   const now = new Date().toISOString();
   const [{ data: catalog }, { data: rows }] = await Promise.all([
@@ -173,6 +177,9 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
       .order("created_at", { ascending: false }),
     db().from("progress").select("completed_at, updated_at, episodes!inner(number, series_id)").eq("viewer_id", viewerId),
   ]);
+  const { data: savedRows } = await db().from("my_list").select("series_id, created_at").eq("viewer_id", viewerId).order("created_at", { ascending: false });
+  const savedOrder = new Map((savedRows ?? []).map((r, i) => [r.series_id as string, i]));
+  const saved: Omit<LibraryItem, "resume" | "lastWatchedAt">[] = [];
   type Row = { completed_at: string | null; updated_at: string; episodes: { number: number; series_id: string } };
   const bySeries = new Map<string, Row[]>();
   for (const r of (rows ?? []) as unknown as Row[]) {
@@ -188,6 +195,7 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
       (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
     );
     const base = { code: s.code, titleAr: s.title_ar, titleEn: s.title_en, posterUrl: s.poster_url, bannerWideUrl: s.banner_wide_url, total: eps.length };
+    if (savedOrder.has(s.id)) saved[savedOrder.get(s.id)!] = base;
     const mine = bySeries.get(s.id);
     if (!mine?.length) {
       more.push(base);
@@ -199,7 +207,7 @@ export async function getLibrary(viewerId: string): Promise<{ watching: LibraryI
     watching.push({ ...base, resume: next <= eps.length ? next : null, lastWatchedAt: latest.updated_at });
   }
   watching.sort((a, b) => b.lastWatchedAt.localeCompare(a.lastWatchedAt));
-  return { watching, more };
+  return { watching, more, saved: saved.filter(Boolean) };
 }
 
 export type HomeSeries = {
@@ -213,6 +221,17 @@ export type HomeSeries = {
   genres: string[];
   total: number;
   createdAt: string;
+  /** Episodes planned (released + coming); equal to `total` when the series is complete. */
+  planned: number;
+  complete: boolean;
+  /** Viewers who started it in the last 30 days, and its place in that ranking (1 = most watched; null = no views). */
+  views: number;
+  rank: number | null;
+  /** English available: a dub on some episode, or English subtitles. */
+  dub: boolean;
+  subs: boolean;
+  /** In this viewer's My List. */
+  saved: boolean;
 };
 
 export type HomeWatching = HomeSeries & { resume: number | null; lastWatchedAt: string };
@@ -224,12 +243,19 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   const [{ data: catalog }, { data: rows }] = await Promise.all([
     db()
       .from("series")
-      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, license_countries, episodes(number, status, release_at)")
+      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, license_countries, episodes(number, status, release_at, tracks)")
       .eq("tenant_id", tenantId)
       .eq("status", "live")
       .order("created_at", { ascending: false }),
     db().from("progress").select("completed_at, updated_at, episodes!inner(number, series_id)").eq("viewer_id", viewerId),
   ]);
+  const [{ data: pop }, { data: saved }] = await Promise.all([
+    db().rpc("series_popularity", { p_tenant: tenantId, p_since: new Date(Date.now() - 30 * 86400_000).toISOString() }),
+    db().from("my_list").select("series_id").eq("viewer_id", viewerId),
+  ]);
+  const views = new Map(((pop ?? []) as { series_id: string; viewers: number }[]).map((p) => [p.series_id, Number(p.viewers)]));
+  const ranks = rankByViews(views);
+  const savedIds = new Set((saved ?? []).map((r) => r.series_id as string));
   type Row = { completed_at: string | null; updated_at: string; episodes: { number: number; series_id: string } };
   const latestBySeries = new Map<string, Row>();
   for (const r of (rows ?? []) as unknown as Row[]) {
@@ -240,10 +266,11 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   const watching: HomeWatching[] = [];
   const market = await ipMarket();
   for (const s of (catalog ?? []).filter((c) => seriesLicensed(c.license_countries, market))) {
-    const total = ((s.episodes ?? []) as { status: string; release_at: string | null }[]).filter(
-      (e) => e.status === "live" && (!e.release_at || e.release_at <= now),
-    ).length;
+    const eps = (s.episodes ?? []) as { status: string; release_at: string | null; tracks: EpisodeTracks | null }[];
+    const released = eps.filter((e) => e.status === "live" && (!e.release_at || e.release_at <= now));
+    const total = released.length;
     if (total === 0) continue;
+    const planned = eps.filter((e) => e.status !== "archived").length;
     const item: HomeSeries = {
       code: s.code,
       titleAr: s.title_ar,
@@ -255,6 +282,13 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
       genres: (s.genres as string[] | null) ?? [],
       total,
       createdAt: s.created_at,
+      planned: Math.max(planned, total),
+      complete: planned <= total,
+      views: views.get(s.id) ?? 0,
+      rank: ranks.get(s.id) ?? null,
+      dub: released.some((e) => e.tracks?.audio?.en?.stream === "attached"),
+      subs: released.some((e) => e.tracks?.subs?.en?.stream === "attached"),
+      saved: savedIds.has(s.id),
     };
     catalogue.push(item);
     const latest = latestBySeries.get(s.id);
@@ -267,3 +301,18 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   watching.sort((a, b) => b.lastWatchedAt.localeCompare(a.lastWatchedAt));
   return { catalogue, watching };
 }
+
+/** Save / remove a series in a viewer's My List. Returns whether it's saved now. */
+export async function toggleMyList(viewerId: string, seriesCode: string): Promise<boolean | null> {
+  const tenantId = await currentTenantId();
+  const { data: s } = await db().from("series").select("id").eq("tenant_id", tenantId).eq("code", seriesCode.toUpperCase()).eq("status", "live").maybeSingle();
+  if (!s) return null;
+  const { data: had } = await db().from("my_list").select("series_id").eq("viewer_id", viewerId).eq("series_id", s.id).maybeSingle();
+  if (had) {
+    await db().from("my_list").delete().eq("viewer_id", viewerId).eq("series_id", s.id);
+    return false;
+  }
+  await db().from("my_list").insert({ viewer_id: viewerId, series_id: s.id });
+  return true;
+}
+

@@ -13,11 +13,11 @@ export function SignOutRow({ label, rtl }: { label: string; rtl: boolean }) {
   }
   return (
     <button type="button" onClick={signOut} disabled={busy} aria-busy={busy}>
-      <span className="wc-tile" style={{ background: "#ffece8" }}>
-        <LogoutIcon color="#d6402e" />
+      <span className="wc-tile" style={{ background: "rgba(255,90,72,0.16)" }}>
+        <LogoutIcon color="#ff7a6b" />
       </span>
       <span className="wc-grow" style={{ color: "var(--wc-coral-text)" }}>{label}</span>
-      <ChevronIcon color="#8a847e" rtl={rtl} />
+      <ChevronIcon color="#6f6879" rtl={rtl} />
     </button>
   );
 }

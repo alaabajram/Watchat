@@ -1,22 +1,22 @@
-// Top bar for viewer pages (design team's app header): logo (or a back link) · coin balance (opens wallet)
-// · get-coins button. A label's own logo from Admin → Brand & site replaces the Watchat wordmark.
+// Top bar for viewer pages (dark): logo (or a back link) · search · Ping balance (opens the wallet) · get Ping.
+// A label's own logo from Admin → Brand & site replaces the Watchat wordmark.
 
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { ChevronIcon, GiftIcon } from "@/components/brand/icons";
+import { ChevronIcon, GiftIcon, SearchIcon } from "@/components/brand/icons";
 import { DEFAULT_SITE } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import { webCopy, type Locale } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
 
-export async function TopBar({ locale, balance, backHref, backLabel, dark = false }: { locale: Locale; balance: number; backHref?: string; backLabel?: string; dark?: boolean }) {
+export async function TopBar({ locale, balance, backHref, backLabel, dark = true }: { locale: Locale; balance: number; backHref?: string; backLabel?: string; dark?: boolean }) {
   const t = webCopy(locale);
   const site = await getSiteSafe();
   const custom = (dark ? site.logoOnDark !== DEFAULT_SITE.logoOnDark : site.logoOnLight !== DEFAULT_SITE.logoOnLight);
   const logo = custom
     ? dark ? site.logoOnDark : site.logoOnLight
     : `/brand/wordmark-${locale === "en" ? "en" : "ar"}-${dark ? "white" : "dark"}.png`;
-  const round = dark ? "#241f2e" : "#ffffff";
+  const round = dark ? "var(--wc-card, #1c1824)" : "#ffffff";
   return (
     <header className="topbar">
       {backHref ? (
@@ -31,6 +31,9 @@ export async function TopBar({ locale, balance, backHref, backLabel, dark = fals
         </Link>
       )}
       <nav style={{ display: "flex", gap: 8 }} aria-label={t.wallet}>
+        <Link href="/explore#search" aria-label={t.searchSeries} style={{ width: 44, height: 44, borderRadius: "50%", background: round, display: "grid", placeItems: "center", color: dark ? "#fff" : undefined }}>
+          <SearchIcon />
+        </Link>
         <Link className="chip" href="/wallet" aria-label={`${t.balance}: ${t.coins(balance)}`} style={dark ? { background: round, color: "#fff" } : undefined}>
           <PingIcon size={22} />
           {balance}

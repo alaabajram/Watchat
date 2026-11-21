@@ -8,7 +8,7 @@ export function AnimatedLogo() {
         <span className="wc-logo-clip">
           <span className="wc-logo-strip">
             {[0, 1, 2, 3].map((i) => (
-              <img key={i} src="/brand/emblem-bubble.png" alt="" />
+              <img key={i} src="/brand/emblem-bubble-light.png" alt="" />
             ))}
           </span>
         </span>
@@ -17,7 +17,7 @@ export function AnimatedLogo() {
           <img src="/brand/emblem-dot.png" alt="" />
         </span>
       </span>
-      <img src="/brand/lockup-text.png" alt="Watchat · واتشات" width={200} height={100} style={{ width: 200, height: "auto", display: "block" }} />
+      <img src="/brand/lockup-text-light.png" alt="Watchat · واتشات" width={200} height={100} style={{ width: 200, height: "auto", display: "block" }} />
     </h1>
   );
 }

@@ -1,13 +1,31 @@
 "use client";
-// Featured series carousel: native scroll-snap (swipe works without JS), dots that follow the scroll,
-// and a gentle auto-advance that stops once the viewer touches it or prefers reduced motion.
+// Home hero: featured series as big poster cards (swipe between them). Each card: status pill and TOP badge on
+// the poster, Watch now, quality / language chip, then title, genres, bookmark, views, episodes and Share.
+// Native scroll-snap (swipe works without JS); dots follow the scroll; gentle auto-advance until touched.
 
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { PlayIcon } from "@/components/brand/icons";
+import { PlayIcon, ShareIcon } from "@/components/brand/icons";
+import { BookmarkButton } from "./BookmarkButton";
 
-export type Slide = { key: string; href: string; title: string; tagline: string | null; badge: string | null; imageUrl: string | null; cta: string };
+export type Slide = {
+  key: string;
+  href: string;
+  title: string;
+  imageUrl: string | null;
+  cta: string;
+  status: string;
+  /** "TOP #1" when it's among the most watched. */
+  top: string | null;
+  /** "HD · Eng Dub" */
+  chip: string;
+  genres: string;
+  views: string | null;
+  episodes: string;
+  share: { href: string; label: string } | null;
+  bookmark: { code: string; saved: boolean; labels: { add: string; remove: string } };
+};
 
 // slideLabels: one accessible label per slide ("Slide 1 of 5"), built on the server — functions can't be passed to client components.
 export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]; label: string; slideLabels: string[] }) {
@@ -28,7 +46,7 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
 
   useEffect(() => {
     if (paused || slides.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const id = window.setInterval(() => go((active + 1) % slides.length), 5000);
+    const id = window.setInterval(() => go((active + 1) % slides.length), 6000);
     return () => window.clearInterval(id);
   });
 
@@ -39,30 +57,52 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
   }
 
   return (
-    <section aria-roledescription="carousel" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <section aria-roledescription="carousel" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div ref={ref} className="wc-scroller" onPointerDown={() => setPaused(true)} onFocus={() => setPaused(true)}>
         {slides.map((s, i) => (
-          <div
-            key={s.key}
-            role="group"
-            aria-roledescription="slide"
-            aria-label={slideLabels[i] ?? ""}
-            style={{ flex: "0 0 calc(100% - 32px)", maxWidth: 560, aspectRatio: "16 / 11", borderRadius: 28, background: "var(--wc-night)", position: "relative", overflow: "hidden", color: "#fff" }}
-          >
-            {s.imageUrl && <img src={s.imageUrl} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(19,16,26,0.92) 0%, rgba(19,16,26,0.35) 55%, rgba(19,16,26,0) 100%)" }} />
-            {s.badge && (
-              <span style={{ position: "absolute", top: 16, insetInlineStart: 16, padding: "4px 12px", borderRadius: 999, background: "#ffece8", color: "var(--wc-coral-text)", fontSize: 12, fontWeight: 600 }}>{s.badge}</span>
-            )}
-            <div style={{ position: "absolute", insetInline: 18, bottom: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-              <h2 style={{ fontWeight: 700, fontSize: 24, lineHeight: 1.3 }}>{s.title}</h2>
-              {s.tagline && <p style={{ fontSize: 13, color: "#e4dfea" }}>{s.tagline}</p>}
-              <Link href={s.href} className="wc-btn" style={{ alignSelf: "flex-start", minHeight: 44, padding: "0 18px", fontSize: 15, borderRadius: 14, boxShadow: "none" }}>
-                <PlayIcon />
-                {s.cta}
+          <article key={s.key} role="group" aria-roledescription="slide" aria-label={slideLabels[i] ?? ""} className="wc-hero">
+            <div className="wc-hero-frame">
+              <Link href={s.href} className="wc-hero-art" tabIndex={-1} aria-hidden="true">
+                {s.imageUrl ? <img src={s.imageUrl} alt="" /> : <span className="wc-poster-fallback">{s.title}</span>}
+                <span className="wc-hero-shade" />
               </Link>
+              <span className="wc-hero-status">
+                <span className="wc-dot" aria-hidden="true" />
+                {s.status}
+              </span>
+              {s.top && <span className="wc-hero-top">{s.top}</span>}
+              <div className="wc-hero-actions">
+                <Link href={s.href} className="wc-btn wc-btn-sm">
+                  <PlayIcon size={16} />
+                  {s.cta}
+                </Link>
+                <span className="wc-hero-chip">{s.chip}</span>
+              </div>
             </div>
-          </div>
+            <div className="wc-hero-body">
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <h2 className="wc-clamp1">{s.title}</h2>
+                  {s.genres && <p className="wc-sub wc-clamp1">{s.genres}</p>}
+                </div>
+                <BookmarkButton code={s.bookmark.code} saved={s.bookmark.saved} labels={s.bookmark.labels} />
+              </div>
+              <div className="wc-hero-meta">
+                {s.views && (
+                  <span>
+                    <PlayIcon size={13} fill="var(--wc-coral)" /> {s.views}
+                  </span>
+                )}
+                {s.views && <span className="wc-sep" aria-hidden="true" />}
+                <span>{s.episodes}</span>
+                {s.share && (
+                  <a href={s.share.href} target="_blank" rel="noopener noreferrer" className="wc-hero-share">
+                    <ShareIcon size={16} /> {s.share.label}
+                  </a>
+                )}
+              </div>
+            </div>
+          </article>
         ))}
       </div>
       {slides.length > 1 && (
@@ -79,7 +119,7 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
               }}
               style={{ width: 28, height: 28, padding: 0, border: 0, background: "transparent", display: "grid", placeItems: "center", cursor: "pointer" }}
             >
-              <span style={{ width: i === active ? 22 : 7, height: 7, borderRadius: 999, background: i === active ? "var(--wc-mint)" : "#d5d0c9", transition: "width .2s" }} />
+              <span style={{ width: i === active ? 22 : 7, height: 7, borderRadius: 999, background: i === active ? "var(--wc-coral)" : "#4a4356", transition: "width .2s" }} />
             </button>
           ))}
         </div>

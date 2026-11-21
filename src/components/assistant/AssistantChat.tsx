@@ -126,7 +126,7 @@ export function AssistantChat({ locale, first }: { locale: Locale; first: Assist
           ),
         )}
         {busy && (
-          <div style={{ alignSelf: "flex-start", background: "#fff", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", color: "var(--wc-muted)", fontSize: 15 }}>{t.thinking}</div>
+          <div style={{ alignSelf: "flex-start", background: "var(--wc-card)", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", color: "var(--wc-muted)", fontSize: 15 }}>{t.thinking}</div>
         )}
         <div ref={bottom} />
       </div>
@@ -149,7 +149,7 @@ export function AssistantChat({ locale, first }: { locale: Locale; first: Assist
           setText("");
           void send({ message: m }, m);
         }}
-        style={{ display: "flex", gap: 8, background: "#fff", borderRadius: 22, padding: 6, boxShadow: "0 10px 30px rgba(18,16,20,0.12)" }}
+        style={{ display: "flex", gap: 8, background: "var(--wc-card)", borderRadius: 22, padding: 6, boxShadow: "0 10px 30px rgba(0,0,0,0.4)", border: "1px solid var(--wc-line)" }}
       >
         <input
           value={text}
@@ -177,7 +177,7 @@ function BotAnswer({ answer, locale }: { answer: AssistantAnswer; locale: Locale
     <div style={{ alignSelf: "flex-start", width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ alignSelf: "flex-start", display: "flex", alignItems: "flex-end", gap: 8, maxWidth: "92%" }}>
         <AgentIcon height={28} />
-        <div style={{ background: "#fff", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", fontSize: 16, lineHeight: 1.5, boxShadow: "0 2px 10px rgba(18,16,20,0.05)" }}>{answer.text}</div>
+        <div style={{ background: "var(--wc-card)", borderRadius: "20px 20px 20px 6px", padding: "10px 14px", fontSize: 16, lineHeight: 1.5, boxShadow: "none", border: "1px solid var(--wc-line)" }}>{answer.text}</div>
       </div>
 
       {answer.series.length > 0 && (
@@ -187,7 +187,7 @@ function BotAnswer({ answer, locale }: { answer: AssistantAnswer; locale: Locale
             const tag = locale === "en" ? (s.taglineEn ?? s.taglineAr) : (s.taglineAr ?? s.taglineEn);
             const href = s.resume ? `/watch/${s.code}/${s.resume}` : `/series/${s.code}`;
             return (
-              <Link key={s.code} href={href} className="wc-card" style={{ flex: "0 0 132px", display: "flex", flexDirection: "column", overflow: "hidden", padding: 0, background: "#fff", textDecoration: "none", color: "inherit" }}>
+              <Link key={s.code} href={href} className="wc-card" style={{ flex: "0 0 132px", display: "flex", flexDirection: "column", overflow: "hidden", padding: 0, background: "var(--wc-card)", textDecoration: "none", color: "inherit" }}>
                 {s.posterUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={s.posterUrl} alt="" style={{ width: "100%", aspectRatio: "3 / 4", objectFit: "cover", display: "block" }} />
@@ -216,7 +216,7 @@ function BotAnswer({ answer, locale }: { answer: AssistantAnswer; locale: Locale
       {answer.helpItems.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {answer.helpItems.map((h) => (
-            <details key={h.q} className="wc-card" style={{ background: "#fff", padding: "12px 14px" }} open={answer.helpItems.length === 1}>
+            <details key={h.q} className="wc-card" style={{ background: "var(--wc-card)", padding: "12px 14px" }} open={answer.helpItems.length === 1}>
               <summary style={{ fontWeight: 600, cursor: "pointer" }}>{h.q}</summary>
               <p style={{ margin: "8px 0 0", lineHeight: 1.55 }}>{h.a}</p>
             </details>
@@ -234,9 +234,9 @@ function OfferCard({ offer, locale }: { offer: Offer; locale: Locale }) {
     <Link
       href={offer.kind === "pass" ? `/series/${offer.seriesCode}` : "/store?back=/assistant"}
       className="wc-card"
-      style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", padding: 12, textDecoration: "none", color: "inherit" }}
+      style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--wc-card)", padding: 12, textDecoration: "none", color: "inherit" }}
     >
-      <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: "50%", background: "#fff4dc", border: "1px solid #fbe3a8", display: "grid", placeItems: "center", flex: "none", fontSize: 20 }}>
+      <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(245,179,35,0.16)", border: "1px solid rgba(245,179,35,0.4)", display: "grid", placeItems: "center", flex: "none", fontSize: 20 }}>
         {isPack ? <PingIcon size={30} /> : offer.kind === "plan" ? "⭐" : "🎟️"}
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>

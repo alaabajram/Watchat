@@ -27,7 +27,7 @@ export default async function MyListPage() {
   if (!viewer) redirect("/me");
   const locale = viewer.uiLocale;
   const t = webCopy(locale);
-  const [{ watching, more }, balance] = await Promise.all([getLibrary(viewer.id), getBalance(viewer.id)]);
+  const [{ watching, more, saved }, balance] = await Promise.all([getLibrary(viewer.id), getBalance(viewer.id)]);
   const title = (s: { titleAr: string; titleEn: string }) => (locale === "en" ? s.titleEn : s.titleAr);
   const inProgress = watching.filter((s) => s.resume);
   const finished = watching.filter((s) => !s.resume);
@@ -37,6 +37,21 @@ export default async function MyListPage() {
       <TopBar locale={locale} balance={balance} />
       <main style={{ maxWidth: 600, margin: "0 auto", padding: "8px 16px 0", display: "flex", flexDirection: "column", gap: 24 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t.myList}</h1>
+
+        {saved.length > 0 && (
+          <section aria-labelledby="h-saved" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <h2 id="h-saved" className="wc-section-title">{t.savedList}</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+              {saved.map((s) => (
+                <Link key={s.code} href={`/series/${s.code}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Poster url={s.posterUrl} alt={title(s)} />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{title(s)}</span>
+                  <span style={{ fontSize: 12, color: "var(--wc-muted)" }}>{t.episodesCount(s.total)}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section aria-labelledby="h-cw" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 id="h-cw" className="wc-section-title">{t.continueWatching}</h2>

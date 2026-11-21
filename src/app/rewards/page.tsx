@@ -43,7 +43,7 @@ export default async function RewardsPage() {
 
   return (
     <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
-      <TopBar locale={locale} balance={balance} backHref="/wallet" />
+      <TopBar locale={locale} balance={balance} />
       <div className="page" style={{ display: "flex", flexDirection: "column", gap: 18, paddingTop: 8 }}>
         <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700 }}>{t.rewardsTitle}</h1>
 
@@ -77,7 +77,7 @@ export default async function RewardsPage() {
 
         <Link className="btn secondary" href="/store?back=/rewards">{t.getCoins}</Link>
       </div>
-      <BottomNav locale={locale} current="wallet" />
+      <BottomNav locale={locale} current="rewards" />
     </div>
   );
 }

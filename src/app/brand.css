@@ -1,5 +1,5 @@
-/* Watchat brand: fonts, the light "app" theme from the design team's screens (splash, home) and the
-   logo motion. Scoped under .wc so the existing dark player pages are unchanged. */
+/* Watchat brand: fonts, the dark app theme (every viewer page) and the logo motion. Scoped under .wc;
+   business.watchat.pro (.wc-biz) keeps its own light look. */
 
 @font-face {
   font-family: "Readex Pro";
@@ -22,22 +22,25 @@
 }
 
 .wc {
-  --wc-bg: #f4f2ee;
-  --wc-card: #ffffff;
-  --wc-ink: #121014;
-  --wc-muted: #5f5a55;
-  --wc-line: #ece8e2;
+  --wc-bg: #0f0d14;
+  --wc-card: #1c1824;
+  --wc-card-2: #262130;
+  --wc-ink: #f5f2f8;
+  --wc-muted: #a39cae;
+  --wc-line: #2c2636;
   --wc-mint: #31e5a0;
   --wc-mint-ink: #0b2e20;
-  --wc-mint-text: #0b6b49;
+  --wc-mint-text: #31e5a0;
   --wc-coral: #ff5a48;
-  --wc-coral-text: #c9341f;
-  --wc-night: #13101a;
+  --wc-coral-text: #ff7a6b;
+  --wc-coral-soft: rgba(255, 90, 72, 0.16);
+  --wc-mint-soft: rgba(49, 229, 160, 0.14);
+  --wc-night: #0a080e;
   --wc-night-2: #241f2e;
   min-height: 100dvh;
   background: var(--wc-bg);
   color: var(--wc-ink);
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Readex Pro", system-ui, "Segoe UI", "Noto Sans Arabic", Tahoma, sans-serif;
   line-height: 1.6;
 }
@@ -60,9 +63,9 @@
   background: var(--wc-card); font-weight: 600; font-size: 15px;
 }
 .wc-coin { width: 20px; height: 20px; border-radius: 50%; background: #f5b323; box-shadow: inset 0 0 0 3px #ffd877; flex-shrink: 0; }
-.wc-card { background: var(--wc-card); border-radius: 24px; box-shadow: 0 8px 26px rgba(18, 16, 20, 0.06); }
-.wc-chip { padding: 9px 16px; border-radius: 999px; background: var(--wc-card); font-size: 14px; white-space: nowrap; }
-.wc-chip[aria-current="true"] { background: var(--wc-ink); color: #fff; font-weight: 600; }
+.wc-card { background: var(--wc-card); border-radius: 24px; border: 1px solid var(--wc-line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+.wc-chip { padding: 9px 16px; border-radius: 999px; background: var(--wc-card); border: 1px solid var(--wc-line); font-size: 14px; white-space: nowrap; }
+.wc-chip[aria-current="true"] { background: var(--wc-mint); border-color: var(--wc-mint); color: var(--wc-mint-ink); font-weight: 600; }
 .wc-link { font-size: 14px; color: var(--wc-coral-text); font-weight: 500; }
 .wc-scroller { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 0 16px; }
 .wc-scroller::-webkit-scrollbar { display: none; }
@@ -75,16 +78,87 @@
 
 /* Bottom navigation (fixed on phones, centred column on wider screens). */
 .wc-nav {
-  position: fixed; inset-inline: 0; bottom: 0; z-index: 10; background: var(--wc-card); border-top: 1px solid var(--wc-line);
+  position: fixed; inset-inline: 0; bottom: 0; z-index: 10; background: rgba(20, 17, 27, 0.94); border-top: 1px solid var(--wc-line);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   padding: 8px 8px calc(10px + env(safe-area-inset-bottom));
 }
 .wc-nav ul { list-style: none; margin: 0 auto; padding: 0; max-width: 520px; display: flex; justify-content: space-around; align-items: flex-end; }
 .wc-nav a { min-width: 58px; min-height: 44px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--wc-muted); }
-.wc-nav a[aria-current="page"] { color: var(--wc-coral-text); font-weight: 600; }
+.wc-nav a { font-size: 12px; }
+.wc-nav a[aria-current="page"] { color: var(--wc-coral); font-weight: 600; }
 .wc-nav .wc-fab {
-  width: 54px; height: 54px; margin-top: -28px; border-radius: 50%; background: var(--wc-coral); border: 5px solid #fff;
+  width: 62px; height: 62px; margin-top: -34px; border-radius: 50%; background: var(--wc-coral); border: 5px solid var(--wc-bg);
   display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(255, 90, 72, 0.35);
 }
+
+/* ---------------- Dark home, explore and series pages ---------------- */
+.wc-homehead { padding: 16px 16px 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wc-round, .wc-pill { border: 1px solid var(--wc-line); color: var(--wc-ink); }
+.wc-dotbadge { position: absolute; top: 8px; inset-inline-end: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--wc-coral); border: 2px solid var(--wc-card); }
+.wc-tabs { display: flex; gap: 22px; padding: 8px 16px 0; border-bottom: 1px solid var(--wc-line); overflow-x: auto; scrollbar-width: none; }
+.wc-tabs::-webkit-scrollbar { display: none; }
+.wc-tabs a { padding: 8px 0 12px; font-size: 17px; font-weight: 500; color: var(--wc-muted); white-space: nowrap; border-bottom: 3px solid transparent; }
+.wc-tabs a[aria-current="page"] { color: var(--wc-ink); font-weight: 700; border-bottom-color: var(--wc-coral); }
+.wc-sub { font-size: 13px; color: var(--wc-muted); }
+.wc-sub-hot { color: var(--wc-coral-text); }
+.wc-clamp1 { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wc-clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wc-more { font-size: 14px; font-weight: 600; color: var(--wc-coral-text); white-space: nowrap; }
+.wc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 16px; }
+.wc-head h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; margin: 0; }
+.wc-head-bar { width: 5px; height: 20px; border-radius: 4px; flex-shrink: 0; }
+.wc-head-bar-mint { background: var(--wc-mint); }
+.wc-head-bar-coral { background: var(--wc-coral); }
+.wc-hot { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--wc-coral-text); background: var(--wc-coral-soft); border: 1px solid rgba(255, 90, 72, 0.4); }
+.wc-btn-sm { min-height: 46px; padding: 0 20px; font-size: 16px; border-radius: 16px; white-space: nowrap; }
+.wc-iconbtn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--wc-line); background: var(--wc-card-2); color: var(--wc-ink); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
+.wc-playdot { width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%; background: var(--wc-mint); display: grid; place-items: center; box-shadow: 0 8px 18px rgba(49, 229, 160, 0.35); }
+.wc-poster-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(10, 8, 14, 0.85) 0%, rgba(10, 8, 14, 0) 45%); pointer-events: none; }
+.wc-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(10, 8, 14, 0.7); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.wc-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; padding: 0 16px; }
+
+/* Hero card */
+.wc-hero { flex: 0 0 calc(100% - 32px); max-width: 560px; position: relative; border-radius: 28px; background: var(--wc-card); border: 1px solid var(--wc-line); overflow: hidden; padding: 12px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
+.wc-hero-frame { position: relative; }
+.wc-hero-art { display: block; position: relative; aspect-ratio: 4 / 5; border-radius: 20px; overflow: hidden; background: var(--wc-night-2); }
+.wc-hero-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.wc-hero-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(10, 8, 14, 0.8) 0%, rgba(10, 8, 14, 0) 38%), linear-gradient(to bottom, rgba(10, 8, 14, 0.45) 0%, rgba(10, 8, 14, 0) 22%); }
+.wc-hero-status { position: absolute; top: 12px; inset-inline-start: 12px; max-width: calc(100% - 140px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: rgba(10, 8, 14, 0.72); border: 1px solid rgba(255, 255, 255, 0.14); font-size: 14px; font-weight: 600; color: #fff; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.wc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--wc-mint); box-shadow: 0 0 8px var(--wc-mint); }
+.wc-hero-top { position: absolute; top: 12px; inset-inline-end: 12px; padding: 5px 14px; border-radius: 999px; background: var(--wc-coral); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.02em; }
+.wc-hero-actions { position: absolute; inset-inline: 14px; bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wc-hero-chip { padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(10, 8, 14, 0.6); color: #fff; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.wc-hero-body { padding: 16px 8px 4px; display: flex; flex-direction: column; gap: 12px; }
+.wc-hero-body h2 { font-size: 24px; font-weight: 700; line-height: 1.3; margin: 0; }
+.wc-hero-meta { display: flex; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--wc-line); font-size: 15px; color: var(--wc-ink); }
+.wc-hero-meta > span { display: inline-flex; align-items: center; gap: 6px; }
+.wc-sep { width: 1px; height: 18px; background: var(--wc-line); }
+.wc-hero-share { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+
+/* Trending and "you might like" cards */
+.wc-trend { flex: 0 0 156px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 20px; background: var(--wc-card); border: 1px solid var(--wc-line); }
+.wc-trend .wc-poster { border-radius: 14px; }
+.wc-trend strong { font-size: 15px; font-weight: 700; }
+.wc-views { position: absolute; bottom: 8px; inset-inline-start: 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: var(--wc-mint); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+.wc-rank { position: absolute; top: 8px; inset-inline-end: 8px; padding: 2px 8px; border-radius: 8px; background: var(--wc-coral); color: #fff; font-size: 12px; font-weight: 800; }
+.wc-like { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wc-like .wc-poster { border-radius: 16px; border: 1px solid var(--wc-line); }
+.wc-like strong { font-size: 15px; font-weight: 700; margin-top: 4px; }
+.wc-like-over { position: absolute; inset-inline: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 2px; color: #fff; font-weight: 700; font-size: 15px; line-height: 1.25; }
+.wc-like-tag { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.wc-like-tag-mint { color: var(--wc-mint); }
+.wc-like-tag-coral { color: var(--wc-coral); }
+
+/* Episode list chips (series page) */
+.wc-eps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 16px; }
+.wc-ep { position: relative; min-height: 52px; border-radius: 16px; background: var(--wc-card); border: 1px solid var(--wc-line); display: grid; place-items: center; font-weight: 700; font-size: 16px; color: var(--wc-ink); }
+.wc-ep[aria-current="true"] { background: var(--wc-mint); border-color: var(--wc-mint); color: var(--wc-mint-ink); box-shadow: 0 8px 20px rgba(49, 229, 160, 0.3); }
+.wc-ep-lock { position: absolute; top: 5px; inset-inline-end: 7px; font-size: 11px; opacity: 0.7; }
+.wc-ep-free { position: absolute; top: 4px; inset-inline-end: 6px; font-size: 9px; font-weight: 800; color: var(--wc-mint); letter-spacing: 0.04em; }
+
+/* Search box (explore) */
+.wc-search { display: flex; align-items: center; gap: 10px; margin: 0 16px; padding: 0 16px; min-height: 52px; border-radius: 16px; background: var(--wc-card); border: 1px solid var(--wc-line); color: var(--wc-muted); }
+.wc-search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--wc-ink); font: inherit; font-size: 16px; }
 
 /* ---------------- Logo motion (splash) ----------------
    The bubble scrolls up three times like a feed, settles with a small overshoot, then the red dot pops in
@@ -94,7 +168,7 @@
 .wc-logo-strip { display: flex; flex-direction: column; gap: 27px; margin-top: -3px; animation: wc-scroll 2.6s cubic-bezier(0.65, 0, 0.35, 1) 0.4s both; }
 .wc-logo-strip img { width: 112px; height: 152px; display: block; }
 .wc-logo-dot { position: absolute; left: 87px; top: -3px; width: 28px; height: 28px; transform: scale(0); animation: wc-pop 0.45s ease-out 3s forwards; }
-.wc-logo-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: #fff; }
+.wc-logo-dot::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--wc-bg); }
 .wc-logo-dot .wc-ring { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--wc-coral); box-sizing: border-box; opacity: 0; animation: wc-ring 1.6s ease-out 3.5s infinite; }
 .wc-logo-dot img { position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; animation: wc-breathe 1.6s ease-in-out 3.5s infinite; }
 .wc-fade-in { opacity: 0; animation: wc-fade 0.6s ease-out 3.3s forwards; }
@@ -118,7 +192,10 @@
 }
 
 /* business.watchat.pro (markup from the design canvas, inline-styled) */
-.wc-biz { background: #f4f2ee; color-scheme: light; }
+.wc-biz {
+  background: #f4f2ee; color: #121014; color-scheme: light;
+  --bg: #f4f2ee; --surface: #ffffff; --text: #121014; --muted: #5f5a55; --line: #ece8e2;
+}
 .wc-biz a { color: #121014; text-decoration: none; }
 .wc-biz a:hover { color: #000; }
 .wc-biz h1, .wc-biz h2, .wc-biz h3, .wc-biz p { margin: 0; }
@@ -135,7 +212,7 @@
 .wc-dark .btn.secondary { background: #241f2e; color: #fff; border-color: #3a3446; }
 .wc-dark .chip { background: #241f2e; color: #fff; }
 /* Profile menu rows */
-.wc-menu { list-style: none; margin: 0; padding: 4px 16px; background: #fff; border-radius: 24px; box-shadow: 0 8px 26px rgba(18, 16, 20, 0.06); }
+.wc-menu { list-style: none; margin: 0; padding: 4px 16px; background: var(--wc-card); border: 1px solid var(--wc-line); border-radius: 24px; }
 .wc-menu li + li { border-top: 1px solid var(--wc-line); }
 .wc-menu a, .wc-menu button {
   width: 100%; min-height: 64px; display: flex; align-items: center; gap: 14px; padding: 10px 0;
