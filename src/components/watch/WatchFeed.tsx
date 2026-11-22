@@ -19,15 +19,16 @@ export type FeedEpisode = {
   poster: string | null;
   allowed: boolean;
   price: number;
-  /** Language of the extra audio track to play (English dub), and of the subtitles to show; null = none. */
-  audioLang?: "en" | "ar" | null;
-  subsLang?: "en" | "ar" | null;
+  /** Label of the dub to play instead of the original sound, and the language tag of subtitles to show; null = none. */
+  audioLang?: string | null;
+  subsLang?: string | null;
 };
 
-/** A track in the stream matches a language by its tag (en, en-US) or its label (English / العربية). */
-const LANG_NAME: Record<string, RegExp> = { en: /english/i, ar: /arabic|العربية/i };
+/** Subtitles match by language tag (en, en-US). */
 const matchesLang = (lang: string, tag?: string | null, label?: string | null) =>
-  Boolean((tag && tag.toLowerCase().startsWith(lang)) || (label && LANG_NAME[lang]?.test(label)));
+  Boolean((tag && tag.toLowerCase().split("-")[0] === lang) || (label && label.toLowerCase() === lang));
+/** A dub matches by the exact label it was added with (English, خليجي …). */
+const matchesLabel = (label: string, name?: string | null) => (name ?? "").trim() === label;
 
 type Props = {
   locale: Locale;
@@ -335,7 +336,7 @@ function EpisodeVideo(p: {
       const tracks = (v as HTMLVideoElement & { audioTracks?: ArrayLike<{ language: string; label: string; enabled: boolean }> }).audioTracks;
       if (audio && tracks?.length) {
         const list = Array.from(tracks);
-        const want = list.findIndex((t) => matchesLang(audio, t.language, t.label));
+        const want = list.findIndex((t) => matchesLabel(audio, t.label));
         if (want >= 0) list.forEach((t, i) => (t.enabled = i === want));
       }
     };
@@ -350,14 +351,20 @@ function EpisodeVideo(p: {
       void import("hls.js").then(({ default: Hls }) => {
         if (!Hls.isSupported()) return void (v.src = p.ep.hls!);
         const instance = new Hls({ startLevel: 0, capLevelToPlayerSize: true });
-        instance.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (audio) {
-            const i = instance.audioTracks.findIndex((t) => matchesLang(audio, t.lang, t.name));
-            if (i >= 0) instance.audioTrack = i;
-          }
-          const s = subs ? instance.subtitleTracks.findIndex((t) => matchesLang(subs, t.lang, t.name)) : -1;
-          instance.subtitleTrack = s;
-          instance.subtitleDisplay = s >= 0;
+        // Tracks are only known once hls.js announces them (not yet at MANIFEST_PARSED; checked in a real
+        // two-audio test). Switching audio replaces the sound: the original track isn't downloaded at all.
+        instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_e, data) => {
+          if (!audio) return;
+          const i = data.audioTracks.findIndex((t) => matchesLabel(audio, t.name));
+          if (i >= 0 && instance.audioTrack !== i) instance.audioTrack = i;
+        });
+        instance.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, (_e, data) => {
+          const i = subs ? data.subtitleTracks.findIndex((t) => matchesLang(subs, t.lang, t.name)) : -1;
+          // hls.js resets the choice while it's still setting tracks up, so apply it right after (tested).
+          window.setTimeout(() => {
+            instance.subtitleTrack = i;
+            instance.subtitleDisplay = i >= 0;
+          }, 0);
         });
         instance.loadSource(p.ep.hls!);
         instance.attachMedia(v);

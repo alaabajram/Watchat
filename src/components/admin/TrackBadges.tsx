@@ -1,14 +1,14 @@
 // One line per episode: which languages it has (English subtitles / dub on the web video, English chat version).
 
 import { removeEpisodeTrack } from "@/app/admin/content-actions";
-import type { EpisodeTracks, TrackLang, TrackState } from "@/lib/storage/tracks";
+import { LANGS, type EpisodeTracks, type LangKey, type TrackState } from "@/lib/storage/tracks";
 
 const STATE: Record<TrackState["stream"], string> = { attached: "✓", pending: "⏳ waiting for the video", error: "⚠" };
 
 export function TrackBadges({ episodeId, tracks, hasEnClip, chat }: { episodeId: string; tracks: EpisodeTracks; hasEnClip: boolean; chat: boolean }) {
-  const items: { kind: "subs" | "audio"; lang: TrackLang; label: string; state: TrackState }[] = [];
-  for (const [lang, st] of Object.entries(tracks.subs ?? {})) if (st) items.push({ kind: "subs", lang: lang as TrackLang, label: `${lang.toUpperCase()} subtitles`, state: st });
-  for (const [lang, st] of Object.entries(tracks.audio ?? {})) if (st) items.push({ kind: "audio", lang: lang as TrackLang, label: `${lang.toUpperCase()} dub`, state: st });
+  const items: { kind: "subs" | "audio"; lang: string; label: string; state: TrackState }[] = [];
+  for (const [lang, st] of Object.entries(tracks.subs ?? {})) if (st) items.push({ kind: "subs", lang, label: `${(LANGS[lang as LangKey]?.en ?? lang).replace(" (Standard)", "")} subtitles`, state: st });
+  for (const [lang, st] of Object.entries(tracks.audio ?? {})) if (st) items.push({ kind: "audio", lang, label: `${LANGS[lang as LangKey]?.en ?? lang} audio`, state: st });
   if (!items.length && !chat) return null;
   return (
     <span className="row" style={{ gap: 6, fontSize: 12, gridColumn: "1 / -1" }}>

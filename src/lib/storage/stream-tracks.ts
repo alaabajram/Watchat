@@ -3,10 +3,9 @@
 // "pending" and is attached later (when the series page opens, or when the video id is saved).
 
 import { db } from "@/lib/supabase";
-import { pendingTracks, type EpisodeTracks, type TrackLang } from "./tracks";
+import { LANGS, pendingTracks, type EpisodeTracks, type LangKey } from "./tracks";
 
 const API = "https://api.cloudflare.com/client/v4";
-const LABEL: Record<TrackLang, string> = { en: "English", ar: "العربية" };
 
 function streamConfig() {
   const account = (process.env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
@@ -23,7 +22,7 @@ async function cf<T>(path: string, init: RequestInit): Promise<T> {
   return json.result as T;
 }
 
-async function attachSubtitles(uid: string, lang: TrackLang, url: string) {
+async function attachSubtitles(uid: string, lang: string, url: string) {
   const file = await fetch(url);
   if (!file.ok) throw new Error(`Couldn't read the subtitle file (${file.status})`);
   const form = new FormData();
@@ -31,11 +30,12 @@ async function attachSubtitles(uid: string, lang: TrackLang, url: string) {
   await cf(`/${uid}/captions/${lang}`, { method: "PUT", body: form });
 }
 
-async function attachAudio(uid: string, lang: TrackLang, url: string): Promise<string> {
+async function attachAudio(uid: string, lang: string, url: string): Promise<string> {
+  const label = LANGS[lang as LangKey]?.label ?? lang;
   // Replace an earlier track of the same language instead of piling them up.
   const existing = await cf<{ audio?: { uid: string; label: string }[] }>(`/${uid}/audio`, { method: "GET" }).catch(() => ({ audio: [] as { uid: string; label: string }[] }));
-  for (const a of existing.audio ?? []) if (a.label === LABEL[lang]) await cf(`/${uid}/audio/${a.uid}`, { method: "DELETE" }).catch(() => undefined);
-  const r = await cf<{ uid: string }>(`/${uid}/audio/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, label: LABEL[lang] }) });
+  for (const a of existing.audio ?? []) if (a.label === label) await cf(`/${uid}/audio/${a.uid}`, { method: "DELETE" }).catch(() => undefined);
+  const r = await cf<{ uid: string }>(`/${uid}/audio/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, label }) });
   return r.uid;
 }
 
@@ -71,7 +71,7 @@ export async function syncSeriesTracks(seriesId: string): Promise<void> {
 }
 
 /** Take a subtitle or audio track off the Stream video (when the team removes it). */
-export async function detachStreamTrack(uid: string | null, kind: "subs" | "audio", lang: TrackLang, audioUid?: string): Promise<void> {
+export async function detachStreamTrack(uid: string | null, kind: "subs" | "audio", lang: string, audioUid?: string): Promise<void> {
   if (!uid || !streamConfig()) return;
   if (kind === "subs") await cf(`/${uid}/captions/${lang}`, { method: "DELETE" });
   else if (audioUid) await cf(`/${uid}/audio/${audioUid}`, { method: "DELETE" });

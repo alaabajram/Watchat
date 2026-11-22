@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
+import { OriginalLanguageSelect } from "@/components/admin/OriginalLanguageSelect";
 import { ArtworkSlots } from "@/components/admin/ArtworkSlots";
-import { BulkEpisodes, type EnglishMaterial } from "@/components/admin/BulkEpisodes";
+import { BulkEpisodes, type SavedMaterial } from "@/components/admin/BulkEpisodes";
 import { TrackBadges } from "@/components/admin/TrackBadges";
 import { syncSeriesTracks } from "@/lib/storage/stream-tracks";
-import type { EpisodeTracks } from "@/lib/storage/tracks";
+import { originalLang, type EpisodeTracks } from "@/lib/storage/tracks";
 import { MediaUpload } from "@/components/admin/MediaUpload";
 import { WhatsAppVersion } from "@/components/admin/WhatsAppVersion";
 import { SeriesMediaLibrary } from "@/components/flow/SeriesMediaLibrary";
@@ -51,12 +52,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const cast = (s?.cast_members ?? []) as CastMember[];
   const castRows = Array.from({ length: Math.min(12, Math.max(3, cast.length + 2)) }, (_, i) => cast[i] ?? { name_ar: "", name_en: "", role: "" });
   const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
-  const englishMaterial: EnglishMaterial = Object.fromEntries(
-    eps.map((e) => {
-      const t = (e.tracks ?? {}) as EpisodeTracks;
-      return [e.number, { subsEn: t.subs?.en?.url, audioEn: t.audio?.en?.url }];
-    }),
-  );
+  const savedMaterial: SavedMaterial = Object.fromEntries(eps.map((e) => [e.number, (e.tracks ?? {}) as EpisodeTracks]));
   const ready = readiness(s, eps, licences?.length ?? 0, lastReview?.decision ?? null);
   const gulfInput = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 16) : "");
 
@@ -150,15 +146,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
             Tags (comma separated)
             <input name="tags" defaultValue={(s.tags ?? []).join(", ")} placeholder="ramadan, gulf, betrayal" />
           </label>
-          <label>
-            Dialect
-            <select name="dialect" defaultValue={s.dialect}>
-              <option value="gulf">Gulf</option>
-              <option value="egyptian">Egyptian</option>
-              <option value="levantine">Levantine</option>
-              <option value="msa">Modern Standard Arabic</option>
-            </select>
-          </label>
+          <OriginalLanguageSelect value={s.dialect} />
         </div>
         <h2>Genres</h2>
         <div className="row">
@@ -246,7 +234,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
           episodes (1–{s.free_web_until_ep}) also get chat versions under 16 MB, made in your browser: Arabic, and English when there&apos;s a dub or English subtitles.
           Drafts are hidden from viewers; a release time keeps a ready episode hidden until then (Gulf time).
         </p>
-        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} existing={englishMaterial} />
+        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} original={originalLang(s.dialect)} existing={savedMaterial} />
         <table>
           <thead>
             <tr>
