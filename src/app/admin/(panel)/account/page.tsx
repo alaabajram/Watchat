@@ -1,5 +1,6 @@
 import { Flash } from "@/components/admin/Flash";
 import { requireSignedIn } from "@/lib/admin/auth";
+import { PasswordInput } from "@/components/admin/PasswordInput";
 import { MIN_PASSWORD_LENGTH } from "@/lib/security/password";
 import { changePasswordAction } from "../../auth-actions";
 
@@ -19,11 +20,11 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
         </p>
         <label>
           Current password
-          <input name="current" type="password" autoComplete="current-password" required />
+          <PasswordInput name="current" autoComplete="current-password" />
         </label>
         <label>
           New password ({MIN_PASSWORD_LENGTH}+ characters, letters and numbers)
-          <input name="next" type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} required />
+          <PasswordInput name="next" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} />
         </label>
         <button type="submit">Change password</button>
       </form>

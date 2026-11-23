@@ -1,7 +1,7 @@
 import { Flash } from "@/components/admin/Flash";
 import { PERMISSIONS, requireAdmin } from "@/lib/admin/auth";
 import { db } from "@/lib/supabase";
-import { inviteAdminAction, updateAdminAction } from "../../people-actions";
+import { inviteAdminAction, resetAdminPasswordAction, updateAdminAction } from "../../people-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +56,14 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
                     </label>
                     <button type="submit" className="secondary">
                       Save
+                    </button>
+                  </form>
+                )}
+                {u.id !== admin.id && (
+                  <form action={resetAdminPasswordAction} style={{ marginTop: 6 }}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <button type="submit" className="secondary" style={{ padding: "3px 10px", fontSize: 12 }}>
+                      Reset password
                     </button>
                   </form>
                 )}

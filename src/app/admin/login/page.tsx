@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
+import { PasswordInput } from "@/components/admin/PasswordInput";
 import { getAdmin } from "@/lib/admin/auth";
 import { loginAction } from "../auth-actions";
 
@@ -20,8 +21,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <input name="email" type="email" autoComplete="username" required />
         </label>
         <label>
-          Password
-          <input name="password" type="password" autoComplete="current-password" required />
+          <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            Password
+            <a href="/admin/forgot" style={{ fontSize: 13, fontWeight: 500 }}>
+              Forgot password?
+            </a>
+          </span>
+          <PasswordInput name="password" autoComplete="current-password" />
         </label>
         <button type="submit">Sign in</button>
         <p className="muted" style={{ margin: 0 }}>
