@@ -2,6 +2,8 @@
 
 import { originalLang, type EpisodeTracks, type LangKey } from "@/lib/storage/tracks";
 import { compactCount, rankByViews } from "./catalogue-meta";
+import { sanitizeCharacters, sanitizeStory } from "./story/sanitize";
+import { STORY_STYLES, type Character, type StoryGraph, type StoryStyle } from "./story/types";
 export { compactCount, rankByViews };
 import { ipMarket, seriesLicensed } from "./economy/store";
 import { currentTenantId, db } from "./supabase";
@@ -23,6 +25,10 @@ export type WebSeries = {
   trailerUrl: string | null;
   /** Language spoken in the videos (dubs and subtitles are added for the others). */
   original: LangKey;
+  /** "story": episodes are scenes built in the Story builder, played by the story reader. */
+  format: "video" | "story";
+  storyStyle: StoryStyle;
+  storyCharacters: Character[];
 };
 
 export type WebEpisode = {
@@ -41,7 +47,7 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
   const { data } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, trailer_video_url, dialect, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries",
+      "id, code, title_ar, title_en, synopsis_ar, synopsis_en, poster_url, banner_wide_url, trailer_video_url, dialect, free_web_until_ep, paywall_ep, coins_per_episode, season_pass_price_aed, season_pass_price_sar, license_countries, format, story_style, story_characters",
     )
     .eq("tenant_id", tenantId)
     .eq("code", code.toUpperCase())
@@ -65,7 +71,22 @@ export async function getSeriesByCode(code: string): Promise<WebSeries | null> {
     seasonPassPriceSar: data.season_pass_price_sar === null ? null : Number(data.season_pass_price_sar),
     trailerUrl: data.trailer_video_url ?? null,
     original: originalLang(data.dialect),
+    format: data.format === "story" ? "story" : "video",
+    storyStyle: (STORY_STYLES.find((x) => x.key === data.story_style)?.key ?? "visual_novel") as StoryStyle,
+    storyCharacters: sanitizeCharacters(data.story_characters),
   };
+}
+
+/** The published story of one episode (only call it for an episode the viewer may play). */
+export async function getEpisodeStory(episodeId: string): Promise<StoryGraph | null> {
+  const { data } = await db().from("episodes").select("story").eq("id", episodeId).eq("status", "live").maybeSingle();
+  return data?.story ? sanitizeStory(data.story) : null;
+}
+
+/** Where the viewer stopped in a story episode. */
+export async function getStoryPosition(viewerId: string, episodeId: string): Promise<string | null> {
+  const { data } = await db().from("story_progress").select("scene_id").eq("viewer_id", viewerId).eq("episode_id", episodeId).maybeSingle();
+  return data?.scene_id ?? null;
 }
 
 export async function getEpisodes(seriesId: string): Promise<WebEpisode[]> {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
+import { SeriesTabs } from "@/components/admin/SeriesTabs";
 import { OriginalLanguageSelect } from "@/components/admin/OriginalLanguageSelect";
 import { ArtworkSlots } from "@/components/admin/ArtworkSlots";
 import { BulkEpisodes, type SavedMaterial } from "@/components/admin/BulkEpisodes";
@@ -53,6 +54,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
   const castRows = Array.from({ length: Math.min(12, Math.max(3, cast.length + 2)) }, (_, i) => cast[i] ?? { name_ar: "", name_en: "", role: "" });
   const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
   const savedMaterial: SavedMaterial = Object.fromEntries(eps.map((e) => [e.number, (e.tracks ?? {}) as EpisodeTracks]));
+  const isStory = s.format === "story";
   const ready = readiness(s, eps, licences?.length ?? 0, lastReview?.decision ?? null);
   const gulfInput = (iso: string | null) => (iso ? new Date(Date.parse(iso) + 4 * 3600_000).toISOString().slice(0, 16) : "");
 
@@ -64,6 +66,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
       <h1>
         {s.code} · {s.title_en} <span className={`badge ${s.status}`}>{s.status}</span>
       </h1>
+      <SeriesTabs seriesId={s.id} active="details" story={s.format === "story"} />
       <Flash ok={sp.ok} err={sp.err} />
 
       {/* Ready to publish? One checklist (same as the launch wizard); fixes link to the wizard step. */}
@@ -229,12 +232,19 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
       {/* Episodes */}
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Episodes ({eps.length})</h2>
+        {isStory ? (
+          <p style={{ marginTop: 0 }}>
+            This is a story series: each episode&apos;s scenes, choices and routes are built in the{" "}
+            <Link href={`/admin/series/${s.id}/story`}>Story builder →</Link>. Here you can set titles, a Ping price per episode, draft / ready and release times.
+          </p>
+        ) : (
         <p className="muted" style={{ marginTop: 0 }}>
           Every episode has one video for the web; English subtitles and an English dub are added to that same video (drop them with the videos). Free
           episodes (1–{s.free_web_until_ep}) also get chat versions under 16 MB, made in your browser: Arabic, and English when there&apos;s a dub or English subtitles.
           Drafts are hidden from viewers; a release time keeps a ready episode hidden until then (Gulf time).
         </p>
-        <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} original={originalLang(s.dialect)} existing={savedMaterial} />
+        )}
+        {!isStory && <BulkEpisodes seriesId={s.id} seriesCode={s.code} freeUntil={s.free_web_until_ep} streamReady={streamReady} original={originalLang(s.dialect)} existing={savedMaterial} />}
         <table>
           <thead>
             <tr>
@@ -262,11 +272,17 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                     <input name="title_ar" dir="rtl" defaultValue={e.title_ar ?? ""} placeholder="العنوان" />
                     <input name="title_en" defaultValue={e.title_en ?? ""} placeholder="Title" />
                     <span className="muted" style={{ alignSelf: "center", fontSize: 13 }}>
-                      {e.stream_uid ? "✓ web video" : "✗ no web video yet (hidden)"}
-                      {e.number <= s.wa_episode_count ? (e.wa_video_url_ar ? " · ✓ chat version" : " · ✗ chat version") : ""}
+                      {isStory ? (
+                        <Link href={`/admin/series/${s.id}/story?ep=${e.id}`}>{e.story_ready ? `✓ story published (v${e.story_version})` : "✗ story not published (hidden)"} · edit scenes →</Link>
+                      ) : (
+                        <>
+                          {e.stream_uid ? "✓ web video" : "✗ no web video yet (hidden)"}
+                          {e.number <= s.wa_episode_count ? (e.wa_video_url_ar ? " · ✓ chat version" : " · ✗ chat version") : ""}
+                        </>
+                      )}
                     </span>
                     {/* Filled in by the uploads; open only to paste ids / links by hand. */}
-                    <details style={{ gridColumn: "1 / -1" }}>
+                    {!isStory && <details style={{ gridColumn: "1 / -1" }}>
                       <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>Video ids and links (advanced)</summary>
                       <div className="grid3" style={{ marginTop: 6 }}>
                         <input name="stream_uid" defaultValue={e.stream_uid ?? ""} placeholder="Stream video id" />
@@ -277,7 +293,7 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                           </>
                         )}
                       </div>
-                    </details>
+                    </details>}
                     <input name="coin_price_override" type="number" min={1} defaultValue={e.coin_price_override ?? ""} placeholder={`Ping (default ${s.coins_per_episode})`} />
                     <select name="ready" defaultValue={e.status === "draft" ? "draft" : "ready"} title="Draft = hidden from viewers">
                       <option value="draft">Draft (hidden)</option>
@@ -291,8 +307,8 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                       <button type="submit" className="secondary">
                         Save
                       </button>
-                      <MediaUpload kind="stream" seriesCode={s.code} target="episode" id={e.id} field="stream_uid" label="Web video" />
-                      {e.number <= s.free_web_until_ep && (
+                      {!isStory && <MediaUpload kind="stream" seriesCode={s.code} target="episode" id={e.id} field="stream_uid" label="Web video" />}
+                      {!isStory && e.number <= s.free_web_until_ep && (
                         <>
                           <WhatsAppVersion episodeId={e.id} seriesCode={s.code} />
                           <MediaUpload kind="clip" seriesCode={s.code} target="episode" id={e.id} field="wa_video_url_en" label="Clip EN (ready MP4)" />
@@ -309,9 +325,9 @@ export default async function SeriesEdit({ params, searchParams }: { params: Pro
                     </div>
                   </form>
                   {/* Outside the episode form (its remove buttons are forms of their own). */}
-                  <div style={{ marginTop: 4 }}>
+                  {!isStory && <div style={{ marginTop: 4 }}>
                     <TrackBadges episodeId={e.id} tracks={(e.tracks ?? {}) as EpisodeTracks} hasEnClip={Boolean(e.wa_video_url_en)} chat={e.number <= s.wa_episode_count} />
-                  </div>
+                  </div>}
                 </td>
               </tr>
             ))}

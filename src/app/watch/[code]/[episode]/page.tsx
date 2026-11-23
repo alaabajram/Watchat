@@ -5,7 +5,9 @@
 import { notFound } from "next/navigation";
 import { shareHref } from "@/components/ShareButton";
 import { WatchFeed, type FeedEpisode } from "@/components/watch/WatchFeed";
-import { canWatch, getEpisodes, getPosition, getSeriesByCode, getUnlocked, streamUrls } from "@/lib/content";
+import { StoryWatch } from "@/components/story/StoryWatch";
+import { canWatch, getEpisodeStory, getEpisodes, getPosition, getSeriesByCode, getStoryPosition, getUnlocked, streamUrls } from "@/lib/content";
+import { storyStateOf } from "@/lib/story/server";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
 import { payingMarket, storeOffers } from "@/lib/economy/store";
@@ -62,6 +64,40 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
 
   // Paywall offers in the viewer's market: the series pass (fixed fee) and the weekly pass (every series).
   const shop = allowed ? null : await storeOffers(viewer.id, await payingMarket(viewer));
+  const seasonPassLabel = shop?.seriesPass ? t.seasonPassPrice(formatMoney(shop.seriesPass.price, shop.market.currency, locale)) : null;
+  const weeklyPassLabel = shop?.weekly ? t.weeklyPassPrice(formatMoney(shop.weekly.price, shop.market.currency, locale)) : null;
+
+  // Story series: the story reader (one episode per page; "Next episode" at the end). The story itself is only
+  // sent for an episode the viewer may play.
+  if (series.format === "story") {
+    const [story, resumeAt, state] = await Promise.all([
+      allowed ? getEpisodeStory(current.id) : Promise.resolve(null),
+      allowed ? getStoryPosition(viewer.id, current.id) : Promise.resolve(null),
+      storyStateOf(viewer.id, series.id),
+    ]);
+    return (
+      <StoryWatch
+        locale={locale}
+        seriesCode={series.code}
+        seriesId={series.id}
+        title={title}
+        posterUrl={series.posterUrl}
+        episode={{ id: current.id, number, title: (locale === "en" ? current.titleEn : current.titleAr) ?? null, allowed, price: current.coinPrice ?? series.coinsPerEpisode }}
+        total={episodes.length}
+        hasNext={episodes.some((e) => e.number === number + 1)}
+        story={story}
+        style={series.storyStyle}
+        characters={series.storyCharacters}
+        resumeAt={resumeAt}
+        flags={state.flags}
+        bought={state.bought}
+        balance={balance}
+        trusted={viewer.trusted}
+        seasonPassLabel={seasonPassLabel}
+        weeklyPassLabel={weeklyPassLabel}
+      />
+    );
+  }
   // Every episode is a slide in the full-screen feed; only the one on screen loads its video.
   const feed: FeedEpisode[] = episodes.map((e) => {
     const allowedHere = canWatch(series, e.number, unlocked);
@@ -86,8 +122,8 @@ export default async function WatchPage({ params }: { params: Promise<{ code: st
       shareHref={shareHref(series.code, title, locale)}
       balance={balance}
       trusted={viewer.trusted}
-      seasonPassLabel={shop?.seriesPass ? t.seasonPassPrice(formatMoney(shop.seriesPass.price, shop.market.currency, locale)) : null}
-      weeklyPassLabel={shop?.weekly ? t.weeklyPassPrice(formatMoney(shop.weekly.price, shop.market.currency, locale)) : null}
+      seasonPassLabel={seasonPassLabel}
+      weeklyPassLabel={weeklyPassLabel}
     />
   );
 }

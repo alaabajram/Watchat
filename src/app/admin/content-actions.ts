@@ -124,7 +124,7 @@ export async function setSeriesStatusAction(fd: FormData) {
     // Same checklist as the series page and the launch wizard.
     const [{ data: s }, { data: eps }] = await Promise.all([
       db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
-      db().from("episodes").select("number, status, stream_uid, wa_video_url_ar").eq("series_id", id),
+      db().from("episodes").select("number, status, stream_uid, wa_video_url_ar, story_ready").eq("series_id", id),
     ]);
     if (!s) done("/admin/series", "Series not found.", "err");
     const r = readiness(s, eps ?? [], licences ?? 0, review?.decision ?? null);
@@ -133,7 +133,7 @@ export async function setSeriesStatusAction(fd: FormData) {
 
   await db().from("series").update({ status }).eq("id", id).eq("tenant_id", admin.tenantId);
   // Ready episodes with a video go live with the series; one without a video stays hidden until it has one.
-  if (status === "live") await db().from("episodes").update({ status: "live" }).eq("series_id", id).eq("status", "in_review").not("stream_uid", "is", null);
+  if (status === "live") await db().from("episodes").update({ status: "live" }).eq("series_id", id).eq("status", "in_review").or("stream_uid.not.is.null,story_ready.eq.true");
   await audit(admin, `series.status.${status}`, "series", id);
   done(back, `Status set to ${status}.`);
 }

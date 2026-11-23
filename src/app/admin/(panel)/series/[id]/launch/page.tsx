@@ -9,7 +9,7 @@ import { Flash } from "@/components/admin/Flash";
 import { MediaUpload } from "@/components/admin/MediaUpload";
 import { LaunchSteps, ReadinessChecklist } from "@/components/admin/ReadinessChecklist";
 import { requireAdmin } from "@/lib/admin/auth";
-import { readiness } from "@/lib/admin/readiness";
+import { hasContent, readiness } from "@/lib/admin/readiness";
 import { countryName } from "@/lib/economy/countries";
 import { db } from "@/lib/supabase";
 import { originalLang, type EpisodeTracks } from "@/lib/storage/tracks";
@@ -39,7 +39,7 @@ export default async function Launch({ params, searchParams }: { params: Promise
 
   const [{ data: s }, { data: episodes }, { count: licences }, { data: review }, { data: markets }] = await Promise.all([
     db().from("series").select("*").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle(),
-    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar, tracks").eq("series_id", id).order("number"),
+    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar, tracks, story_ready").eq("series_id", id).order("number"),
     db().from("licences").select("id", { count: "exact", head: true }).eq("series_id", id),
     db().from("content_reviews").select("decision").eq("series_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     db().from("markets").select("country").eq("tenant_id", admin.tenantId).order("sort"),
@@ -48,7 +48,8 @@ export default async function Launch({ params, searchParams }: { params: Promise
   const eps = episodes ?? [];
   const r = readiness(s, eps, licences ?? 0, review?.decision ?? null);
   const streamReady = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_STREAM_API_TOKEN);
-  const withVideo = eps.filter((e) => e.stream_uid).length;
+  const withVideo = eps.filter(hasContent).length;
+  const isStory = s.format === "story";
 
   return (
     <>
@@ -78,7 +79,29 @@ export default async function Launch({ params, searchParams }: { params: Promise
         </div>
       )}
 
-      {step === 3 && (
+      {step === 3 && isStory && (
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>Episodes</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            This is a story series: each episode is built from scenes (pictures, clips, sound and text) with choices, in the Story builder. Publish each
+            episode there when it&apos;s ready; unpublished episodes stay hidden.
+          </p>
+          <p>
+            <Link className="abtn" href={`/admin/series/${s.id}/story`}>
+              Open the Story builder →
+            </Link>
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            <strong>
+              {withVideo}/{eps.length}
+            </strong>{" "}
+            episodes published{withVideo < eps.length ? " · the rest can be added any time; they stay hidden until then" : " ✓"}.
+          </p>
+          <Nav id={s.id} step={3} next="Next: free episodes & price" />
+        </div>
+      )}
+
+      {step === 3 && !isStory && (
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Episodes</h2>
           <p className="muted" style={{ marginTop: 0 }}>
@@ -119,11 +142,15 @@ export default async function Launch({ params, searchParams }: { params: Promise
               <input name="coins_per_episode" type="number" min={1} max={1000} defaultValue={s.coins_per_episode} required />
               <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>New viewers get 50 Ping, so they can unlock a few before paying.</span>
             </label>
+            {isStory ? (
+              <input type="hidden" name="chat_eps" value={0} />
+            ) : (
             <label>
               Episodes sent in the chat
               <input name="chat_eps" type="number" min={0} max={5} defaultValue={s.wa_episode_count} required />
               <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>0–5, played right in WhatsApp / Telegram before the web link. Must be free.</span>
             </label>
+            )}
           </div>
           <p className="muted">
             Tip: end the free episodes on a cliffhanger. Series and weekly / yearly passes are priced per country in{" "}

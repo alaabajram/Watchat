@@ -1,5 +1,6 @@
 // Launch a series, step 1: the essentials. Everything else comes in the next steps (or later on the series page).
 
+import { STORY_STYLES } from "@/lib/story/types";
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { OriginalLanguageSelect } from "@/components/admin/OriginalLanguageSelect";
@@ -58,6 +59,23 @@ export default async function NewSeries({ searchParams }: { searchParams: Promis
               </label>
             ))}
           </div>
+        </fieldset>
+
+        <fieldset style={{ border: "1px solid var(--border, #e5e5e5)", borderRadius: 10, padding: "10px 14px" }}>
+          <legend style={{ fontWeight: 600 }}>What kind of series?</legend>
+          <label className="inline" style={{ fontWeight: 400, display: "flex", gap: 8, alignItems: "baseline" }}>
+            <input type="radio" name="kind" value="video" defaultChecked /> <strong>Video episodes</strong>
+            <span className="muted">Filmed episodes, played in the vertical player (and the first ones in the chat).</span>
+          </label>
+          {STORY_STYLES.map((st) => (
+            <label key={st.key} className="inline" style={{ fontWeight: 400, display: "flex", gap: 8, alignItems: "baseline" }}>
+              <input type="radio" name="kind" value={st.key} /> <strong>Story · {st.label}</strong>
+              <span className="muted">{st.hint}</span>
+            </label>
+          ))}
+          <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+            Stories are built scene by scene (pictures, clips, sound, text, choices) in the Story builder and play on the web; the chat sends the link.
+          </p>
         </fieldset>
 
         <div className="grid3">

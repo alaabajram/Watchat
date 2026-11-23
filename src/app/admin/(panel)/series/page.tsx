@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
-import { readiness } from "@/lib/admin/readiness";
+import { hasContent, readiness } from "@/lib/admin/readiness";
 import { db } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export default async function SeriesList({ searchParams }: { searchParams: Promi
   const { data: series } = await db()
     .from("series")
     .select(
-      "id, code, title_ar, title_en, status, created_at, poster_url, synopsis_ar, tagline_ar, genres, banner_wa_url, trailer_video_url, wa_episode_count, free_web_until_ep, coins_per_episode, episodes(number, status, stream_uid, wa_video_url_ar), licences(count), content_reviews(decision, created_at)",
+      "id, code, title_ar, title_en, status, created_at, poster_url, synopsis_ar, tagline_ar, genres, banner_wa_url, trailer_video_url, wa_episode_count, free_web_until_ep, coins_per_episode, format, episodes(number, status, stream_uid, wa_video_url_ar, story_ready), licences(count), content_reviews(decision, created_at)",
     )
     .eq("tenant_id", admin.tenantId)
     .order("created_at", { ascending: false });
@@ -39,7 +39,7 @@ export default async function SeriesList({ searchParams }: { searchParams: Promi
         </thead>
         <tbody>
           {(series ?? []).map((s) => {
-            const eps = (s.episodes ?? []) as { number: number; status: string; stream_uid: string | null; wa_video_url_ar: string | null }[];
+            const eps = (s.episodes ?? []) as { number: number; status: string; stream_uid: string | null; wa_video_url_ar: string | null; story_ready: boolean | null }[];
             const reviews = ((s.content_reviews ?? []) as { decision: string; created_at: string }[]).sort((a, b) => b.created_at.localeCompare(a.created_at));
             const r = readiness(s, eps, (s.licences as unknown as { count: number }[])?.[0]?.count ?? 0, reviews[0]?.decision ?? null);
             const firstGap = r.items.find((i) => i.required && !i.done);
@@ -65,8 +65,8 @@ export default async function SeriesList({ searchParams }: { searchParams: Promi
                   <code>{s.code}</code>
                 </td>
                 <td>
-                  {eps.filter((e) => e.stream_uid).length}/{eps.length}
-                  <div className="muted" style={{ fontSize: 12 }}>with video</div>
+                  {eps.filter(hasContent).length}/{eps.length}
+                  <div className="muted" style={{ fontSize: 12 }}>{s.format === "story" ? "story published" : "with video"}</div>
                 </td>
                 <td>
                   <span className={`badge ${s.status}`}>{s.status === "live" ? "live" : s.status}</span>
