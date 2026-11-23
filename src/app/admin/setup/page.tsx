@@ -1,6 +1,7 @@
 // One-time owner setup. Needs ADMIN_SETUP_TOKEN (set in Vercel) and works only while no admin exists.
 
 import { Flash } from "@/components/admin/Flash";
+import { PasswordInput } from "@/components/admin/PasswordInput";
 import { MIN_PASSWORD_LENGTH } from "@/lib/security/password";
 import { setupAction } from "../auth-actions";
 
@@ -30,7 +31,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
         </label>
         <label>
           Password ({MIN_PASSWORD_LENGTH}+ characters, letters and numbers)
-          <input name="password" type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} required />
+          <PasswordInput name="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} />
         </label>
         <button type="submit">Create owner</button>
       </form>
