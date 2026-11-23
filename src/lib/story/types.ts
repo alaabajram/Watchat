@@ -64,6 +64,8 @@ export type Scene = {
   /** Seconds before moving on by itself (0 = wait for a tap). Ignored at choices. */
   auto: number;
   route: Route;
+  /** Picture name from an imported script (e.g. "img_05"): "Match pictures by name" fills `image` from the file with this name. */
+  ref?: string;
 };
 
 export type StoryGraph = { v: 1; start: string | null; scenes: Scene[] };
