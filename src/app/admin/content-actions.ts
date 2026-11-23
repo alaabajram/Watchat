@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { env } from "@/lib/env";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done, int, num, opt, str, uuid } from "@/lib/admin/forms";
 import { AGE_RATINGS, GENRES } from "@/lib/content-meta";
@@ -322,4 +323,26 @@ export async function removeEpisodeTrack(fd: FormData) {
     await audit(admin, "episode.track_removed", "episode", episodeId, { kind, lang });
   }
   done(`/admin/series/${ep.series_id}#ep-${episodeId}`, "Removed.");
+}
+
+/**
+ * An artwork already saved on the series, returned as a data URL so the browser can use it as the master for
+ * the other sizes (canvas needs same-origin pixels; storage hosts don't all send CORS headers).
+ */
+export async function artworkAsMaster(seriesId: string, field: string): Promise<string> {
+  const admin = await requireAdmin("content");
+  if (!["poster_url", "banner_wide_url", "banner_wa_url", "square_url"].includes(field) || !/^[0-9a-f-]{36}$/.test(seriesId)) throw new Error("Bad request.");
+  const { data } = await db().from("series").select(field).eq("id", seriesId).eq("tenant_id", admin.tenantId).maybeSingle();
+  const url = (data as Record<string, string | null> | null)?.[field];
+  if (!url || !/^https:\/\//.test(url)) throw new Error("That artwork is empty.");
+  // Only our own storage: Cloudflare Images, the R2 public address, or the Supabase project.
+  const host = new URL(url).host;
+  const own = [new URL(env.supabaseUrl).host, process.env.R2_PUBLIC_URL ? new URL(process.env.R2_PUBLIC_URL).host : ""].filter(Boolean);
+  if (host !== "imagedelivery.net" && !own.includes(host)) throw new Error("That artwork isn't stored on Watchat's storage; upload it as the master instead.");
+  const res = await fetch(url, { redirect: "error" });
+  const type = res.headers.get("content-type") ?? "";
+  if (!res.ok || !/^image\/(jpeg|png|webp)/.test(type)) throw new Error("Couldn't read that artwork.");
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length > 15 * 1048576) throw new Error("That artwork is too large to reuse (over 15 MB).");
+  return `data:${type.split(";")[0]};base64,${bytes.toString("base64")}`;
 }
