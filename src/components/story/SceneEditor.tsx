@@ -79,7 +79,7 @@ export function SceneEditor(p: Props) {
       </div>
 
       <div className="story-media-grid">
-        <MediaField seriesId={p.seriesId} label="Picture" type="image" value={s.image} onChange={(image) => set({ image })} hint="Vertical 9:16 works best (1080×1920)." />
+        <MediaField seriesId={p.seriesId} label={s.ref ? `Picture · ${s.ref}` : "Picture"} type="image" value={s.image} onChange={(image) => set({ image })} hint={s.ref ? `Script picture name: ${s.ref}.jpg` : "Vertical 9:16 works best (1080×1920)."} />
         <MediaField seriesId={p.seriesId} label="Clip (instead of a picture)" type="video" value={s.video} onChange={(video) => set({ video })} hint="Short MP4, plays with sound." />
         <MediaField seriesId={p.seriesId} label="Voice / sound" type="audio" value={s.audio} onChange={(audio) => set({ audio })} hint="Plays once with this scene." />
         <div>

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addStoryEpisode,
+  importStoryScript,
   publishStory,
   renameStoryEpisode,
   saveCharacters,
@@ -15,6 +16,7 @@ import {
   unpublishStory,
 } from "@/app/admin/story-actions";
 import { flagsSetIn, targetsOf } from "@/lib/story/engine";
+import { applyPicture, pictureRefs, refFromFileName } from "@/lib/story/import";
 import { STORY_STYLES, blankScene, nextId, type Character, type Scene, type StoryGraph, type StoryStyle } from "@/lib/story/types";
 import { hasErrors, validateStory, type StoryIssue } from "@/lib/story/validate";
 import { SceneEditor } from "./SceneEditor";
@@ -193,6 +195,41 @@ export function StoryBuilder(p: Props) {
     setBusy(null);
   };
 
+  // Pictures named after the script's picture names (img_01.jpg …): each is uploaded once and put on every
+  // scene, in every episode, that uses that name. Changed episodes are saved as drafts.
+  const matchPictures = async (files: FileList | null) => {
+    if (!files?.length) return;
+    await flush();
+    const wanted = new Set(pictureRefs(episodes.map((e) => e.draft)).map((r) => r.ref));
+    const list = [...files].filter((f) => wanted.has(refFromFileName(f.name)));
+    const skipped = files.length - list.length;
+    let next = episodes;
+    const changed = new Set<string>();
+    let placed = 0;
+    for (let k = 0; k < list.length; k++) {
+      setBusy(`Uploading ${k + 1}/${list.length}…`);
+      try {
+        const image = await uploadStoryFile(p.seriesId, list[k], "image");
+        const ref = refFromFileName(list[k].name);
+        next = next.map((e) => {
+          const r = applyPicture(e.draft, ref, image);
+          if (!r.count) return e;
+          changed.add(e.id);
+          placed += r.count;
+          return { ...e, draft: r.story };
+        });
+        setEpisodes(next);
+      } catch (e) {
+        setNote({ ok: false, text: e instanceof Error ? e.message : "Upload failed" });
+        break;
+      }
+    }
+    setBusy("Saving…");
+    for (const e of next) if (changed.has(e.id)) await saveStoryDraft(e.id, e.draft);
+    setBusy(null);
+    setNote({ ok: true, text: `${list.length} picture(s) placed on ${placed} scene(s).${skipped ? ` ${skipped} file(s) skipped: their names don't match any picture name.` : ""}` });
+  };
+
   const publish = async () => {
     if (!ep || !story) return;
     await flush();
@@ -292,6 +329,17 @@ export function StoryBuilder(p: Props) {
           <option key={f} value={f} />
         ))}
       </datalist>
+
+      <ImportPanel
+        seriesId={p.seriesId}
+        refs={pictureRefs(episodes.map((e) => e.draft))}
+        busy={busy}
+        onPictures={(f) => void matchPictures(f)}
+        onImported={async () => {
+          await flush();
+          window.location.reload();
+        }}
+      />
 
       <div className="story-builder">
         {/* Episodes */}
@@ -620,5 +668,93 @@ function CharactersEditor(p: { seriesId: string; value: Character[]; chat: boole
         {state && <span className="muted" style={{ fontSize: 13 }}>{state}</span>}
       </div>
     </div>
+  );
+}
+
+/** Import a story script (JSON from the story prompt) and match pictures by their names. */
+function ImportPanel(p: { seriesId: string; refs: { ref: string; scenes: number; missing: number }[]; busy: string | null; onPictures: (f: FileList | null) => void; onImported: () => void }) {
+  const [text, setText] = useState("");
+  const [state, setState] = useState<{ ok: boolean; text: string; notes?: string[] } | null>(null);
+  const [working, setWorking] = useState(false);
+  const missing = p.refs.filter((r) => r.missing > 0);
+  return (
+    <details className="card" open={p.refs.length > 0 && missing.length > 0}>
+      <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+        Import a story script & pictures
+        {p.refs.length > 0 && (
+          <span className="muted" style={{ fontWeight: 500 }}>
+            {" "}
+            · pictures {p.refs.length - missing.length}/{p.refs.length} placed
+          </span>
+        )}
+      </summary>
+      <div className="grid2" style={{ marginTop: 12, alignItems: "start" }}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <strong>1. Paste the script</strong>
+          <span className="muted" style={{ fontSize: 13 }}>
+            Paste ChatGPT&apos;s whole reply (or just its JSON block). Characters are added, and each episode&apos;s scenes, choices and routes become its draft. Episodes
+            that already have scenes get the imported ones instead (their live version stays until you publish).
+          </span>
+          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder='{ "characters": [...], "episodes": [...] }' style={{ fontFamily: "monospace", fontSize: 12 }} />
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              type="button"
+              className="small"
+              disabled={!text.trim() || working}
+              onClick={async () => {
+                setWorking(true);
+                setState(null);
+                try {
+                  const r = await importStoryScript(p.seriesId, text);
+                  setState({
+                    ok: true,
+                    text: `Imported ${r.episodes.map((e) => `episode ${e.number} (${e.scenes} scenes${e.created ? ", new" : ""})`).join(", ")}. Reloading…`,
+                    notes: r.notes,
+                  });
+                  window.setTimeout(p.onImported, r.notes.length ? 2500 : 800);
+                } catch (e) {
+                  setState({ ok: false, text: e instanceof Error ? e.message : "Import failed" });
+                } finally {
+                  setWorking(false);
+                }
+              }}
+            >
+              {working ? "Importing…" : "Import"}
+            </button>
+            {state && <span style={{ fontSize: 13, color: state.ok ? "#15803d" : "#b91c1c" }}>{state.text}</span>}
+          </div>
+          {state?.notes && state.notes.length > 0 && (
+            <ul className="story-issues">
+              {state.notes.map((n, i) => (
+                <li key={i}>⚠ {n}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          <strong>2. Add the pictures</strong>
+          {p.refs.length === 0 ? (
+            <span className="muted" style={{ fontSize: 13 }}>After an import, the picture names (img_01, img_02, …) are listed here.</span>
+          ) : (
+            <>
+              <span className="muted" style={{ fontSize: 13 }}>
+                Name each file after its picture (img_01.jpg, img_02.png, …) and drop them all at once: each goes on every scene that uses it, in every episode.
+              </span>
+              <label className="story-drop" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); p.onPictures(e.dataTransfer.files); }}>
+                {p.busy ?? "⬆ Drop or choose the pictures"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden disabled={Boolean(p.busy)} onChange={(e) => p.onPictures(e.target.files)} />
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {p.refs.map((r) => (
+                  <span key={r.ref} className="badge" style={{ background: r.missing ? "#fff4dc" : "#e7f7ee", color: r.missing ? "#8a5a0b" : "#15803d" }} title={`${r.scenes} scene(s)`}>
+                    {r.missing ? "○" : "✓"} {r.ref} · {r.scenes}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </details>
   );
 }

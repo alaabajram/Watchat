@@ -5,6 +5,7 @@
 import { LIMITS, type Bi, type Character, type Choice, type Motion, type Route, type Scene, type StoryGraph, type StoryMedia, type StoryMediaType } from "./types";
 
 const ID = /^[a-z0-9_-]{1,40}$/i;
+const REF = /^[a-z0-9_.-]{1,40}$/i;
 const FLAG = /^[a-z0-9_-]{1,40}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
 const MOTION_KEYS: Motion[] = ["none", "zoom_in", "zoom_out", "pan_start", "pan_end"];
@@ -63,6 +64,7 @@ function sanitizeRoute(v: unknown): Route {
 function sanitizeScene(v: unknown): Scene | null {
   const o = obj(v);
   if (typeof o.id !== "string" || !ID.test(o.id)) return null;
+  const ref = typeof o.ref === "string" ? o.ref.trim() : typeof o.image_ref === "string" ? o.image_ref.trim() : "";
   return {
     id: o.id,
     name: str(o.name, LIMITS.name).trim(),
@@ -76,6 +78,7 @@ function sanitizeScene(v: unknown): Scene | null {
     motion: MOTION_KEYS.includes(o.motion as Motion) ? (o.motion as Motion) : "none",
     auto: int(o.auto, 0, LIMITS.maxAuto),
     route: sanitizeRoute(o.route),
+    ...(REF.test(ref) ? { ref: ref.toLowerCase() } : {}),
   };
 }
 

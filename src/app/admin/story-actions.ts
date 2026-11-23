@@ -11,6 +11,7 @@ import { randomToken } from "@/lib/crypto";
 import { publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
 import type { UploadTarget } from "@/lib/storage/refs";
 import { flagsSetIn } from "@/lib/story/engine";
+import { parseStoryImport } from "@/lib/story/import";
 import { sanitizeCharacters, sanitizeStory, withUrls } from "@/lib/story/sanitize";
 import { STORY_STYLES, STORY_UPLOADS, type Character, type StoryGraph, type StoryStyle } from "@/lib/story/types";
 import { hasErrors, validateStory, type StoryIssue } from "@/lib/story/validate";
@@ -137,4 +138,38 @@ export async function storyFileUrl(seriesId: string, path: string): Promise<stri
   const url = pathCheck(s.code)(path) && !path.includes("..") ? publicUrlFor(path) : null;
   if (!url) throw new Error("Bad upload.");
   return url;
+}
+
+/**
+ * Import a story script (JSON from the story prompt): characters are merged (same id → replaced), each episode's
+ * scenes become its draft (created when the episode doesn't exist yet). Nothing is published; live versions stay.
+ */
+export async function importStoryScript(seriesId: string, text: string): Promise<{ episodes: { number: number; created: boolean; scenes: number }[]; notes: string[] }> {
+  const admin = await requireAdmin("content");
+  const s = await ownSeries(admin.tenantId, seriesId);
+  if (s.format !== "story") throw new Error("Turn this series into a story series first.");
+  const parsed = parseStoryImport(text.slice(0, 2_000_000));
+
+  const current = sanitizeCharacters(s.story_characters);
+  const incoming = new Map(parsed.characters.map((c) => [c.id, c]));
+  const characters = sanitizeCharacters([...current.map((c) => (incoming.has(c.id) ? { ...incoming.get(c.id)!, avatar: c.avatar } : c)), ...parsed.characters.filter((c) => !current.some((x) => x.id === c.id))]);
+  await db().from("series").update({ story_characters: characters }).eq("id", seriesId).eq("tenant_id", admin.tenantId);
+
+  const { data: existing } = await db().from("episodes").select("id, number").eq("series_id", seriesId);
+  const byNumber = new Map((existing ?? []).map((e) => [e.number as number, e.id as string]));
+  const done: { number: number; created: boolean; scenes: number }[] = [];
+  for (const ep of parsed.episodes) {
+    const story = clean(ep.story, s.code);
+    const titles = { title_ar: ep.title.ar || `الحلقة ${ep.number}`, title_en: ep.title.en || `Episode ${ep.number}` };
+    const id = byNumber.get(ep.number);
+    if (id) await db().from("episodes").update({ ...titles, story_draft: story }).eq("id", id);
+    else {
+      const { error } = await db().from("episodes").insert({ series_id: seriesId, number: ep.number, ...titles, status: "draft", story_draft: story });
+      if (error) throw new Error(`Couldn't add episode ${ep.number}.`);
+    }
+    done.push({ number: ep.number, created: !id, scenes: story.scenes.length });
+  }
+  await audit(admin, "series.story_imported", "series", seriesId, { episodes: done.map((d) => d.number), characters: parsed.characters.length });
+  revalidatePath(`/admin/series/${seriesId}/story`);
+  return { episodes: done, notes: parsed.notes };
 }
