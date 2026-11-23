@@ -10,6 +10,7 @@ import { suggestCode } from "@/lib/admin/readiness";
 import { GENRES } from "@/lib/content-meta";
 import { db } from "@/lib/supabase";
 import { originalLang } from "@/lib/storage/tracks";
+import { STORY_STYLES } from "@/lib/story/types";
 
 const CODE_RE = /^[A-Z]{3,}\d{1,3}$/;
 const launch = (id: string, step: number) => `/admin/series/${id}/launch?step=${step}`;
@@ -34,6 +35,8 @@ export async function createLaunchSeriesAction(fd: FormData) {
     code = suggestCode(titleEn, (taken ?? []).map((t) => t.code as string));
   }
 
+  const kind = str(fd, "kind", 20);
+  const storyStyle = STORY_STYLES.find((x) => x.key === kind)?.key ?? null;
   const genres = [...new Set(fd.getAll("genres").map(String))].filter((g) => (GENRES as readonly string[]).includes(g));
   const { data: series, error } = await db()
     .from("series")
@@ -49,6 +52,8 @@ export async function createLaunchSeriesAction(fd: FormData) {
       dialect: originalLang(str(fd, "dialect", 30)),
       genres,
       status: "draft",
+      // Story series are built scene by scene and play on the web only (the chat sends the link, no chat episodes).
+      ...(storyStyle ? { format: "story", story_style: storyStyle, wa_episode_count: 0 } : {}),
     })
     .select("id")
     .single();
@@ -67,7 +72,7 @@ export async function saveLaunchPriceAction(fd: FormData) {
   const s = await own(admin.tenantId, id);
   if (!s || !id) done("/admin/series", "Series not found.", "err");
   const free = Math.max(0, int(fd, "free_eps", 5));
-  const chat = Math.min(5, Math.max(0, int(fd, "chat_eps", 3)));
+  const chat = s.format === "story" ? 0 : Math.min(5, Math.max(0, int(fd, "chat_eps", 3)));
   const coins = int(fd, "coins_per_episode", 10);
   if (coins < 1 || coins > 1000) done(launch(id, 4), "Ping per episode must be 1–1000.", "err");
   if (chat > free) done(launch(id, 4), "Episodes sent in the chat must be free too: raise the free episodes or lower the chat ones.", "err");
@@ -112,7 +117,7 @@ export async function finishLaunchAction(fd: FormData) {
   if (str(fd, "publish", 10) !== "live") done(`/admin/series/${id}`, "Saved as a draft. Publish from the checklist when you're ready.");
 
   const [{ data: episodes }, { count: licences }, { data: review }] = await Promise.all([
-    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar").eq("series_id", id),
+    db().from("episodes").select("number, status, stream_uid, wa_video_url_ar, story_ready").eq("series_id", id),
     db().from("licences").select("id", { count: "exact", head: true }).eq("series_id", id),
     db().from("content_reviews").select("decision").eq("series_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
@@ -123,7 +128,7 @@ export async function finishLaunchAction(fd: FormData) {
   }
 
   // Episodes with a video go live with the series; the rest stay hidden until their video is uploaded.
-  await db().from("episodes").update({ status: "live" }).eq("series_id", id).in("status", ["draft", "in_review"]).not("stream_uid", "is", null);
+  await db().from("episodes").update({ status: "live" }).eq("series_id", id).in("status", ["draft", "in_review"]).or("stream_uid.not.is.null,story_ready.eq.true");
   await db().from("series").update({ status: "live" }).eq("id", id).eq("tenant_id", admin.tenantId);
   await audit(admin, "series.status.live", "series", id, { via: "launch" });
   done(`/admin/series/${id}`, `🎉 ${s.code} is live. Viewers can send ${s.code} in WhatsApp or Telegram to start.`);

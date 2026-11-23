@@ -317,3 +317,110 @@
 
 /* Telegram Mini App in full screen: keep pages clear of Telegram's Close / ⋯ buttons (set by TelegramMiniApp). */
 html.wc-in-telegram body { padding-top: var(--wc-tg-top, 0px); }
+
+/* ---------------- Story reader (story series; also the Story builder's preview) ----------------
+   Fills its parent: the 9:16 watch frame for viewers, a phone mock-up in the builder. */
+.wc-story {
+  position: absolute; inset: 0; overflow: hidden; background: #000; color: #fff; cursor: pointer; font-family: inherit;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.wc-story-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; background: #000; }
+.wc-story-stage { position: absolute; inset: 0; overflow: hidden; }
+.wc-story-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; animation: wc-story-in 0.5s ease both; }
+@keyframes wc-story-in { from { opacity: 0; } to { opacity: 1; } }
+/* Slow camera moves (Ken Burns): long and gentle, both in RTL and LTR ("start side" follows the language). */
+.wc-motion-zoom_in { animation: wc-story-in 0.5s ease both, wc-zoom-in 14s ease-out both; }
+.wc-motion-zoom_out { animation: wc-story-in 0.5s ease both, wc-zoom-out 14s ease-out both; }
+.wc-motion-pan_start { animation: wc-story-in 0.5s ease both, wc-pan-left 14s ease-in-out both; }
+.wc-motion-pan_end { animation: wc-story-in 0.5s ease both, wc-pan-right 14s ease-in-out both; }
+[dir="rtl"] .wc-motion-pan_start { animation-name: wc-story-in, wc-pan-right; }
+[dir="rtl"] .wc-motion-pan_end { animation-name: wc-story-in, wc-pan-left; }
+@keyframes wc-zoom-in { from { transform: scale(1); } to { transform: scale(1.18); } }
+@keyframes wc-zoom-out { from { transform: scale(1.18); } to { transform: scale(1); } }
+@keyframes wc-pan-left { from { transform: scale(1.2) translateX(6%); } to { transform: scale(1.2) translateX(-6%); } }
+@keyframes wc-pan-right { from { transform: scale(1.2) translateX(-6%); } to { transform: scale(1.2) translateX(6%); } }
+
+/* Visual novel / motion comic: dialogue box with the speaker's name tag */
+.wc-story-bottom {
+  position: absolute; left: 12px; right: 12px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.wc-story-photo .wc-story-bottom { left: 0; right: 0; bottom: 0; gap: 0; }
+.wc-story-photo .wc-story-choices { padding: 0 14px 12px; background: rgba(0, 0, 0, 0.85); }
+.wc-story-box {
+  position: relative;
+  padding: 26px 18px 16px; border-radius: 20px; background: rgba(15, 13, 20, 0.78); border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.wc-story-box p, .wc-story-caption p { margin: 0; font-size: 18px; line-height: 1.7; white-space: pre-wrap; }
+.wc-story-speaker {
+  position: absolute; top: -14px; inset-inline-start: 16px; padding: 4px 14px; border-radius: 999px; font-weight: 700; font-size: 14px; color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.wc-story-motion_comic .wc-story-box { background: rgba(255, 255, 255, 0.92); color: #15121b; border-radius: 6px 22px 22px 22px; }
+.wc-story-motion_comic .wc-story-speaker { color: #fff; filter: none; }
+.wc-story-motion_comic .wc-story-speaker[data-narrator] { background: #15121b !important; }
+/* Photo story: caption over a dark fade, no box */
+.wc-story-caption {
+  padding: 90px 20px calc(30px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85), transparent); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.wc-story-caption p { font-size: 19px; font-weight: 500; }
+.wc-story-tap {
+  position: absolute; inset-inline-end: 18px; bottom: calc(4px + env(safe-area-inset-bottom)); z-index: 3; font-size: 12px; opacity: 0.6;
+  animation: wc-story-blink 1.6s ease-in-out infinite; pointer-events: none;
+}
+@keyframes wc-story-blink { 50% { opacity: 0.2; } }
+
+/* Choices: stacked above the box; premium ones glow coral with their Ping price */
+.wc-story-choices { display: flex; flex-direction: column; gap: 10px; cursor: default; }
+/* Photo story: choices sit under the caption on the same dark fade */
+.wc-story-photo .wc-story-bottom { flex-direction: column-reverse; }
+.wc-story-choice {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 10px 18px; border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(20, 16, 26, 0.72); color: #fff; font: inherit; font-weight: 600; font-size: 17px;
+  text-align: start; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: wc-story-rise 0.35s ease both;
+}
+.wc-story-choice:nth-child(2) { animation-delay: 0.06s; }
+.wc-story-choice:nth-child(3) { animation-delay: 0.12s; }
+.wc-story-choice:nth-child(4) { animation-delay: 0.18s; }
+.wc-story-choice.premium { border-color: var(--wc-coral); box-shadow: 0 0 0 1px var(--wc-coral), 0 8px 24px rgba(255, 90, 72, 0.3); }
+.wc-story-choice:disabled { opacity: 0.6; }
+.wc-story-price { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; background: var(--wc-coral); font-size: 14px; flex-shrink: 0; }
+.wc-story-note { text-align: center; font-size: 14px; padding: 6px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.55); }
+.wc-story-link { color: var(--wc-mint) !important; font-weight: 700; text-decoration: underline; }
+@keyframes wc-story-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* End card and the first "tap to start" (which also lets the sound play) */
+.wc-story-end, .wc-story-start {
+  position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 24px; text-align: center; background: rgba(8, 6, 12, 0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: default;
+}
+.wc-story-end strong { font-size: 24px; }
+.wc-story-end .wc-btn { width: min(100%, 320px); }
+.wc-btn.wc-btn-ghost { background: rgba(255, 255, 255, 0.1); color: #fff !important; box-shadow: none; border: 1px solid rgba(255, 255, 255, 0.2); }
+.wc-story-start { border: 0; color: #fff; font: inherit; font-weight: 700; font-size: 18px; cursor: pointer; background: rgba(8, 6, 12, 0.55); }
+
+/* Chat story: a message thread on a dark wallpaper */
+.wc-story-chat { background: radial-gradient(120% 80% at 50% 0%, #1d1828, #0d0b12); }
+.wc-chat {
+  position: absolute; inset: 0; overflow-y: auto; padding: calc(70px + var(--wc-tg-top, 0px)) 12px 240px; display: flex; flex-direction: column; gap: 8px;
+  scrollbar-width: none;
+}
+.wc-chat::-webkit-scrollbar { display: none; }
+.wc-chat-row { display: flex; align-items: flex-end; gap: 8px; max-width: 84%; animation: wc-story-rise 0.3s ease both; }
+.wc-chat-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+.wc-chat-avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; object-fit: cover; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.wc-chat-bubble {
+  display: flex; flex-direction: column; gap: 4px; padding: 9px 13px; border-radius: 18px; border-end-start-radius: 6px; background: #2a2433;
+  font-size: 16px; line-height: 1.55; white-space: pre-wrap; overflow: hidden;
+}
+.wc-chat-row.mine .wc-chat-bubble { background: #1f8f66; border-end-start-radius: 18px; border-end-end-radius: 6px; }
+.wc-chat-bubble b { font-size: 13px; }
+.wc-chat-bubble img, .wc-chat-bubble video { width: 100%; max-width: 240px; border-radius: 12px; display: block; }
+.wc-chat-typing { opacity: 0.7; font-style: italic; }
+.wc-chat-note { align-self: center; font-size: 13px; padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); text-align: center; max-width: 90%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wc-story-media, .wc-story-choice, .wc-chat-row { animation: none !important; }
+}

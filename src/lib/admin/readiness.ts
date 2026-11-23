@@ -13,8 +13,13 @@ export type ReadinessSeries = {
   wa_episode_count: number;
   free_web_until_ep: number;
   coins_per_episode: number;
+  /** "story" series are built from scenes (Story builder) instead of videos. */
+  format?: string | null;
 };
-export type ReadinessEpisode = { number: number; status: string; stream_uid: string | null; wa_video_url_ar: string | null };
+export type ReadinessEpisode = { number: number; status: string; stream_uid: string | null; wa_video_url_ar: string | null; story_ready?: boolean | null };
+
+/** An episode viewers can open: its web video (video series) or its published story (story series). */
+export const hasContent = (e: { stream_uid: string | null; story_ready?: boolean | null }) => Boolean(e.stream_uid) || Boolean(e.story_ready);
 
 export type CheckItem = {
   key: string;
@@ -32,9 +37,10 @@ export type Readiness = { items: CheckItem[]; left: number; ready: boolean; summ
 
 export function readiness(s: ReadinessSeries, episodes: ReadinessEpisode[], licences: number, lastReview: string | null): Readiness {
   const eps = episodes.filter((e) => e.status !== "archived");
-  const withVideo = eps.filter((e) => e.stream_uid).length;
-  const freeMissing = eps.filter((e) => e.number <= s.free_web_until_ep && !e.stream_uid).length;
-  const chat = eps.filter((e) => e.number <= s.wa_episode_count);
+  const story = s.format === "story";
+  const withVideo = eps.filter(hasContent).length;
+  const freeMissing = eps.filter((e) => e.number <= s.free_web_until_ep && !hasContent(e)).length;
+  const chat = story ? [] : eps.filter((e) => e.number <= s.wa_episode_count);
   const chatReady = chat.filter((e) => e.wa_video_url_ar).length;
 
   const items: CheckItem[] = [
@@ -43,21 +49,21 @@ export function readiness(s: ReadinessSeries, episodes: ReadinessEpisode[], lice
     {
       // Needed: every free episode has its video (episodes without one simply stay hidden until they do).
       key: "videos",
-      label: "Episode videos",
+      label: story ? "Episode stories" : "Episode videos",
       done: withVideo > 0 && freeMissing === 0,
       detail:
         eps.length === 0
           ? "No episodes yet"
-          : `${withVideo}/${eps.length} uploaded${freeMissing ? ` · ${freeMissing} free episode${freeMissing === 1 ? "" : "s"} missing` : withVideo < eps.length ? " · the rest stay hidden until uploaded" : ""}`,
+          : `${withVideo}/${eps.length} ${story ? "published" : "uploaded"}${freeMissing ? ` · ${freeMissing} free episode${freeMissing === 1 ? "" : "s"} missing` : withVideo < eps.length ? ` · the rest stay hidden until ${story ? "published" : "uploaded"}` : ""}`,
       required: true,
       step: 3,
     },
     {
       key: "chat",
       label: "WhatsApp versions",
-      done: s.wa_episode_count === 0 || (chat.length > 0 && chatReady === chat.length),
-      detail: s.wa_episode_count === 0 ? "No episodes sent in the chat" : `${chatReady}/${Math.max(chat.length, s.wa_episode_count)} for the chat episodes`,
-      required: s.wa_episode_count > 0,
+      done: story || s.wa_episode_count === 0 || (chat.length > 0 && chatReady === chat.length),
+      detail: story ? "Story series play on the web; the chat sends the link" : s.wa_episode_count === 0 ? "No episodes sent in the chat" : `${chatReady}/${Math.max(chat.length, s.wa_episode_count)} for the chat episodes`,
+      required: !story && s.wa_episode_count > 0,
       step: 3,
     },
     {
