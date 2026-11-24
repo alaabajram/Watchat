@@ -152,3 +152,31 @@ describe("story sanitize", () => {
     ]);
   });
 });
+
+describe("choices change the story", () => {
+  const sc = (id: string, patch: Partial<Scene> = {}): Scene => ({ ...blankScene(id, id), text: { ar: "نص", en: "Text" }, ...patch });
+  const opt = (id: string, to: string | null, sets: string | null = null) => ({ id, label: { ar: id, en: id }, to, price: 0, sets });
+  const g = (options: ReturnType<typeof opt>[]): StoryGraph => ({
+    v: 1,
+    start: "a",
+    scenes: [sc("a", { route: { type: "choices", options } }), sc("b", { route: { type: "end", ending: null } }), sc("c", { route: { type: "end", ending: null } })],
+  });
+  const errs = (x: StoryGraph) => validateStory(x).filter((i) => i.level === "error").map((i) => i.message);
+
+  it("refuses choices that go to the same scene and remember the same thing", () => {
+    expect(errs(g([opt("c1", "b"), opt("c2", "b")])).join()).toMatch(/both go to scene 2 and change nothing/);
+    expect(errs(g([opt("c1", null), opt("c2", null)])).join()).toMatch(/the end/);
+  });
+
+  it("allows different next scenes, or the same scene with different memories (with a note)", () => {
+    expect(errs(g([opt("c1", "b"), opt("c2", "c"), opt("c3", "b", "brave")]))).toEqual([]);
+    const same = validateStory(g([opt("c1", "b", "kind"), opt("c2", "b", "cold")]));
+    expect(same.filter((i) => i.level === "error")).toEqual([]);
+    expect(same.some((i) => i.level === "warning" && /only matters/.test(i.message))).toBe(true);
+  });
+
+  it("keeps up to 6 choices", () => {
+    const six = sanitizeStory({ scenes: [{ id: "a", text: { en: "x" }, route: { type: "choices", options: Array.from({ length: 8 }, (_, i) => opt(`c${i}`, null)) } }] });
+    expect(six.scenes[0].route.type === "choices" && six.scenes[0].route.options.length).toBe(6);
+  });
+});

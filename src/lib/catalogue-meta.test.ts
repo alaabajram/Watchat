@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactCount, rankByViews } from "./catalogue-meta";
+import { compactCount, isSeriesKind, kindLabel, rankByViews, seriesKind } from "./catalogue-meta";
 
 describe("catalogue ranking", () => {
   it("ranks by viewers and skips series nobody watched", () => {
@@ -10,5 +10,19 @@ describe("catalogue ranking", () => {
   it("shows compact counts", () => {
     expect(compactCount(42500)).toBe("42.5K");
     expect(compactCount(890)).toBe("890");
+  });
+});
+
+
+describe("series kinds", () => {
+  it("maps video series to micro drama and story looks to their kind", () => {
+    expect(seriesKind("video", "chat")).toBe("micro_drama");
+    expect(seriesKind(null, null)).toBe("micro_drama");
+    expect(seriesKind("story", "chat")).toBe("chat");
+    expect(seriesKind("story", "photo")).toBe("photo");
+    expect(seriesKind("story", "weird")).toBe("visual_novel");
+    expect(kindLabel("motion_comic", "en")).toBe("Motion comic");
+    expect(isSeriesKind("micro_drama")).toBe(true);
+    expect(isSeriesKind("anime")).toBe(false);
   });
 });

@@ -2,6 +2,7 @@
 // card (poster with language badge and tag) and the small language badge. Server components.
 
 /* eslint-disable @next/next/no-img-element */
+import { kindLabel } from "@/lib/catalogue-meta";
 import Link from "next/link";
 import { FlameIcon, PlayIcon, TranslateIcon } from "@/components/brand/icons";
 import { compactCount, type HomeSeries } from "@/lib/content";
@@ -66,7 +67,10 @@ export function LikeCard({ s, locale, tag }: { s: HomeSeries; locale: Locale; ta
         </span>
       </div>
       <strong className="wc-clamp1">{title}</strong>
-      <span className="wc-sub wc-clamp1">{s.genres.slice(0, 2).map((g) => genreLabel(g, locale)).join(" · ") || webCopy(locale).episodesCount(s.total)}</span>
+      <span className="wc-sub wc-clamp1">
+        {s.kind !== "micro_drama" && <span className="wc-kind-tag">{kindLabel(s.kind, locale)}</span>}
+        {s.genres.slice(0, s.kind === "micro_drama" ? 2 : 1).map((g) => genreLabel(g, locale)).join(" · ") || webCopy(locale).episodesCount(s.total)}
+      </span>
     </Link>
   );
 }

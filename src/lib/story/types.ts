@@ -13,10 +13,10 @@ export const STORY_STYLES: { key: StoryStyle; label: string; hint: string }[] = 
   { key: "photo", label: "Photo story", hint: "Photos of real actors with captions, full screen." },
 ];
 export const STYLE_LABEL: Record<StoryStyle, Bi> = {
-  visual_novel: { ar: "رواية مصوّرة", en: "Visual novel" },
+  visual_novel: { ar: "رواية بصرية", en: "Visual novel" },
   chat: { ar: "قصة محادثة", en: "Chat story" },
   motion_comic: { ar: "كوميك متحرك", en: "Motion comic" },
-  photo: { ar: "قصة مصوّرة", en: "Photo story" },
+  photo: { ar: "قصة بالصور", en: "Photo story" },
 };
 
 export type StoryMediaType = "image" | "video" | "audio";
@@ -88,7 +88,7 @@ export const EMPTY_STORY: StoryGraph = { v: 1, start: null, scenes: [] };
 
 export const LIMITS = {
   scenes: 200,
-  choices: 4,
+  choices: 6,
   text: 600,
   label: 60,
   name: 80,

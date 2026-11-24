@@ -1,7 +1,7 @@
 // Read-side helpers for the web player.
 
 import { originalLang, type EpisodeTracks, type LangKey } from "@/lib/storage/tracks";
-import { compactCount, rankByViews } from "./catalogue-meta";
+import { compactCount, rankByViews, seriesKind, type SeriesKind } from "./catalogue-meta";
 import { sanitizeCharacters, sanitizeStory } from "./story/sanitize";
 import { STORY_STYLES, type Character, type StoryGraph, type StoryStyle } from "./story/types";
 export { compactCount, rankByViews };
@@ -243,6 +243,8 @@ export type HomeSeries = {
   posterUrl: string | null;
   bannerUrl: string | null; // wide banner, falling back to the poster
   genres: string[];
+  /** Micro drama (video) or the story look: what Explore filters by. */
+  kind: SeriesKind;
   total: number;
   createdAt: string;
   /** Episodes planned (released + coming); equal to `total` when the series is complete. */
@@ -267,7 +269,7 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
   const [{ data: catalog }, { data: rows }] = await Promise.all([
     db()
       .from("series")
-      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, created_at, license_countries, episodes(number, status, release_at, tracks)")
+      .select("id, code, title_ar, title_en, tagline_ar, tagline_en, poster_url, banner_wide_url, genres, format, story_style, created_at, license_countries, episodes(number, status, release_at, tracks)")
       .eq("tenant_id", tenantId)
       .eq("status", "live")
       .order("created_at", { ascending: false }),
@@ -304,6 +306,7 @@ export async function getHome(viewerId: string): Promise<{ catalogue: HomeSeries
       posterUrl: s.poster_url,
       bannerUrl: s.banner_wide_url ?? s.poster_url,
       genres: (s.genres as string[] | null) ?? [],
+      kind: seriesKind(s.format, s.story_style),
       total,
       createdAt: s.created_at,
       planned: Math.max(planned, total),

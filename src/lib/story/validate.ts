@@ -54,6 +54,23 @@ export function validateStory(g: StoryGraph, opts: { flagsKnown?: string[]; char
         if (c.to === s.id) err(s.id, `Scene ${n}: a choice leads back to the same scene.`);
       }
       if (r.options.length > 0 && r.options.every((c) => c.price > 0)) err(s.id, `Scene ${n}: every choice costs Ping. Keep one free choice so nobody gets stuck.`);
+      // A choice has to change something: its own next scene, or at least what it remembers for later.
+      const where = (to: string | null) => (to ? `scene ${g.scenes.findIndex((x) => x.id === to) + 1}` : "the end");
+      const say = (c: (typeof r.options)[number]) => `"${c.label.en || c.label.ar || c.id}"`;
+      const groups = new Map<string, typeof r.options>();
+      for (const c of r.options) {
+        const k = `${c.to ?? "∅"}|${c.sets ?? ""}`;
+        groups.set(k, [...(groups.get(k) ?? []), c]);
+      }
+      for (const same of groups.values())
+        if (same.length > 1)
+          err(
+            s.id,
+            `Scene ${n}: ${same.map(say).join(" and ")} both go to ${where(same[0].to)} and change nothing. Give each choice its own next scene (or a different "Remember as" that a later scene reacts to).`,
+          );
+      const targets = new Set(r.options.map((c) => c.to ?? "∅"));
+      if (r.options.length > 1 && targets.size === 1 && groups.size === r.options.length)
+        warn(s.id, `Scene ${n}: every choice goes to ${where(r.options[0].to)}; the choice only matters where a later scene depends on what it remembers.`);
     }
     if (r.type === "branch") {
       if (!r.flag) err(s.id, `Scene ${n}: pick which earlier choice it depends on.`);
