@@ -1,4 +1,4 @@
-// Chat-story "feel": tiny message sounds and haptics, so a chat story feels like a real chat app.
+// Story "feel": tiny message sounds and haptics, so every story series feels like a chat app.
 // - Sounds are made in code with Web Audio (no files to make or load, nothing to pay for): a soft pop for an
 //   incoming bubble, a brighter blip for the viewer's own side, a quieter tick for narration, a light "tk-tk"
 //   when typing starts, and a "sent" whoosh when the viewer taps a choice. Kept well under the story's music.
