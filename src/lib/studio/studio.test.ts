@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeBible, mergeBible } from "./bible";
+import { sanitizeBible, mergeBible, setupStatus } from "./bible";
 import { checkBudget, estimateCredits, modelKey } from "./budget";
 import { handleRpc, ToolError, type Tool } from "./mcp";
 import { addNote, afterSubmit, canMove, claudeMay, closeNotes, openNotes, teamMoves } from "./stages";
@@ -57,7 +57,7 @@ describe("studio credit budget", () => {
 describe("series bible", () => {
   it("cleans input and locks characters once approved", () => {
     const b = sanitizeBible({ style: " photoreal ", rules: "Gulf dialect\n\nNo swearing", characters: [{ id: "Amal", look: "29, olive skin", portrait: "javascript:x" }, { id: "amal" }], locked: false });
-    expect(b).toEqual({ style: "photoreal", dialect: "", rules: ["Gulf dialect", "No swearing"], characters: [{ id: "amal", look: "29, olive skin", portrait: null }], locked: false });
+    expect(b).toEqual({ style: "photoreal", dialect: "", rules: ["Gulf dialect", "No swearing"], characters: [{ id: "amal", look: "29, olive skin", portrait: null }], locked: false, brief: "", planned: 0, outline: [] });
     const merged = mergeBible(b, { characters: [{ id: "amal", look: "29, olive skin, wavy hair", portrait: "https://img/amal.png" }] });
     expect(merged.bible.characters[0]).toEqual({ id: "amal", look: "29, olive skin, wavy hair", portrait: "https://img/amal.png" });
     const locked = mergeBible({ ...merged.bible, locked: true }, { characters: [{ id: "amal", look: "different", portrait: null }], style: "cartoon" });
@@ -122,5 +122,21 @@ describe("connector key from headers", async () => {
     expect(keyFromHeaders(new Headers({ "x-api-key": "Bearer k3" }))).toBe("k3");
     expect(keyFromHeaders(new Headers({ Authorization: "Basic zzz" }))).toBeNull();
     expect(keyFromHeaders(new Headers())).toBeNull();
+  });
+});
+
+describe("series setup", () => {
+  it("keeps the team's brief, takes Claude's outline, and reports the setup status", () => {
+    const start = sanitizeBible({ brief: "Two colleagues, wrong tickets", planned: 4 });
+    expect(setupStatus(start)).toBe("needs_claude");
+    const outline = sanitizeBible({ outline: [{ number: 2, title_en: "Not the plan", brief: "Hanoi" }, { number: 1, title: { ar: "آخر يوم", en: "Last day" }, brief: "Office" }, { number: 1 }] }).outline;
+    expect(outline.map((o) => o.number)).toEqual([1, 2]);
+    expect(outline[1].title.en).toBe("Not the plan");
+    const merged = mergeBible(start, { style: "photoreal", characters: [{ id: "amal", look: "29", portrait: null }], outline }).bible;
+    expect(merged.brief).toBe("Two colleagues, wrong tickets");
+    expect(merged.planned).toBe(4);
+    expect(setupStatus(merged)).toBe("to_review");
+    expect(setupStatus({ ...merged, locked: true })).toBe("locked");
+    expect(mergeBible({ ...merged, locked: true }, { outline }).refused).toHaveLength(1);
   });
 });
