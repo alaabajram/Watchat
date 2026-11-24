@@ -19,12 +19,12 @@ import { addNote, afterSubmit, claudeMay, closeNotes, openNotes, sanitizeNotes, 
 
 export type StudioCtx = { tenantId: string; adminId: string; adminName: string };
 
-export const STUDIO_INSTRUCTIONS = `Watchat Studio: you write and illustrate episodes of Arabic-first interactive story series for the Watchat team.
+export const STUDIO_INSTRUCTIONS = `Watchat Studio (the Watchat micro-drama platform, not any other studio): you write and illustrate episodes of Arabic-first interactive story series for the Watchat team.
 Rules (cost-aware; follow them exactly):
-1. Start with studio_overview. Work on ONE episode per conversation, and only on episodes listed as waiting for you (stage brief, writing or pictures).
-2. Read get_series (bible, characters, earlier flags) and get_episode (brief, team notes) before writing. Follow the bible's style line, dialect and rules, and every open team note.
-3. Writing stage: save the script with save_episode_script, fix every error it reports, then submit_for_review and STOP. Do not make any pictures before the team approves the script (stage "pictures").
-4. Pictures stage: BEFORE every OpenArt generation call reserve_credits with the model, kind and count. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with attach_media (file addresses), then submit_for_review.
+1. Start with watchat_overview. Work on ONE episode per conversation, and only on episodes listed as waiting for you (stage brief, writing or pictures).
+2. Read watchat_get_series (bible, characters, earlier flags) and watchat_get_episode (brief, team notes) before writing. Follow the bible's style line, dialect and rules, and every open team note.
+3. Writing stage: save the script with watchat_save_episode_script, fix every error it reports, then watchat_submit_for_review and STOP. Do not make any pictures before the team approves the script (stage "pictures").
+4. Pictures stage: BEFORE every OpenArt generation call watchat_reserve_credits with the model, kind and count. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with watchat_attach_media (file addresses), then watchat_submit_for_review.
 5. Keep your messages to the user short. Never invent file addresses.`;
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -32,7 +32,7 @@ const text = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(
 
 async function seriesByCode(ctx: StudioCtx, code: unknown) {
   const c = text(code, 30).toUpperCase();
-  if (!/^[A-Z0-9_-]{2,30}$/.test(c)) throw new ToolError("Give the series code, e.g. HOLIDAY01 (studio_overview lists them).");
+  if (!/^[A-Z0-9_-]{2,30}$/.test(c)) throw new ToolError("Give the series code, e.g. HOLIDAY01 (watchat_overview lists them).");
   const { data } = await db()
     .from("series")
     .select("id, code, title_ar, title_en, synopsis_en, tagline_en, format, story_style, story_characters, story_bible")
@@ -84,8 +84,8 @@ const EPISODE = { ...SERIES, episode: { type: "integer", minimum: 1, description
 
 export const studioTools: Tool<StudioCtx>[] = [
   {
-    name: "studio_overview",
-    title: "Studio overview",
+    name: "watchat_overview",
+    title: "Watchat Studio overview",
     description: "Start here. The OpenArt credit budget left this month and every story series with its episodes' Studio stages, including which episodes are waiting for you.",
     readOnly: true,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -111,7 +111,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "get_series",
+    name: "watchat_get_series",
     title: "Get series",
     description: "A story series: synopsis, look (style), the bible (style line, dialect, rules, each character's locked look and reference portrait), characters, flags earlier choices set, and its episodes with their stages.",
     readOnly: true,
@@ -141,7 +141,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "get_episode",
+    name: "watchat_get_episode",
     title: "Get episode",
     description: "One episode: its stage, the team's brief and open review notes (do what they ask), the current script draft, its problems, and the picture names still missing.",
     readOnly: true,
@@ -166,7 +166,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "save_series_bible",
+    name: "watchat_save_series_bible",
     title: "Save series bible",
     description:
       "Set up or update the series bible: the style line used in every picture prompt, the dialect, house rules, and characters (id, Arabic/English name, colour, locked look, reference portrait file address from OpenArt). Refused once the team locks it.",
@@ -236,7 +236,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "save_episode_script",
+    name: "watchat_save_episode_script",
     title: "Save episode script",
     description:
       'Save the episode\'s script as its draft (stage brief or writing only). "script" is {"title":{"ar","en"},"story":{"v":1,"start":"s1","scenes":[...]}} with scenes {id, name, image_ref, speaker (character id or null), text{ar,en}, motion, auto, route}. Routes: {"type":"next","to":"s2"} | {"type":"choices","options":[{"id","label":{"ar","en"},"to","price","sets"}]} | {"type":"branch","flag","ifSet","ifNot"} | {"type":"end","ending":null}. Returns problems to fix; fix all errors before submitting.',
@@ -275,12 +275,12 @@ export const studioTools: Tool<StudioCtx>[] = [
         warnings: problems.filter((p) => p.level === "warning").map((p) => p.message),
         notes: parsed.notes,
         picture_names: [...new Set(story.scenes.map((x) => x.ref).filter(Boolean))],
-        next: problems.some((p) => p.level === "error") ? "Fix the errors and save again." : "Call submit_for_review, then stop until the team approves the script.",
+        next: problems.some((p) => p.level === "error") ? "Fix the errors and save again." : "Call watchat_submit_for_review, then stop until the team approves the script.",
       };
     },
   },
   {
-    name: "reserve_credits",
+    name: "watchat_reserve_credits",
     title: "Reserve OpenArt credits",
     description:
       'Call BEFORE every OpenArt generation. Give the model (e.g. "nano-banana-pro", "nano-banana-2", "kling-3"), kind (image|video), count (1–12), seconds for a video, and the credits OpenArt shows if you know them. Returns ok or a refusal: never generate after a refusal. For an episode it needs stage "pictures"; for character portraits leave out the episode (series bible not locked yet).',
@@ -326,7 +326,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "attach_media",
+    name: "watchat_attach_media",
     title: "Attach pictures and clips",
     description:
       'Put OpenArt results on the episode\'s scenes (stage "pictures" only): media is {"img_01": "https://…", …}, at most 8 per call, using the picture names from the script. Each file is copied into Watchat\'s storage and placed on every scene with that picture name (MP4s become the scene\'s clip). Use only real addresses OpenArt returned.',
@@ -357,7 +357,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
   },
   {
-    name: "submit_for_review",
+    name: "watchat_submit_for_review",
     title: "Submit for review",
     description: "Hand the episode to the team: after writing → script review; after pictures → final check. Refused while the script has errors or pictures are missing. Add a short note about what you did or what the team should look at. Then stop.",
     inputSchema: { type: "object", properties: { ...EPISODE, note: { type: "string" } }, required: ["series", "episode"], additionalProperties: false },
@@ -367,7 +367,7 @@ export const studioTools: Tool<StudioCtx>[] = [
       const to = claudeMay.submit(item.stage) ? afterSubmit(item.stage) : null;
       if (!to) throw new ToolError(`Episode ${ep.number} is already with the team ("${STAGE_INFO[item.stage].label}").`);
       const draft = ep.story_draft ? sanitizeStory(ep.story_draft) : null;
-      if (!draft || !draft.scenes.length) throw new ToolError("Save the script first (save_episode_script).");
+      if (!draft || !draft.scenes.length) throw new ToolError("Save the script first (watchat_save_episode_script).");
       const errors = validateStory(draft, { characters: sanitizeCharacters(s.story_characters) }).filter((p) => p.level === "error");
       if (errors.length) throw new ToolError(`Fix these first: ${errors.map((e) => e.message).join(" ")}`);
       if (to === "final_check") {

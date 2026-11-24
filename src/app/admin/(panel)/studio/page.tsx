@@ -199,7 +199,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
           <ol style={{ marginTop: 0, paddingInlineStart: 18, lineHeight: 1.6 }}>
             <li>Create a connector address below and copy it (shown once). Open it in your browser: it should say ✓ it works.</li>
             <li>
-              In claude.ai: Settings → Connectors → <strong>Add custom connector</strong>, name <strong>Watchat</strong>, paste the address. Sign-in: none; no
+              In claude.ai: Settings → Connectors → <strong>Add custom connector</strong>, name <strong>Watchat Studio</strong>, paste the address. Sign-in: none; no
               request headers. Add.
             </li>
             <li>Also add OpenArt (address https://mcp.openart.ai/mcp) and sign in.</li>
