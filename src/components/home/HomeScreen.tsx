@@ -4,6 +4,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { kindLabel } from "@/lib/catalogue-meta";
+import { HomeScreenTip } from "../HomeScreenTip";
 import Link from "next/link";
 import { BannerCarousel, type Slide } from "./BannerCarousel";
 import { BottomNav } from "./BottomNav";
@@ -105,6 +106,7 @@ export function HomeScreen({ locale, balance, catalogue, watching, logo = null }
         <ExploreTabs locale={locale} current={null} />
 
         <main style={{ display: "flex", flexDirection: "column", gap: 28, paddingTop: 14 }}>
+          <HomeScreenTip locale={locale} />
           {catalogue.length === 0 ? (
             <p className="wc-card" style={{ margin: "0 16px", padding: 24, textAlign: "center" }}>
               {t.emptyCatalogue}

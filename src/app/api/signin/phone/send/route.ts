@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
-  return sendCode(req, await readJson<{ phone?: string; lang?: string }>(req));
+  return sendCode(req, await readJson<{ phone?: string; ref?: string; lang?: string }>(req));
 }

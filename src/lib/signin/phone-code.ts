@@ -7,9 +7,11 @@ import { err } from "../security/request";
 import { currentTenantId, db } from "../supabase";
 import { callingCode, maskPhone, normalizePhone } from "./doors";
 import { sendPhoneCode } from "./prelude";
+import { openPhone, sealPhone } from "./phone-ref";
 
-export async function sendCode(req: NextRequest, body: { phone?: string; lang?: string } | null) {
-  const e164 = normalizePhone(body?.phone, callingCode(req.headers.get("x-vercel-ip-country")));
+/** `phone` (typed) or `ref` (the sealed number from an earlier sign-in on this device). Answers with a sealed `ref`, never the number. */
+export async function sendCode(req: NextRequest, body: { phone?: string; ref?: string; lang?: string } | null) {
+  const e164 = body?.ref ? openPhone(body.ref) : normalizePhone(body?.phone, callingCode(req.headers.get("x-vercel-ip-country")));
   if (!e164) return err(400, "invalid_number");
   const ip = clientIp(req.headers);
   const hmac = phoneHmac(e164.slice(1));
@@ -18,5 +20,5 @@ export async function sendCode(req: NextRequest, body: { phone?: string; lang?: 
   const { data: existing } = await db().from("viewers").select("id").eq("tenant_id", tenantId).eq("phone_hmac", hmac).maybeSingle();
   const r = await sendPhoneCode(e164, { ip, userAgent: req.headers.get("user-agent"), locale: body?.lang === "en" ? "en" : "ar", existing: Boolean(existing) });
   if (!r.ok) return err(r.reason === "slow_down" ? 429 : r.reason === "not_configured" ? 404 : 400, r.reason);
-  return NextResponse.json({ ok: true, phone: e164, shown: maskPhone(e164) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ ok: true, ref: sealPhone(e164), shown: maskPhone(e164) }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -7,7 +7,8 @@ import { allow, clientIp } from "@/lib/security/rate-limit";
 import { err, readJson, sameOrigin } from "@/lib/security/request";
 import { getSessionViewer } from "@/lib/session";
 import { addLogin } from "@/lib/signin/accounts";
-import { maskPhone, normalizePhone } from "@/lib/signin/doors";
+import { maskPhone } from "@/lib/signin/doors";
+import { openPhone } from "@/lib/signin/phone-ref";
 import { checkPhoneCode } from "@/lib/signin/prelude";
 import { currentTenantId } from "@/lib/supabase";
 
@@ -18,8 +19,8 @@ export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
   const viewer = await getSessionViewer();
   if (!viewer) return err(401, "signed_out");
-  const body = await readJson<{ phone?: string; code?: string }>(req);
-  const e164 = normalizePhone(body?.phone);
+  const body = await readJson<{ ref?: string; code?: string }>(req);
+  const e164 = openPhone(body?.ref);
   const code = String(body?.code ?? "").replace(/\D/g, "");
   if (!e164 || code.length < 4 || code.length > 8) return err(400, "wrong_code");
   const hmac = phoneHmac(e164.slice(1));

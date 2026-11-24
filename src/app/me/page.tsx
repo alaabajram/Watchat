@@ -22,6 +22,7 @@ import { dirFor, webCopy } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
 import { doorSetup } from "@/lib/signin/server";
 import { SignInMethods } from "@/components/SignInMethods";
+import { HomeScreenTip } from "@/components/HomeScreenTip";
 import { loginsOf } from "@/lib/signin/accounts";
 import { preludeReady } from "@/lib/signin/prelude";
 import { emailReady } from "@/lib/email";
@@ -64,6 +65,7 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
     <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
       <TopBar locale={locale} balance={balance} />
       <main style={{ maxWidth: 600, margin: "0 auto", padding: "8px 16px 0", display: "flex", flexDirection: "column", gap: 16 }}>
+        <HomeScreenTip locale={locale} flush />
         <h1 className="wc-section-title" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>{t.profile}</h1>
 
         {/* Profile card */}
