@@ -151,3 +151,17 @@ export async function updateAdminAction(fd: FormData) {
   await audit(admin, "admin.updated", "admin_user", id, { role, disabled });
   done("/admin/team", "Team member updated.");
 }
+
+/** An owner gives a team member a new one-time temporary password (shown once); their sessions end. */
+export async function resetAdminPasswordAction(fd: FormData) {
+  const admin = await requireAdmin("team");
+  const id = uuid(fd, "id");
+  if (!id || id === admin.id) done("/admin/team", "Change your own password from Your account.", "err");
+  const { data: user } = await db().from("admin_users").select("email").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle();
+  if (!user) done("/admin/team", "Not found.", "err");
+  const temp = randomBytes(12).toString("base64url");
+  await db().from("admin_users").update({ password_hash: await hashPassword(temp), must_change_password: true }).eq("id", id).eq("tenant_id", admin.tenantId);
+  await db().from("admin_sessions").update({ revoked_at: new Date().toISOString() }).eq("admin_id", id).is("revoked_at", null);
+  await audit(admin, "admin.password_reset", "admin_user", id);
+  done("/admin/team", `New temporary password for ${user.email} (shown once, send it privately): ${temp}. They choose their own at next sign-in.`);
+}
