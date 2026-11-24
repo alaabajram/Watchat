@@ -197,18 +197,26 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Connect Claude</h2>
           <ol style={{ marginTop: 0, paddingInlineStart: 18, lineHeight: 1.6 }}>
-            <li>Create a connector address below and copy it (it&apos;s shown once).</li>
+            <li>Create a connector key below and copy the address and header it shows (shown once).</li>
             <li>
-              In claude.ai: Settings → Connectors → <strong>Add custom connector</strong>, name it <strong>Watchat</strong>, paste the address, Add.
+              In claude.ai: Settings → Connectors → <strong>Add custom connector</strong>, name <strong>Watchat</strong>, address{" "}
+              <code>https://watchat.pro/api/mcp</code>.
             </li>
-            <li>Also add OpenArt the same way (address https://mcp.openart.ai/mcp) and sign in.</li>
             <li>
-              In a new chat, switch both on and say: <em>&quot;Write episode 2 of HOLIDAY01&quot;</em>. Claude follows the rules this connector gives it.
+              Under <strong>Request headers</strong> add name <code>Authorization</code>, value <code>Bearer &lt;your key&gt;</code>. Leave OAuth empty. Add.
+            </li>
+            <li>Also add OpenArt (address https://mcp.openart.ai/mcp) and sign in.</li>
+            <li>
+              In a new chat, switch both on and say: <em>&quot;Show me the Studio overview&quot;</em>, then <em>&quot;Write episode 2 of HOLIDAY01&quot;</em>.
             </li>
           </ol>
+          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+            The address alone gives no access: the key in the header does. Keys work for 90 days; remove one here if it leaks. (Older keys at the end of the
+            address still work.)
+          </p>
           <form action={createConnectorAction} className="row" style={{ gap: 8 }}>
             <input name="label" placeholder="Label, e.g. Alaa's Claude" maxLength={60} />
-            <button type="submit">Create connector address</button>
+            <button type="submit">Create connector key</button>
           </form>
           {(tokens ?? []).length > 0 && (
             <table style={{ marginTop: 10 }}>

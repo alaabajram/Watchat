@@ -106,3 +106,14 @@ describe("connector protocol", () => {
     expect(await handleRpc({ id: 6, method: "ping" }, server, { who: "a" })).toMatchObject({ error: { code: -32600 } });
   });
 });
+
+describe("connector key from headers", async () => {
+  const { keyFromHeaders } = await import("./connector");
+  it("reads Authorization: Bearer or X-Watchat-Key", () => {
+    expect(keyFromHeaders(new Headers({ Authorization: "Bearer abc123" }))).toBe("abc123");
+    expect(keyFromHeaders(new Headers({ authorization: "bearer  xyz " }))).toBe("xyz");
+    expect(keyFromHeaders(new Headers({ "X-Watchat-Key": "k1" }))).toBe("k1");
+    expect(keyFromHeaders(new Headers({ Authorization: "Basic zzz" }))).toBeNull();
+    expect(keyFromHeaders(new Headers())).toBeNull();
+  });
+});

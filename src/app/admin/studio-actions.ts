@@ -133,7 +133,8 @@ export async function createConnectorAction(fd: FormData) {
     .from("studio_tokens")
     .insert({ tenant_id: admin.tenantId, admin_id: admin.id, label: str(fd, "label", 60) || "Claude", token_hash: sha256Hex(token), expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString() });
   await audit(admin, "studio.connector_created", "admin_user", admin.id);
-  done(BOARD, `Connector address (shown once; copy it now, treat it like a password): ${await siteUrl()}/api/mcp/${token}`);
+  // Shown once. The address is the same for everyone; the key goes in the connector's request header.
+  done(BOARD, `Connector ready (shown once, copy it now). Address: ${await siteUrl()}/api/mcp · Request header name: Authorization · value: Bearer ${token}`);
 }
 
 export async function revokeConnectorAction(fd: FormData) {
