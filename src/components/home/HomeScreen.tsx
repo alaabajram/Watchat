@@ -3,6 +3,7 @@
 // Data comes from getHome(); everything links into the series, explore and watch pages.
 
 /* eslint-disable @next/next/no-img-element */
+import { kindLabel } from "@/lib/catalogue-meta";
 import Link from "next/link";
 import { BannerCarousel, type Slide } from "./BannerCarousel";
 import { BottomNav } from "./BottomNav";
@@ -80,7 +81,8 @@ export function HomeScreen({ locale, balance, catalogue, watching, logo = null }
       cta: w?.resume ? t.resumeEp(w.resume) : t.watchNow,
       status: s.complete ? `${t.epRange(s.total)} · ${t.complete}` : t.updatingEp(s.total),
       top: s.rank !== null && s.rank <= 3 ? t.topN(s.rank) : null,
-      chip: ["HD", s.dub ? t.engDub : s.subs ? t.engSubs : null].filter(Boolean).join(" · "),
+      // Story series have no video quality or dub: the chip says what kind of story it is.
+      chip: s.kind === "micro_drama" ? ["HD", s.dub ? t.engDub : s.subs ? t.engSubs : null].filter(Boolean).join(" · ") : kindLabel(s.kind, locale),
       genres: s.genres.slice(0, 3).map((g) => genreLabel(g, locale)).join(" · "),
       views: s.views > 0 ? compactCount(s.views, locale) : null,
       episodes: t.episodesCount(s.planned),

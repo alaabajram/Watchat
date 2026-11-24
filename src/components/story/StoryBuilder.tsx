@@ -117,6 +117,24 @@ export function StoryBuilder(p: Props) {
 
   const setScene = (s: Scene) => story && update({ ...story, scenes: story.scenes.map((x) => (x.id === s.id ? s : x)) });
 
+  // "＋ New scene" on a choice: a fresh scene for that choice's own path, placed after the scenes this choice
+  // scene already branches to, ending the episode until it's given its own route.
+  const branchFor = (from: Scene, i: number) => {
+    if (!story || from.route.type !== "choices") return;
+    const id = nextId("s", story.scenes.map((s) => s.id));
+    const label = from.route.options[i]?.label;
+    const fresh: Scene = { ...blankScene(id), name: (label?.en || label?.ar || `Choice ${i + 1}`).slice(0, 40), speaker: from.speaker ?? null };
+    const options = from.route.options.map((c, j) => (j === i ? { ...c, to: id } : c));
+    const scenes = story.scenes.map((s) => (s.id === from.id ? { ...s, route: { type: "choices" as const, options } } : s));
+    const branchIds = new Set(options.map((c) => c.to));
+    let at = scenes.findIndex((s) => s.id === from.id);
+    scenes.forEach((s, k) => {
+      if (branchIds.has(s.id) && k > at) at = k;
+    });
+    scenes.splice(at + 1, 0, fresh);
+    update({ ...story, scenes });
+  };
+
   const addScene = (after?: Scene) => {
     if (!story) return;
     const id = nextId("s", story.scenes.map((s) => s.id));
@@ -274,7 +292,7 @@ export function StoryBuilder(p: Props) {
         <h2 style={{ marginTop: 0 }}>Turn this into a story series?</h2>
         <p className="muted">
           Story series are built from scenes (pictures, short clips, voice, music and text) with choices that change what happens. They play on the web; the chat
-          sends the link. This series uses video episodes now; switching keeps its details, artwork, price and licence, and its videos stay saved.
+          sends the link. This series is a micro drama now (video episodes); switching keeps its details, artwork, price and licence, and its videos stay saved.
         </p>
         <StylePicker value={style} onChange={setStyle} />
         <button
@@ -310,17 +328,17 @@ export function StoryBuilder(p: Props) {
           />
           <CharactersEditor seriesId={p.seriesId} value={characters} chat={style === "chat"} onSaved={setCharacters} />
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Back to video episodes?{" "}
+            Back to a micro drama (video episodes)?{" "}
             <button
               type="button"
               className="secondary small"
               onClick={async () => {
-                if (!window.confirm("Switch back to video episodes? The scenes stay saved but viewers will get the video player.")) return;
+                if (!window.confirm("Make it a micro drama again (video episodes)? The scenes stay saved but viewers will get the video player.")) return;
                 await setStoryFormat(p.seriesId, "video", style);
                 router.refresh();
               }}
             >
-              Use video episodes
+              Make it a micro drama
             </button>
           </p>
         </div>
@@ -494,6 +512,7 @@ export function StoryBuilder(p: Props) {
                           isStart={s.id === story.start}
                           onChange={setScene}
                           onAddAfter={() => addScene(s)}
+                          onBranch={(i) => branchFor(s, i)}
                           onDuplicate={() => duplicate(s)}
                           onDelete={() => removeScene(s.id)}
                           onMove={(d) => move(s, d)}

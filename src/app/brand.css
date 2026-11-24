@@ -66,6 +66,8 @@
 .wc-card { background: var(--wc-card); border-radius: 24px; border: 1px solid var(--wc-line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
 .wc-chip { padding: 9px 16px; border-radius: 999px; background: var(--wc-card); border: 1px solid var(--wc-line); font-size: 14px; white-space: nowrap; }
 .wc-chip[aria-current="true"] { background: var(--wc-mint); border-color: var(--wc-mint); color: var(--wc-mint-ink); font-weight: 600; }
+.wc-kind[aria-current="true"] { background: var(--wc-coral); border-color: var(--wc-coral); color: #fff; }
+.wc-kind-tag { display: inline-block; margin-inline-end: 6px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--wc-line); font-size: 11px; font-weight: 700; color: var(--wc-ink); vertical-align: 1px; }
 .wc-link { font-size: 14px; color: var(--wc-coral-text); font-weight: 500; }
 .wc-scroller { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 0 16px; }
 .wc-scroller::-webkit-scrollbar { display: none; }
@@ -393,7 +395,7 @@ html.wc-in-telegram body { padding-top: var(--wc-tg-top, 0px); }
 @keyframes wc-story-blink { 50% { opacity: 0.2; } }
 
 /* Choices: stacked above the box; premium ones glow coral with their Ping price */
-.wc-story-choices { display: flex; flex-direction: column; gap: 10px; cursor: default; }
+.wc-story-choices { display: flex; flex-direction: column; gap: 10px; cursor: default; max-height: 58%; overflow-y: auto; overscroll-behavior: contain; }
 /* Photo story: choices sit under the caption on the same dark fade */
 .wc-story-photo .wc-story-bottom { flex-direction: column-reverse; }
 .wc-story-choice {
