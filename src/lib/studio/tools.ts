@@ -12,7 +12,7 @@ import { validateStory } from "@/lib/story/validate";
 import { copyToCloudflare } from "@/lib/storage/cloudflare";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
-import { mergeBible, sanitizeBible, type BibleCharacter } from "./bible";
+import { mergeBible, sanitizeBible, setupStatus, SETUP_LABEL, type BibleCharacter } from "./bible";
 import { checkBudget, estimateCredits, MODEL_RATES, monthStart } from "./budget";
 import { ToolError, type Tool } from "./mcp";
 import { addNote, afterSubmit, claudeMay, closeNotes, openNotes, sanitizeNotes, STAGE_INFO, isStage, type Stage } from "./stages";
@@ -21,7 +21,8 @@ export type StudioCtx = { tenantId: string; adminId: string; adminName: string }
 
 export const STUDIO_INSTRUCTIONS = `Watchat Studio (the Watchat micro-drama platform, not any other studio): you write and illustrate episodes of Arabic-first interactive story series for the Watchat team.
 Rules (cost-aware; follow them exactly):
-1. Start with watchat_overview. Work on ONE episode per conversation, and only on episodes listed as waiting for you (stage brief, writing or pictures).
+0. Series setup: for a series listed under series_to_set_up, read watchat_get_series (the team's brief), then with watchat_save_series_bible save the style line (one sentence for every picture prompt), dialect, house rules, the characters (id, Arabic/English name, colour, a locked 40–60 word look) and an episode outline (one short brief per planned episode, cliffhanger endings). Then make ONE reference portrait per main character (reserve credits first, leave out the episode number) and save their file addresses with watchat_save_series_bible. Then STOP: the team reviews, locks the bible and sends the episodes to you.
+1. Start with watchat_overview. Work on ONE series setup or ONE episode per conversation, and only on what is listed as waiting for you (series_to_set_up, or episodes at stage brief, writing or pictures).
 2. Read watchat_get_series (bible, characters, earlier flags) and watchat_get_episode (brief, team notes) before writing. Follow the bible's style line, dialect and rules, and every open team note.
 3. Writing stage: save the script with watchat_save_episode_script, fix every error it reports, then watchat_submit_for_review and STOP. Do not make any pictures before the team approves the script (stage "pictures").
 4. Pictures stage: BEFORE every OpenArt generation call watchat_reserve_credits with the model, kind and count. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with watchat_attach_media (file addresses), then watchat_submit_for_review.
@@ -99,9 +100,14 @@ export const studioTools: Tool<StudioCtx>[] = [
         .neq("stage", "published")
         .order("updated_at", { ascending: false })
         .limit(40);
+      const { data: storySeries } = await db().from("series").select("code, title_en, story_bible").eq("tenant_id", ctx.tenantId).eq("format", "story");
       const rows = (items ?? []) as unknown as { stage: Stage; brief: string | null; credits_used: number; episodes: { number: number; title_en: string | null }; series: { code: string; title_en: string; story_style: string } }[];
       return {
         budget: { monthly_credits: st.monthly, used_this_month: used, left: Math.max(0, st.monthly - used), episode_cap: st.episodeCap, approx_usd_left: Math.round(Math.max(0, st.monthly - used) * st.usd * 100) / 100 },
+        series_to_set_up: (storySeries ?? [])
+          .map((x) => ({ x, b: sanitizeBible(x.story_bible) }))
+          .filter(({ b }) => b.brief && setupStatus(b) === "needs_claude")
+          .map(({ x, b }) => ({ series: x.code, title: x.title_en, planned_episodes: b.planned, brief: b.brief.slice(0, 400) })),
         waiting_for_you: rows
           .filter((r) => STAGE_INFO[r.stage].who === "claude")
           .map((r) => ({ series: r.series.code, episode: r.episodes.number, stage: r.stage, todo: STAGE_INFO[r.stage].hint, brief: (r.brief ?? "").slice(0, 300) })),
@@ -130,7 +136,11 @@ export const studioTools: Tool<StudioCtx>[] = [
         synopsis: s.synopsis_en,
         tagline: s.tagline_en,
         look: s.story_style,
+        setup: SETUP_LABEL[setupStatus(bible)],
+        team_brief: bible.brief,
+        planned_episodes: bible.planned,
         bible: { style: bible.style, dialect: bible.dialect, rules: bible.rules, locked: bible.locked },
+        outline: bible.outline,
         characters: chars.map((c) => {
           const b = bible.characters.find((x) => x.id === c.id);
           return { id: c.id, name: c.name, color: c.color, look: b?.look ?? "", portrait: b?.portrait ?? null };
@@ -169,7 +179,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     name: "watchat_save_series_bible",
     title: "Save series bible",
     description:
-      "Set up or update the series bible: the style line used in every picture prompt, the dialect, house rules, and characters (id, Arabic/English name, colour, locked look, reference portrait file address from OpenArt). Refused once the team locks it.",
+      "Set up or update the series bible: the style line used in every picture prompt, the dialect, house rules, characters (id, Arabic/English name, colour, locked look, reference portrait file address from OpenArt) and the episode outline (number, Arabic/English title, a short brief per episode). Refused once the team locks it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -183,6 +193,15 @@ export const studioTools: Tool<StudioCtx>[] = [
             type: "object",
             properties: { id: { type: "string" }, name_ar: { type: "string" }, name_en: { type: "string" }, color: { type: "string" }, look: { type: "string" }, portrait_url: { type: "string" } },
             required: ["id"],
+          },
+        },
+        outline: {
+          type: "array",
+          description: "One item per planned episode",
+          items: {
+            type: "object",
+            properties: { number: { type: "integer", minimum: 1 }, title_ar: { type: "string" }, title_en: { type: "string" }, brief: { type: "string" } },
+            required: ["number", "brief"],
           },
         },
       },
@@ -212,6 +231,7 @@ export const studioTools: Tool<StudioCtx>[] = [
         dialect: text(a.dialect, 60),
         rules: Array.isArray(a.rules) ? a.rules.map((r) => text(r, 200)).filter(Boolean).slice(0, 25) : [],
         characters: chars,
+        outline: sanitizeBible({ outline: Array.isArray(a.outline) ? a.outline : [] }).outline,
       });
       if (refused.length && !bible.characters.length && !bible.style) throw new ToolError(refused.join(" "));
       let characters: Character[] = sanitizeCharacters(s.story_characters);
@@ -232,7 +252,14 @@ export const studioTools: Tool<StudioCtx>[] = [
         characters = sanitizeCharacters([...byId.values()]);
       }
       await db().from("series").update({ story_bible: bible, story_characters: characters }).eq("id", s.id).eq("tenant_id", ctx.tenantId);
-      return { saved: !current.locked, refused, characters: bible.characters.map((c) => ({ id: c.id, has_portrait: Boolean(c.portrait) })) };
+      return {
+        saved: !current.locked,
+        refused,
+        setup: SETUP_LABEL[setupStatus(bible)],
+        characters: bible.characters.map((c) => ({ id: c.id, has_portrait: Boolean(c.portrait) })),
+        outline_episodes: bible.outline.length,
+        next: setupStatus(bible) === "to_review" ? "Make the reference portraits if not done, then stop: the team reviews and locks the bible." : "Add the missing parts (style, characters, outline).",
+      };
     },
   },
   {

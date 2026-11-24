@@ -4,11 +4,14 @@
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { can, requireAdmin } from "@/lib/admin/auth";
+import { LANG_KEYS, LANGS } from "@/lib/storage/tracks";
+import { STORY_STYLES } from "@/lib/story/types";
+import { sanitizeBible, setupStatus, SETUP_LABEL } from "@/lib/studio/bible";
 import { monthStart } from "@/lib/studio/budget";
 import { sanitizeNotes, openNotes, STAGE_INFO, STAGES, type Stage } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
 import { db } from "@/lib/supabase";
-import { createBriefAction, createConnectorAction, revokeConnectorAction, saveStudioSettingsAction } from "../../studio-actions";
+import { createBriefAction, createConnectorAction, createStudioSeriesAction, revokeConnectorAction, saveStudioSettingsAction } from "../../studio-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +41,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
       .eq("tenant_id", admin.tenantId)
       .order("updated_at", { ascending: false })
       .limit(200),
-    db().from("series").select("id, code, title_en, story_bible").eq("tenant_id", admin.tenantId).eq("format", "story").order("created_at", { ascending: false }),
+    db().from("series").select("id, code, title_en, title_ar, status, story_style, story_bible, episodes(count)").eq("tenant_id", admin.tenantId).eq("format", "story").order("created_at", { ascending: false }),
     db().from("studio_settings").select("monthly_credits, episode_credits, usd_per_credit").eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("studio_credit_log").select("credits").eq("tenant_id", admin.tenantId).gte("created_at", monthStart()),
     db().from("studio_tokens").select("id, label, created_at, expires_at, last_used_at, admin_id, admin_users(name, email)").eq("tenant_id", admin.tenantId).is("revoked_at", null).order("created_at", { ascending: false }),
@@ -56,52 +59,71 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
     <>
       <h1>Studio</h1>
       <p className="muted" style={{ marginTop: 0 }}>
-        Story episodes made with Claude and OpenArt. You write a brief → Claude writes the script → you approve it → Claude makes the pictures → you check the
-        episode and publish. Claude can never publish, and it asks this budget before every picture.
+        Story series made with Claude (Watchat Studio connector) and OpenArt. <strong>New series:</strong> you describe the idea → Claude writes the bible,
+        characters, portraits and an episode outline → you review and lock it → you send the episodes to Claude. <strong>Each episode:</strong> Claude writes
+        the script → you approve → Claude makes the pictures → you check and publish. Claude never publishes, and asks the credit budget before every picture.
       </p>
       <Flash ok={sp.ok} err={sp.err} />
 
       <div className="grid2" style={{ alignItems: "start" }}>
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>OpenArt credits this month</h2>
-          <div style={{ height: 12, borderRadius: 99, background: "#eee", overflow: "hidden" }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: pct > 90 ? "#dc2626" : pct > 70 ? "#f59e0b" : "#16a34a" }} />
-          </div>
-          <p style={{ marginBottom: 0 }}>
-            <strong>{used.toLocaleString()}</strong> of {monthly.toLocaleString()} credits used · {Math.max(0, monthly - used).toLocaleString()} left (≈ $
-            {(Math.max(0, monthly - used) * usd).toFixed(2)}) · cap {episodeCap.toLocaleString()} per episode
-          </p>
-          {can(admin, "team") && (
-            <details style={{ marginTop: 10 }}>
-              <summary style={{ cursor: "pointer" }}>Change the budget</summary>
-              <form action={saveStudioSettingsAction} className="grid3" style={{ marginTop: 10, alignItems: "end" }}>
-                <label>
-                  Credits per month
-                  <input name="monthly_credits" type="number" min={0} defaultValue={monthly} />
-                </label>
-                <label>
-                  Cap per episode
-                  <input name="episode_credits" type="number" min={0} defaultValue={episodeCap} />
-                </label>
-                <label>
-                  $ per credit
-                  <input name="usd_per_credit" type="number" step="0.0001" min={0} defaultValue={usd} />
-                </label>
-                <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 13 }}>
-                  Set the monthly number to your OpenArt plan&apos;s credits (Pro 24,000; Wonder 106,000) or lower, so Claude stops before the plan runs out.
-                </span>
-                <button type="submit">Save budget</button>
-              </form>
-            </details>
-          )}
-        </div>
+        <details className="card" open={(stories ?? []).length === 0}>
+          <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 18 }}>＋ New series</summary>
+          <form action={createStudioSeriesAction} style={{ display: "grid", gap: 8, marginTop: 10 }}>
+            <div className="grid2">
+              <label>
+                Working title (English)
+                <input name="title_en" required maxLength={120} placeholder="The Wrong Holiday" />
+              </label>
+              <label>
+                Title (Arabic, optional)
+                <input name="title_ar" dir="rtl" maxLength={120} placeholder="آخر تذكرة غلط" />
+              </label>
+            </div>
+            <div className="grid3">
+              <label>
+                Look
+                <select name="style" defaultValue="visual_novel">
+                  {STORY_STYLES.map((st) => (
+                    <option key={st.key} value={st.key}>
+                      {st.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Language
+                <select name="dialect" defaultValue="gulf">
+                  {LANG_KEYS.map((k) => (
+                    <option key={k} value={k}>
+                      {LANGS[k].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Episodes planned
+                <input name="planned" type="number" min={1} max={200} defaultValue={10} />
+              </label>
+            </div>
+            <label>
+              The idea (story, characters, tone, audience, what to avoid)
+              <textarea
+                name="brief"
+                rows={5}
+                required
+                placeholder="On the last day before the holidays, Nasser and Amal find their tickets switched by the office coffee boy. Amal ends up backpacking in Vietnam, Nasser shopping in Milan. Romantic comedy, light Gulf Arabic, 18–35, no explicit content."
+              />
+            </label>
+            <button type="submit">Create series and send to Claude</button>
+          </form>
+        </details>
 
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>New episode brief</h2>
+        <details className="card" open={(stories ?? []).length > 0}>
+          <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 18 }}>＋ New episode</summary>
           {(stories ?? []).length === 0 ? (
-            <p className="muted">No story series yet. Create one with Launch a series → Story, or turn a series into a story series in its Story builder tab.</p>
+            <p className="muted">Create a series first.</p>
           ) : (
-            <form action={createBriefAction} style={{ display: "grid", gap: 8 }}>
+            <form action={createBriefAction} style={{ display: "grid", gap: 8, marginTop: 10 }}>
               <div className="grid2">
                 <label>
                   Series
@@ -120,14 +142,72 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
               </div>
               <label>
                 What happens in this episode
-                <textarea name="brief" rows={4} required placeholder="Amal arrives in Hanoi and loses her backpack; Nasser's hotel booking doesn't exist. End: they both get a second message from the unknown number." />
+                <textarea name="brief" rows={4} required placeholder="Amal loses her backpack in Hanoi; Nasser's hotel booking doesn't exist. Ends with a second message from the unknown number." />
               </label>
               <button type="submit">Send to Claude</button>
+              <span className="muted" style={{ fontSize: 13 }}>Tip: after a series is set up, send several episodes at once from its outline (Bible &amp; outline).</span>
             </form>
           )}
-        </div>
+        </details>
       </div>
 
+      <div className="card">
+        <h2 style={{ marginTop: 0 }}>Series in the Studio</h2>
+        {(stories ?? []).length === 0 ? (
+          <p className="muted" style={{ marginBottom: 0 }}>No story series yet. Start one with ＋ New series.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Series</th>
+                <th>Setup</th>
+                <th>Episodes in the Studio</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {(stories ?? []).map((s) => {
+                const b = sanitizeBible(s.story_bible);
+                const st = setupStatus(b);
+                const mine = rows.filter((r) => r.series.id === s.id);
+                const byStage = columns.map((c) => [c, mine.filter((r) => r.stage === c).length] as const).filter(([, n]) => n > 0);
+                const pub = mine.filter((r) => r.stage === "published").length;
+                const total = (s as unknown as { episodes?: { count: number }[] }).episodes?.[0]?.count ?? 0;
+                return (
+                  <tr key={s.id}>
+                    <td>
+                      <strong>{s.code}</strong> · {s.title_en}
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {STORY_STYLES.find((x) => x.key === s.story_style)?.label} · {s.status} · {total} episode{total === 1 ? "" : "s"}
+                        {b.planned ? ` of ${b.planned} planned` : ""}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge" style={{ background: st === "locked" ? "#e7f7ee" : st === "to_review" ? "#fff4dc" : "#f1eee9", color: st === "locked" ? "#15803d" : st === "to_review" ? "#8a5a0b" : "#4e4943" }}>
+                        {st === "locked" ? "🔒 " : st === "to_review" ? "👤 " : "✨ "}
+                        {SETUP_LABEL[st]}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13 }}>
+                      {byStage.length || pub
+                        ? [...byStage.map(([c, n]) => `${STAGE_INFO[c].label} ${n}`), ...(pub ? [`Published ${pub}`] : [])].join(" · ")
+                        : st === "locked"
+                          ? "None yet: send episodes from the outline"
+                          : "—"}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <Link href={`/admin/studio/bible/${s.id}`}>Bible &amp; outline</Link> · <Link href={`/admin/series/${s.id}/story`}>Story builder</Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h2 style={{ margin: "18px 0 4px" }}>Episodes in production</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>✨ = Claude&apos;s turn · 👤 = your turn (yellow columns). Click an episode to review it.</p>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${columns.length}, minmax(190px, 1fr))`, gap: 10, overflowX: "auto", margin: "8px 0 16px" }}>
         {columns.map((stage) => {
           const list = rows.filter((r) => r.stage === stage);
@@ -177,21 +257,37 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
 
       <div className="grid2" style={{ alignItems: "start" }}>
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Series bibles</h2>
-          <p className="muted" style={{ marginTop: 0 }}>The style line, dialect, rules and character looks Claude must follow. Lock a bible once you approve the character portraits.</p>
-          <ul style={{ margin: 0, paddingInlineStart: 18 }}>
-            {(stories ?? []).map((s) => {
-              const b = (s.story_bible ?? {}) as { locked?: boolean; style?: string };
-              return (
-                <li key={s.id}>
-                  <Link href={`/admin/studio/bible/${s.id}`}>
-                    {s.code} · {s.title_en}
-                  </Link>{" "}
-                  <span className="muted" style={{ fontSize: 12 }}>{b.locked ? "🔒 locked" : b.style ? "draft" : "empty"}</span>
-                </li>
-              );
-            })}
-          </ul>
+          <h2 style={{ marginTop: 0 }}>OpenArt credits this month</h2>
+          <div style={{ height: 12, borderRadius: 99, background: "#eee", overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: pct > 90 ? "#dc2626" : pct > 70 ? "#f59e0b" : "#16a34a" }} />
+          </div>
+          <p style={{ marginBottom: 0 }}>
+            <strong>{used.toLocaleString()}</strong> of {monthly.toLocaleString()} credits used · {Math.max(0, monthly - used).toLocaleString()} left (≈ $
+            {(Math.max(0, monthly - used) * usd).toFixed(2)}) · cap {episodeCap.toLocaleString()} per episode
+          </p>
+          {can(admin, "team") && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: "pointer" }}>Change the budget</summary>
+              <form action={saveStudioSettingsAction} className="grid3" style={{ marginTop: 10, alignItems: "end" }}>
+                <label>
+                  Credits per month
+                  <input name="monthly_credits" type="number" min={0} defaultValue={monthly} />
+                </label>
+                <label>
+                  Cap per episode
+                  <input name="episode_credits" type="number" min={0} defaultValue={episodeCap} />
+                </label>
+                <label>
+                  $ per credit
+                  <input name="usd_per_credit" type="number" step="0.0001" min={0} defaultValue={usd} />
+                </label>
+                <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 13 }}>
+                  Set the monthly number to your OpenArt plan&apos;s credits (Pro 24,000; Wonder 106,000) or lower, so Claude stops before the plan runs out.
+                </span>
+                <button type="submit">Save budget</button>
+              </form>
+            </details>
+          )}
         </div>
 
         <div className="card">

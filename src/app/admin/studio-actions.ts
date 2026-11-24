@@ -8,6 +8,9 @@ import { audit, requireAdmin } from "@/lib/admin/auth";
 import { done, int, str, uuid } from "@/lib/admin/forms";
 import { randomToken, sha256Hex } from "@/lib/crypto";
 import { siteUrl } from "@/lib/site/store";
+import { suggestCode } from "@/lib/admin/readiness";
+import { LANGS, originalLang } from "@/lib/storage/tracks";
+import { STORY_STYLES } from "@/lib/story/types";
 import { sanitizeBible } from "@/lib/studio/bible";
 import { addNote, canMove, isStage, sanitizeNotes, STAGE_INFO } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
@@ -158,9 +161,88 @@ export async function saveBibleAction(fd: FormData) {
   if (!s) done(BOARD, "Series not found.", "err");
   const current = sanitizeBible(s.story_bible);
   const characters = current.characters.map((c) => ({ ...c, look: str(fd, `look_${c.id}`, 800) || c.look, portrait: fd.get(`clear_${c.id}`) === "on" ? null : c.portrait }));
-  const bible = sanitizeBible({ style: str(fd, "style", 800), dialect: str(fd, "dialect", 60), rules: str(fd, "rules", 6000), characters, locked: fd.get("locked") === "on" });
+  const outline = current.outline.map((o) => ({ ...o, brief: str(fd, `outline_${o.number}`, 1500) || o.brief }));
+  const bible = sanitizeBible({
+    style: str(fd, "style", 800),
+    dialect: str(fd, "dialect", 60),
+    rules: str(fd, "rules", 6000),
+    characters,
+    locked: fd.get("locked") === "on",
+    brief: str(fd, "brief", 4000) || current.brief,
+    planned: int(fd, "planned", current.planned),
+    outline,
+  });
   await db().from("series").update({ story_bible: bible }).eq("id", id);
   await audit(admin, "studio.bible", "series", id, { locked: bible.locked });
   revalidatePath(BOARD);
   done(`/admin/studio/bible/${id}`, bible.locked ? "Bible saved and locked: Claude follows it and can't change the characters." : "Bible saved.");
+}
+
+/** Start a new story series in the Studio: a draft series with the team's brief, waiting for Claude to set it up. */
+export async function createStudioSeriesAction(fd: FormData) {
+  const admin = await requireAdmin("content");
+  const titleEn = str(fd, "title_en", 120);
+  const titleAr = str(fd, "title_ar", 120);
+  const brief = str(fd, "brief", 4000);
+  if (!titleEn || !brief) done(BOARD, "Give the series a working title and describe the idea.", "err");
+  const style = STORY_STYLES.find((x) => x.key === str(fd, "style", 20))?.key ?? "visual_novel";
+  const planned = Math.min(Math.max(int(fd, "planned", 10), 1), 200);
+  const lang = originalLang(str(fd, "dialect", 30) || "gulf");
+  const { data: taken } = await db().from("series").select("code").eq("tenant_id", admin.tenantId);
+  const code = suggestCode(titleEn, (taken ?? []).map((t) => t.code as string));
+  const { data: series, error } = await db()
+    .from("series")
+    .insert({
+      tenant_id: admin.tenantId,
+      code,
+      title_en: titleEn,
+      title_ar: titleAr || titleEn,
+      synopsis_en: brief.slice(0, 1000),
+      dialect: lang,
+      genres: [],
+      status: "draft",
+      format: "story",
+      story_style: style,
+      wa_episode_count: 0,
+      story_bible: { brief, planned, dialect: LANGS[lang].label },
+    })
+    .select("id, code")
+    .single();
+  if (error || !series) done(BOARD, "Couldn't create the series.", "err");
+  await audit(admin, "studio.series_created", "series", series.id, { code, planned });
+  done(BOARD, `${series.code} created. In Claude (Watchat Studio on), say: "Set up ${series.code}". Claude writes the bible, characters, portraits and an outline of ${planned} episodes for you to review.`);
+}
+
+/** Send outline episodes to Claude: each becomes an episode with a Studio brief (stage "Brief"). */
+export async function sendOutlineAction(fd: FormData) {
+  const admin = await requireAdmin("content");
+  const id = uuid(fd, "series_id");
+  if (!id) done(BOARD, "Bad request.", "err");
+  const back = `/admin/studio/bible/${id}`;
+  const { data: s } = await db().from("series").select("id, code, story_bible").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle();
+  if (!s) done(BOARD, "Series not found.", "err");
+  const bible = sanitizeBible(s.story_bible);
+  if (!bible.locked) done(back, "Lock the bible first, so every episode uses the same faces, style and rules.", "err");
+  const wanted = new Set(fd.getAll("numbers").map((n) => Number(n)));
+  const items = bible.outline.filter((o) => wanted.has(o.number));
+  if (!items.length) done(back, "Tick the episodes to send.", "err");
+  let sent = 0;
+  for (const o of items) {
+    let { data: ep } = await db().from("episodes").select("id").eq("series_id", s.id).eq("number", o.number).maybeSingle();
+    if (!ep) {
+      const { data } = await db()
+        .from("episodes")
+        .insert({ series_id: s.id, number: o.number, title_ar: o.title.ar || `الحلقة ${o.number}`, title_en: o.title.en || `Episode ${o.number}`, status: "draft" })
+        .select("id")
+        .single();
+      ep = data;
+    }
+    if (!ep) continue;
+    const { data: existing } = await db().from("studio_items").select("stage").eq("episode_id", ep.id).maybeSingle();
+    if (existing) continue; // already in the Studio
+    await db().from("studio_items").insert({ episode_id: ep.id, series_id: s.id, tenant_id: admin.tenantId, stage: "brief", brief: o.brief, notes: [], credits_used: 0 });
+    sent++;
+  }
+  await audit(admin, "studio.outline_sent", "series", s.id, { numbers: items.map((o) => o.number) });
+  done(BOARD, sent ? `${sent} episode(s) of ${s.code} are waiting for Claude. Say: "Write episode ${items[0].number} of ${s.code}".` : "Those episodes are already in the Studio.");
 }
