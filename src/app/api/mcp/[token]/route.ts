@@ -32,7 +32,8 @@ async function contextFor(token: string): Promise<{ ctx: StudioCtx; tokenId: str
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const who = await contextFor(token);
-  if (!who) return deny(401, "This connector address is not valid any more. Create a new one in Watchat Admin → Studio.");
+  // 404, not 401: a 401 makes Claude start an OAuth sign-in, which this connector doesn't use (the key is in the address).
+  if (!who) return deny(404, "This connector address is not valid (or was removed). Create a new one in Watchat Admin → Studio.");
   // Plenty for one episode, but stops a runaway loop from hammering the site.
   if (!(await allow(`studio-mcp:${who.tokenId}`, 300, 3600))) return deny(429, "Too many requests this hour. Wait and try again.");
   let body: unknown;
