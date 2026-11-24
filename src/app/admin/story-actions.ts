@@ -8,10 +8,11 @@
 import { revalidatePath } from "next/cache";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { randomToken } from "@/lib/crypto";
-import { copyToCloudflare, publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
+import { publicUrlFor, uploadTarget } from "@/lib/storage/cloudflare";
 import type { UploadTarget } from "@/lib/storage/refs";
 import { flagsSetIn } from "@/lib/story/engine";
-import { applyMedia, hostAllowed, mediaKindOf, parseStoryImport, type ImportMedia } from "@/lib/story/import";
+import { parseStoryImport, type ImportMedia } from "@/lib/story/import";
+import { copyStoryMedia } from "@/lib/story/media-server";
 import { sanitizeCharacters, sanitizeStory, withUrls } from "@/lib/story/sanitize";
 import { STORY_STYLES, STORY_UPLOADS, type Character, type StoryGraph, type StoryStyle } from "@/lib/story/types";
 import { hasErrors, validateStory, type StoryIssue } from "@/lib/story/validate";
@@ -84,6 +85,8 @@ export async function publishStory(episodeId: string, raw: unknown): Promise<{ o
   const status = ep.status === "draft" || ep.status === "in_review" ? (series.status === "live" ? "live" : "in_review") : ep.status;
   await db().from("episodes").update({ story_draft: story, story, story_version: version, status }).eq("id", episodeId);
   await audit(admin, "episode.story_published", "episode", episodeId, { version, scenes: story.scenes.length });
+  // The Studio board follows: a published episode leaves review.
+  await db().from("studio_items").update({ stage: "published", updated_at: new Date().toISOString() }).eq("episode_id", episodeId);
   revalidatePath(`/admin/series/${series.id}`);
   return { ok: true, issues, version, live: status === "live" };
 }
@@ -94,6 +97,7 @@ export async function unpublishStory(episodeId: string): Promise<void> {
   const { series } = await ownEpisode(admin.tenantId, episodeId);
   await db().from("episodes").update({ story: null, status: "draft" }).eq("id", episodeId);
   await audit(admin, "episode.story_unpublished", "episode", episodeId);
+  await db().from("studio_items").update({ stage: "approved", updated_at: new Date().toISOString() }).eq("episode_id", episodeId).eq("stage", "published");
   revalidatePath(`/admin/series/${series.id}`);
 }
 
@@ -174,9 +178,6 @@ export async function importStoryScript(seriesId: string, text: string): Promise
   return { episodes: done, media: parsed.media, notes: parsed.notes };
 }
 
-/** Hosts a script's media list may point at: OpenArt (and its subdomains), plus any in STORY_IMPORT_HOSTS. */
-const importHosts = () => ["openart.ai", ...(process.env.STORY_IMPORT_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)];
-
 /**
  * Fetch one file from a script's media list (e.g. an OpenArt result), copy it to Watchat's storage and put it on
  * every scene with that picture name, in every episode's draft. Pictures fill the scene's image, MP4s its clip.
@@ -185,50 +186,5 @@ const importHosts = () => ["openart.ai", ...(process.env.STORY_IMPORT_HOSTS ?? "
 export async function fetchStoryMedia(seriesId: string, ref: string, url: string): Promise<{ scenes: number; type: "image" | "video" }> {
   const admin = await requireAdmin("content");
   const s = await ownSeries(admin.tenantId, seriesId);
-  const key = ref.toLowerCase();
-  if (!/^[a-z0-9_.-]{1,40}$/.test(key)) throw new Error("Bad picture name.");
-  const hosts = importHosts();
-  if (!hostAllowed(url, hosts)) {
-    const host = (() => {
-      try {
-        return new URL(url).hostname;
-      } catch {
-        return url.slice(0, 40);
-      }
-    })();
-    throw new Error(`${ref}: files from ${host} aren't allowed. Add it to STORY_IMPORT_HOSTS in Vercel if it's yours.`);
-  }
-
-  // Ask what the file is (and where it really lives) before copying it.
-  let contentType = "";
-  let size = 0;
-  try {
-    const head = await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(15000) });
-    if (head.ok) {
-      if (!hostAllowed(head.url, hosts)) throw new Error(`${ref}: the address leads to another site.`);
-      contentType = head.headers.get("content-type") ?? "";
-      size = Number(head.headers.get("content-length") ?? 0);
-    }
-  } catch (e) {
-    if (e instanceof Error && e.message.startsWith(ref)) throw e;
-  }
-  const kind = mediaKindOf(url, contentType);
-  if (!kind) throw new Error(`${ref}: only JPG, PNG, WebP pictures and MP4 clips can be imported.`);
-  const limit = kind.type === "image" ? 10 : 60;
-  if (size > limit * 1048576) throw new Error(`${ref}: the file is over ${limit} MB.`);
-
-  const copied = await copyToCloudflare(url, `${s.code}/story/${Date.now()}-${randomToken(6)}.${kind.ext}`);
-  if (!copied) throw new Error(`Connect Cloudflare ${kind.type === "image" ? "Images" : "R2"} first (Admin → Brand & site → Storage).`);
-  const media = { path: copied.path, url: copied.publicUrl, type: kind.type, name: key };
-
-  const { data: eps } = await db().from("episodes").select("id, story_draft").eq("series_id", seriesId);
-  let scenes = 0;
-  for (const ep of eps ?? []) {
-    if (!ep.story_draft) continue;
-    const r = applyMedia(sanitizeStory(ep.story_draft), key, media);
-    if (!r.count) continue;
-    scenes += r.count;
-    await db().from("episodes").update({ story_draft: r.story }).eq("id", ep.id);
-  }
-  return { scenes, type: kind.type };
+  return copyStoryMedia(s, ref, url);
 }

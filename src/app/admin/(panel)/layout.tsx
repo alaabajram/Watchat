@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 const NAV: (NavItem & { area: Area })[] = [
   { href: "/admin", label: "Dashboard", area: "dashboard", icon: "dashboard", group: "", hint: "How viewers and money are doing" },
   { href: "/admin/series", label: "Series", area: "content", icon: "cms", group: "", hint: "Add and publish series and episodes", also: ["/admin/series/new"] },
+  { href: "/admin/studio", label: "Studio", area: "content", icon: "ai", group: "", hint: "Write and illustrate story episodes with Claude; review and publish" },
   { href: "/admin/viewers", label: "Viewers", area: "viewers", icon: "viewers", group: "", hint: "Find a viewer, see their wallet and history" },
   { href: "/admin/orders", label: "Orders & payments", area: "orders", icon: "orders", group: "", hint: "Purchases, refunds and cash payments" },
   { href: "/admin/pricing", label: "Prices & Ping", area: "pricing", icon: "pricing", group: "Money", hint: "Passes, Ping packs and Stars prices per country" },
