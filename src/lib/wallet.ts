@@ -236,7 +236,9 @@ export async function startCheckout(params: {
     amount,
     currency,
     description,
-    phone: { countryCode: cc, number: digits.slice(cc.length) },
+    // Email-only viewers ("+em:…") have no phone: Tap gets a no-reply address on our domain.
+    phone: digits.length >= 8 && !String(viewer?.phone_e164 ?? "").startsWith("+em:") ? { countryCode: cc, number: digits.slice(cc.length) } : null,
+    fallbackEmail: `viewer-${params.viewerId.slice(0, 8)}@${new URL(base).hostname}`,
     redirectUrl: `${base}/payment/return?order=${order.id}&back=${encodeURIComponent(params.returnTo)}`,
     webhookUrl: `${base}/api/payments/tap`,
     saveCard,

@@ -7,12 +7,11 @@ import { BottomNav } from "@/components/home/BottomNav";
 import { TopBar } from "@/components/TopBar";
 import { answerChip, TEXT } from "@/lib/assistant/engine";
 import { assistantContext, withCards } from "@/lib/assistant/run";
-import { env } from "@/lib/env";
 import { ACCOUNT_WORD } from "@/lib/links";
 import { getSessionViewer } from "@/lib/session";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
-import { botLink, visitorChannel } from "@/lib/telegram/channel";
+import { doorSetup } from "@/lib/signin/server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +20,8 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
   if (!viewer) {
     const locale = (await searchParams).lang === "en" ? "en" : "ar";
     const t = webCopy(locale);
-    const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}` : null;
-    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
-    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/assistant" telegram={tg} />;
+    const setup = await doorSetup({ waText: ACCOUNT_WORD, to: "/assistant" });
+    return <Splash locale={locale} setup={setup} cta={t.signInWithWhatsApp} hint={t.accountSignedOutBody} path="/assistant" />;
   }
   const locale = viewer.uiLocale;
   // Opened from the chat button on another page: the back arrow returns there.

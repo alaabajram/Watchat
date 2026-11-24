@@ -454,3 +454,17 @@ html.wc-in-telegram body { padding-top: var(--wc-tg-top, 0px); }
   font-size: 18px; line-height: 1; display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
 .story-phone .wc-story-mute { top: 10px; width: 34px; height: 34px; font-size: 15px; }
+
+/* One sign-in page (SignInDoors) */
+.wc-or { display: flex; align-items: center; gap: 12px; color: var(--wc-muted); font-size: 13px; }
+.wc-or::before, .wc-or::after { content: ""; flex: 1; height: 1px; background: var(--wc-line); }
+.wc-signin-form { display: flex; flex-direction: column; gap: 12px; }
+.wc-signin-form label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--wc-muted); }
+.wc-signin-form input { min-height: 54px; padding: 0 16px; border-radius: 16px; border: 1px solid var(--wc-line); background: var(--wc-card); color: var(--wc-ink); font: inherit; font-size: 18px; }
+.wc-signin-form input:focus { outline: 2px solid var(--wc-mint); outline-offset: 1px; }
+.wc-signin-form input.wc-code { letter-spacing: 0.4em; text-align: center; font-size: 24px; font-weight: 700; }
+.wc-signin-note { margin: 0; font-size: 15px; line-height: 1.7; color: var(--wc-muted); }
+.wc-signin-error { margin: 0; padding: 10px 14px; border-radius: 12px; background: rgba(255, 90, 72, 0.14); color: var(--wc-coral-text); font-size: 14px; }
+.wc-signin-links { display: flex; justify-content: space-between; gap: 12px; }
+.wc-signin-links button { background: none; border: 0; padding: 6px 0; color: var(--wc-ink); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
+.wc-signin-links button:disabled { color: var(--wc-muted); text-decoration: none; cursor: default; }

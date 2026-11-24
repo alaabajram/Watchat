@@ -20,7 +20,7 @@ import { db } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
-import { botLink, visitorChannel } from "@/lib/telegram/channel";
+import { doorSetup } from "@/lib/signin/server";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Watchat · حسابي" };
@@ -31,9 +31,8 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
     // Same look as watchat.pro's splash; one tap opens WhatsApp with «حسابي» ready, the bot replies with a sign-in link.
     const locale = (await searchParams).lang === "en" ? "en" : "ar";
     const t = webCopy(locale);
-    const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(ACCOUNT_WORD)}` : null;
-    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
-    return <Splash locale={locale} waHref={wa} cta={t.signInWithWhatsApp} hint={wa ? t.accountSignedOutBody : t.continueManual(ACCOUNT_WORD)} path="/me" telegram={tg} />;
+    const setup = await doorSetup({ waText: ACCOUNT_WORD, to: "/me" });
+    return <Splash locale={locale} setup={setup} cta={t.signInWithWhatsApp} hint={t.accountSignedOutBody} path="/me" />;
   }
 
   const locale = viewer.uiLocale;

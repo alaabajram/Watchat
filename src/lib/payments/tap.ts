@@ -36,7 +36,9 @@ export async function createCharge(params: {
   amount: number;
   currency: string;
   description: string;
-  phone: { countryCode: string; number: string };
+  /** The viewer's phone; email-only viewers have none and are sent with an address on our own domain instead. */
+  phone: { countryCode: string; number: string } | null;
+  fallbackEmail?: string;
   redirectUrl: string;
   webhookUrl: string;
   /** Save the card for automatic renewals (needs Tap's "Save Card" feature on the merchant account). */
@@ -58,7 +60,7 @@ export async function createCharge(params: {
       customer: {
         first_name: "Watchat",
         last_name: "Viewer",
-        phone: { country_code: params.phone.countryCode, number: params.phone.number },
+        ...(params.phone ? { phone: { country_code: params.phone.countryCode, number: params.phone.number } } : { email: params.fallbackEmail }),
       },
       source: { id: "src_all" },
       post: { url: params.webhookUrl },
