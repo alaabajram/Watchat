@@ -21,6 +21,9 @@ describe("studio stages", () => {
     expect(canMove("final_check", "approved")).toBe(true);
     expect(canMove("brief", "published")).toBe(false);
     expect(teamMoves("published")).toEqual([]);
+    // Approving the script moves on to Media without a note; only "send back" moves ask for one.
+    expect(teamMoves("script_review").find((m) => m.to === "pictures")?.kind).toBe("approve");
+    expect(teamMoves("final_check").find((m) => m.to === "pictures")?.kind).toBe("back");
   });
 
   it("keeps a note thread; team notes stay open until Claude submits again", () => {
