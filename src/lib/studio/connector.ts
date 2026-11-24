@@ -10,12 +10,16 @@ import { db } from "@/lib/supabase";
 import { handleRpc } from "./mcp";
 import { STUDIO_INSTRUCTIONS, studioTools, type StudioCtx } from "./tools";
 
-/** The key from "Authorization: Bearer <key>" or "X-Watchat-Key: <key>". */
+/**
+ * The key from "x-api-key: <key>" (what Claude's connector form offers; "Authorization" is reserved there for
+ * OAuth), "X-Watchat-Key: <key>" or "Authorization: Bearer <key>". A leading "Bearer " is accepted in any of them.
+ */
 export function keyFromHeaders(h: Headers): string | null {
-  const auth = h.get("authorization") ?? "";
-  const m = /^Bearer\s+(\S+)$/i.exec(auth.trim());
-  const k = m?.[1] ?? h.get("x-watchat-key")?.trim() ?? "";
-  return k || null;
+  for (const name of ["x-api-key", "x-watchat-key", "authorization"]) {
+    const v = (h.get(name) ?? "").trim().replace(/^Bearer\s+/i, "").trim();
+    if (v && !/\s/.test(v)) return v;
+  }
+  return null;
 }
 
 const deny = (status: number, message: string) => NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message } }, { status });

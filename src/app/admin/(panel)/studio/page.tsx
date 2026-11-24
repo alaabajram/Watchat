@@ -203,7 +203,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
               <code>https://watchat.pro/api/mcp</code>.
             </li>
             <li>
-              Under <strong>Request headers</strong> add name <code>Authorization</code>, value <code>Bearer &lt;your key&gt;</code>. Leave OAuth empty. Add.
+              Under <strong>Request headers</strong> pick the name <code>x-api-key</code> and paste your key as the value (tick Required). Leave OAuth empty. Add.
             </li>
             <li>Also add OpenArt (address https://mcp.openart.ai/mcp) and sign in.</li>
             <li>

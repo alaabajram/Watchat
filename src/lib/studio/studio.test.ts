@@ -113,6 +113,8 @@ describe("connector key from headers", async () => {
     expect(keyFromHeaders(new Headers({ Authorization: "Bearer abc123" }))).toBe("abc123");
     expect(keyFromHeaders(new Headers({ authorization: "bearer  xyz " }))).toBe("xyz");
     expect(keyFromHeaders(new Headers({ "X-Watchat-Key": "k1" }))).toBe("k1");
+    expect(keyFromHeaders(new Headers({ "x-api-key": "k2" }))).toBe("k2");
+    expect(keyFromHeaders(new Headers({ "x-api-key": "Bearer k3" }))).toBe("k3");
     expect(keyFromHeaders(new Headers({ Authorization: "Basic zzz" }))).toBeNull();
     expect(keyFromHeaders(new Headers())).toBeNull();
   });
