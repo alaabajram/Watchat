@@ -34,6 +34,10 @@ describe("viewer assistant", () => {
     expect(answerLocally("وين وقفت", ctx)).toMatchObject({ kind: "continue", series: [{ code: "SECRETS01", resume: 5 }] });
     expect(answerLocally("هلا", ctx)).toMatchObject({ kind: "greeting", text: TEXT.greeting.ar });
     expect(answerLocally("كيف ادفع؟", ctx)).toMatchObject({ kind: "help", help: ["payment"] });
+    expect(answerLocally("عندي حسابين كيف ادمجهم", ctx)).toMatchObject({ kind: "help", help: ["merge"] });
+    expect(answerLocally("how do I merge my accounts", ctx)).toMatchObject({ kind: "help", help: ["merge"] });
+    expect(answerLocally("كيف اربط تيليجرام بحسابي", ctx)).toMatchObject({ kind: "help", help: ["merge"] });
+    expect(answerLocally("كيف ادخل حسابي", ctx)).toMatchObject({ kind: "help", help: ["account"] });
     expect(answerLocally("x".repeat(400), ctx)).toMatchObject({ text: TEXT.tooLong.ar });
   });
 
