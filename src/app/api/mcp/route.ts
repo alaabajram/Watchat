@@ -1,14 +1,14 @@
 // The Watchat connector address: https://<site>/api/mcp with the key in a request header
-// ("Authorization: Bearer <key>"), so the address on its own gives no access.
+// (x-api-key, X-Watchat-Key or Authorization: Bearer). Addresses with the key at the end are in [token].
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { handleConnector, keyFromHeaders } from "@/lib/studio/connector";
+import { handleConnector, keyCandidates } from "@/lib/studio/connector";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  return handleConnector(req, keyFromHeaders(req.headers));
+  return handleConnector(req, keyCandidates(req.headers));
 }
 
 export function GET() {
