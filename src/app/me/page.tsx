@@ -21,6 +21,11 @@ import { getBalance } from "@/lib/wallet";
 import { dirFor, webCopy } from "@/lib/web-copy";
 import { PingIcon } from "@/components/brand/PingIcon";
 import { doorSetup } from "@/lib/signin/server";
+import { SignInMethods } from "@/components/SignInMethods";
+import { loginsOf } from "@/lib/signin/accounts";
+import { preludeReady } from "@/lib/signin/prelude";
+import { emailReady } from "@/lib/email";
+import { telegramConfigured } from "@/lib/telegram/client";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Watchat · حسابي" };
@@ -38,11 +43,12 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
   const locale = viewer.uiLocale;
   const t = webCopy(locale);
   const rtl = locale === "ar";
-  const [balance, site, terms, { count: passes }] = await Promise.all([
+  const [balance, site, terms, { count: passes }, logins] = await Promise.all([
     getBalance(viewer.id),
     getSiteSafe(),
     getPublishedPage("terms"),
     db().from("entitlements").select("series_id", { count: "exact", head: true }).eq("viewer_id", viewer.id).is("episode_number", null),
+    loginsOf(viewer.id),
   ]);
   const support = site.supportWhatsapp
     ? `https://wa.me/${site.supportWhatsapp.replace(/\D/g, "")}`
@@ -103,6 +109,8 @@ export default async function MyAccountPage({ searchParams }: { searchParams: Pr
             </Link>
           </div>
         </section>
+
+        <SignInMethods locale={locale} logins={logins} can={{ phone: preludeReady(), email: emailReady(), telegram: telegramConfigured() }} />
 
         {/* Menu */}
         <ul className="wc-menu">

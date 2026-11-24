@@ -14,6 +14,7 @@ import { sessionCookieOptions } from "../session-cookie";
 import { siteUrl } from "../site/store";
 import { currentTenantId, db } from "../supabase";
 import { botLink, visitorChannel } from "../telegram/channel";
+import { resolveViewer } from "./accounts";
 import { doorsFor, emailAddressFor, whatsappWorking, type Door } from "./doors";
 import { preludeReady } from "./prelude";
 
@@ -77,9 +78,9 @@ export class SignInRefused extends Error {}
 export async function viewerForPhone(e164: string, locale: "ar" | "en"): Promise<{ id: string; created: boolean }> {
   const digits = e164.replace(/\D/g, "");
   const tenantId = await currentTenantId();
-  const { data: found } = await db().from("viewers").select("id, phone_e164").eq("tenant_id", tenantId).eq("phone_hmac", phoneHmac(digits)).maybeSingle();
+  const found = await resolveViewer(tenantId, phoneHmac(digits));
   if (found) {
-    if (String(found.phone_e164).startsWith("+tg:")) throw new SignInRefused("telegram_account");
+    if (found.kind !== "phone") throw new SignInRefused("telegram_account");
     return { id: found.id, created: false };
   }
   const v = await createSupabaseDeps().upsertViewer({ id: `phone:${digits}`, from: digits, timestamp: Math.floor(Date.now() / 1000), kind: "text", text: "" });
@@ -92,7 +93,7 @@ export async function viewerForPhone(e164: string, locale: "ar" | "en"): Promise
 /** The viewer behind a verified email: found by its hash, or a new email-only viewer ("+em:<id>", welcome Ping). */
 export async function viewerForEmail(hmac: string, locale: "ar" | "en"): Promise<{ id: string; created: boolean }> {
   const tenantId = await currentTenantId();
-  const { data: found } = await db().from("viewers").select("id").eq("tenant_id", tenantId).eq("phone_hmac", hmac).maybeSingle();
+  const found = await resolveViewer(tenantId, hmac);
   if (found) return { id: found.id, created: false };
   const { data: created, error } = await db()
     .from("viewers")

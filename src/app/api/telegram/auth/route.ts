@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseDeps, phoneHmac } from "@/lib/bot/deps-supabase";
 import { env } from "@/lib/env";
 import { trackEvent } from "@/lib/events";
+import { resolveViewer } from "@/lib/signin/accounts";
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { readJson } from "@/lib/security/request";
 import { createSession, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_S } from "@/lib/session";
@@ -29,8 +30,10 @@ export async function POST(req: NextRequest) {
   const address = tgAddress(user.id);
   const hmac = phoneHmac(address);
   const tenantId = await currentTenantId();
-  const { data: existing } = await db().from("viewers").select("id").eq("tenant_id", tenantId).eq("phone_hmac", hmac).maybeSingle();
-  let viewerId = existing?.id as string | undefined;
+  // Its own account, or the account this Telegram was added to / merged into.
+  const found = await resolveViewer(tenantId, hmac);
+  if (found && found.kind !== "telegram") return NextResponse.json({ error: "invalid" }, { status: 409 });
+  let viewerId = found?.id;
   if (!viewerId) {
     // First visit from the Mini App: the same new-viewer path as a first chat message (welcome Ping, start code).
     const created = await createSupabaseDeps().upsertViewer({

@@ -46,6 +46,10 @@ export type ParsedUpdate = {
   preCheckout?: { id: string; currency: string; total_amount: number; invoice_payload: string };
   /** A Stars payment went through (or a monthly renewal). */
   payment?: { chatId: number; data: Record<string, unknown> };
+  /** "Connect Telegram" from the website: /start link_<token> adds this Telegram to that account. */
+  link?: { chatId: number; token: string; en: boolean };
+  /** The viewer shared their own phone number (Telegram checked it's theirs): it joins their account. */
+  contact?: { chatId: number; phone: string; en: boolean };
 };
 
 /**
@@ -120,7 +124,17 @@ export function parseUpdate(update: unknown): ParsedUpdate | null {
   const from = obj(m.from);
   const paid = obj(m.successful_payment);
   if (Object.keys(paid).length) return { updateId, msg: null, payment: { chatId, data: paid } };
+  const en = Boolean(str(from.language_code)?.startsWith("en"));
+  // Only the viewer's own number counts (a forwarded contact card has another user id).
+  const contact = obj(m.contact);
+  if (Object.keys(contact).length) {
+    const phone = str(contact.phone_number)?.replace(/[^\d+]/g, "");
+    const own = num(contact.user_id) !== undefined && num(contact.user_id) === num(from.id);
+    return { updateId, msg: null, ...(own && phone ? { contact: { chatId, phone: phone.startsWith("+") ? phone : `+${phone}`, en } } : {}) };
+  }
   const raw = str(m.text);
+  const linkMatch = raw ? /^\/start(?:@\w+)?\s+link_([A-Za-z0-9_-]{20,80})$/.exec(raw.trim()) : null;
+  if (linkMatch) return { updateId, msg: null, link: { chatId, token: linkMatch[1], en } };
   const base = { id: `tg:${updateId}`, from: tgAddress(chatId), timestamp: num(m.date) ?? 0, profileName: str(from.first_name) };
   if (raw === undefined) return { updateId, msg: { ...base, kind: "other" } };
   const { text, page } = commandText(raw);

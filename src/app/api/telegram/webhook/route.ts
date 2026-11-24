@@ -12,6 +12,7 @@ import { db } from "@/lib/supabase";
 import { tgCall } from "@/lib/telegram/client";
 import { answerPreCheckout, fulfilStarsPayment, type SuccessfulPayment } from "@/lib/telegram/payments";
 import { parseUpdate, webhookSecret, type PageCommand } from "@/lib/telegram/telegram";
+import { connectTelegram, shareNumber } from "@/lib/signin/telegram-link";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,6 +67,15 @@ export async function POST(req: NextRequest) {
     // De-duplicate: Telegram retries updates it thinks failed.
     const { error: dup } = await db().from("wa_inbound").insert({ wa_message_id: `tg:${parsed.updateId}` });
     if (dup) return;
+
+    // Account linking: "Connect Telegram" links and shared phone numbers.
+    try {
+      if (parsed.link) return void (await connectTelegram(parsed.link));
+      if (parsed.contact) return void (await shareNumber(parsed.contact));
+    } catch (err) {
+      console.error("[telegram] account linking failed", { err });
+      return;
+    }
 
     const chatId = (update as { message?: { chat?: { id?: number } } }).message?.chat?.id;
     if (parsed.page && chatId) {
