@@ -42,8 +42,8 @@ export type AssistantCtx = {
 export type Chip = "recommend" | "offers" | "continue" | "help" | "new";
 export const CHIPS: Chip[] = ["recommend", "continue", "offers", "new", "help"];
 
-export type HelpTopic = "free" | "coins" | "pass" | "account" | "alerts" | "payment" | "languages";
-export const HELP_TOPICS: HelpTopic[] = ["free", "coins", "pass", "account", "alerts", "payment", "languages"];
+export type HelpTopic = "free" | "coins" | "pass" | "account" | "merge" | "alerts" | "payment" | "languages";
+export const HELP_TOPICS: HelpTopic[] = ["free", "coins", "pass", "account", "merge", "alerts", "payment", "languages"];
 
 export type Reply = {
   kind: "greeting" | "recommend" | "search" | "offers" | "continue" | "help" | "off_topic" | "nothing" | "limit";
@@ -114,8 +114,19 @@ export const HELP: Record<HelpTopic, { q: Record<Lang, string>; a: Record<Lang, 
   account: {
     q: { ar: "كيف أرجع لحسابي؟", en: "How do I get back to my account?" },
     a: {
-      ar: () => "افتح watchat.pro/me من نفس الجوال، أو أضف واتشات للشاشة الرئيسية من هنا. ولو جوال جديد، أرسل «حسابي» لواتشات في واتساب.",
-      en: () => "Open watchat.pro/me on the same phone, or add Watchat to your home screen from here. On a new phone, send “ACCOUNT” to Watchat on WhatsApp.",
+      ar: () =>
+        "افتح watchat.pro/me من نفس الجوال وتلقى نفسك داخل حسابك، وأضف واتشات للشاشة الرئيسية عشان يفتح مثل التطبيق. على جوال جديد ادخل بتيليجرام أو رقم جوالك أو بريدك، وتوصلك نفس الحساب.",
+      en: () =>
+        "Open watchat.pro/me on the same phone and you're already signed in; add Watchat to your Home Screen so it opens like an app. On a new phone, sign in with Telegram, your phone number or your email: they all open the same account.",
+    },
+  },
+  merge: {
+    q: { ar: "عندي حسابين، كيف أدمجهم؟", en: "I have two accounts. How do I merge them?" },
+    a: {
+      ar: () =>
+        "ادخل بالحساب اللي تبي تحتفظ فيه، وروح «حسابي» ← «طرق الدخول»، وأضف طريقة دخول الحساب الثاني: رقم الجوال (برمز SMS) أو البريد أو تيليجرام. إذا كانت مربوطة بحساب ثاني بنوريك وش فيه، واضغط «ادمج في هذا الحساب». داخل تيليجرام أسهل: «شارك رقمي من تيليجرام» ويندمج حساب الرقم في حساب تيليجرام على طول. ينتقل كل شي: البينج، الباقات، الحلقات المفتوحة، المشاهدات، اختيارات القصص وقائمتي. الدمج نهائي وما يمكن التراجع عنه.",
+      en: () =>
+        "Sign in to the account you want to keep, go to Profile → Sign-in methods, and add the other account's way in: its phone number (SMS code), email or Telegram. If it already belongs to another account, we show what's in it; tap “Merge into this account”. Inside Telegram it's quicker: “Share my number from Telegram” merges that number's account into your Telegram one right away. Everything moves over: Ping, passes, unlocked episodes, progress, story choices and My List. A merge is final and can't be undone.",
     },
   },
   alerts: {
@@ -243,7 +254,9 @@ function helpTopicsIn(text: string): HelpTopic[] {
   if (has("مجاني", "مجانا", "ببلاش", "free")) out.push("free");
   if (has("كوين", "كوينز", "عملات", "بينج", "coins", "coin", "ping")) out.push("coins");
   if (has("تذكره", "موسم", "pass", "season")) out.push("pass");
-  if (has("حساب", "حسابي", "دخول", "account", "login", "sign")) out.push("account");
+  const merge = has("دمج", "ادمج", "ادمجهم", "حسابين", "حسابان", "ربط", "اربط", "merge", "combine", "link", "two accounts", "2 accounts", "another account", "حساب ثاني", "حساب اخر", "حساب تاني");
+  if (merge) out.push("merge");
+  else if (has("حساب", "حسابي", "دخول", "account", "login", "sign")) out.push("account");
   if (has("تنبيه", "تنبيهات", "اشعار", "اشعارات", "alerts", "notifications", "notify")) out.push("alerts");
   if (has("دفع", "ادفع", "فيزا", "بطاقه", "pay", "payment", "card")) out.push("payment");
   if (has("ترجمه", "انجليزي", "لغه", "english", "subtitles", "language")) out.push("languages");
