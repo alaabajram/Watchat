@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPicture, extractJson, parseStoryImport, pictureRefs, refFromFileName } from "./import";
+import { applyMedia, applyPicture, extractJson, hostAllowed, mediaKindOf, parseMediaList, parseStoryImport, pictureRefs, refFromFileName } from "./import";
 
 const reply = `Here is your story!
 
@@ -58,5 +58,40 @@ describe("story import", () => {
 
   it("refuses text without episodes", () => {
     expect(() => parseStoryImport('{"characters": []}')).toThrow(/no episodes/);
+  });
+});
+
+describe("story import media", () => {
+  it("reads the media list as an object or an array, https only", () => {
+    const notes: string[] = [];
+    expect(parseMediaList({ IMG_01: "https://cdn.openart.ai/a.png", img_02: "http://x/b.png", "bad ref!": "https://x" }, notes)).toEqual([{ ref: "img_01", url: "https://cdn.openart.ai/a.png" }]);
+    expect(notes[0]).toContain("img_02");
+    expect(parseMediaList([{ ref: "img_03", url: "https://openart.ai/v.mp4" }])).toEqual([{ ref: "img_03", url: "https://openart.ai/v.mp4" }]);
+    const withMedia = reply.replace('"characters"', '"media": {"img_01": "https://cdn.openart.ai/x.jpg"}, "characters"');
+    expect(parseStoryImport(withMedia).media).toHaveLength(1);
+  });
+
+  it("only allows listed hosts and their subdomains", () => {
+    expect(hostAllowed("https://cdn.openart.ai/x.png", ["openart.ai"])).toBe(true);
+    expect(hostAllowed("https://openart.ai/x.png", ["openart.ai"])).toBe(true);
+    expect(hostAllowed("https://evilopenart.ai/x.png", ["openart.ai"])).toBe(false);
+    expect(hostAllowed("http://cdn.openart.ai/x.png", ["openart.ai"])).toBe(false);
+    expect(hostAllowed("not a url", ["openart.ai"])).toBe(false);
+  });
+
+  it("tells pictures from clips", () => {
+    expect(mediaKindOf("https://a/b/c.JPEG?sig=1")).toEqual({ type: "image", ext: "jpg" });
+    expect(mediaKindOf("https://a/clip.mp4")).toEqual({ type: "video", ext: "mp4" });
+    expect(mediaKindOf("https://a/file", "image/webp; q=1")).toEqual({ type: "image", ext: "webp" });
+    expect(mediaKindOf("https://a/file.gif")).toBeNull();
+  });
+
+  it("puts clips in the scene's video slot", () => {
+    const g = parseStoryImport(reply).episodes[0].story;
+    const r = applyMedia(g, "img_02", { path: "r2:X/story/c.mp4", url: "https://r2/c.mp4", type: "video" });
+    expect(r.count).toBe(1);
+    expect(r.story.scenes[2].video?.type).toBe("video");
+    expect(r.story.scenes[2].image).toBeNull();
+    expect(applyMedia(g, "img_01", { path: "cfimg:x", url: "https://i/x", type: "image" }).count).toBe(2);
   });
 });

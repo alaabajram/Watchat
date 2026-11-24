@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addStoryEpisode,
+  fetchStoryMedia,
   importStoryScript,
   publishStory,
   renameStoryEpisode,
@@ -692,8 +693,9 @@ function ImportPanel(p: { seriesId: string; refs: { ref: string; scenes: number;
         <div style={{ display: "grid", gap: 8 }}>
           <strong>1. Paste the script</strong>
           <span className="muted" style={{ fontSize: 13 }}>
-            Paste ChatGPT&apos;s whole reply (or just its JSON block). Characters are added, and each episode&apos;s scenes, choices and routes become its draft. Episodes
-            that already have scenes get the imported ones instead (their live version stays until you publish).
+            Paste the whole reply from ChatGPT or Claude (or just its JSON block). Characters are added, and each episode&apos;s scenes, choices and routes become
+            its draft. If the script has a &quot;media&quot; list (picture name → OpenArt file address), the pictures and clips are fetched and placed too.
+            Episodes that already have scenes get the imported ones instead (their live version stays until you publish).
           </span>
           <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder='{ "characters": [...], "episodes": [...] }' style={{ fontFamily: "monospace", fontSize: 12 }} />
           <div className="row" style={{ gap: 8 }}>
@@ -706,12 +708,21 @@ function ImportPanel(p: { seriesId: string; refs: { ref: string; scenes: number;
                 setState(null);
                 try {
                   const r = await importStoryScript(p.seriesId, text);
-                  setState({
-                    ok: true,
-                    text: `Imported ${r.episodes.map((e) => `episode ${e.number} (${e.scenes} scenes${e.created ? ", new" : ""})`).join(", ")}. Reloading…`,
-                    notes: r.notes,
-                  });
-                  window.setTimeout(p.onImported, r.notes.length ? 2500 : 800);
+                  const summary = `Imported ${r.episodes.map((e) => `episode ${e.number} (${e.scenes} scenes${e.created ? ", new" : ""})`).join(", ")}.`;
+                  const notes = [...r.notes];
+                  // Files listed in the script (e.g. OpenArt results): fetched one by one onto the scenes.
+                  let placed = 0;
+                  for (let k = 0; k < r.media.length; k++) {
+                    const m = r.media[k];
+                    setState({ ok: true, text: `${summary} Fetching pictures and clips ${k + 1}/${r.media.length}…`, notes });
+                    try {
+                      placed += (await fetchStoryMedia(p.seriesId, m.ref, m.url)).scenes;
+                    } catch (e) {
+                      notes.push(e instanceof Error ? e.message : `${m.ref}: couldn't fetch it.`);
+                    }
+                  }
+                  setState({ ok: true, text: `${summary}${r.media.length ? ` ${placed} scene(s) got their picture or clip.` : ""} Reloading…`, notes });
+                  window.setTimeout(p.onImported, notes.length ? 4000 : 800);
                 } catch (e) {
                   setState({ ok: false, text: e instanceof Error ? e.message : "Import failed" });
                 } finally {

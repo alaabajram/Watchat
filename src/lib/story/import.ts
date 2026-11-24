@@ -7,7 +7,9 @@ import { sanitizeCharacters, sanitizeStory } from "./sanitize";
 import type { Bi, Character, StoryGraph } from "./types";
 
 export type ImportedEpisode = { number: number; title: Bi; story: StoryGraph };
-export type StoryImport = { characters: Character[]; episodes: ImportedEpisode[]; notes: string[] };
+/** A file to fetch for a picture name: `"img_05": "https://…"` in the script's "media" list. */
+export type ImportMedia = { ref: string; url: string };
+export type StoryImport = { characters: Character[]; episodes: ImportedEpisode[]; media: ImportMedia[]; notes: string[] };
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
@@ -80,7 +82,69 @@ export function parseStoryImport(text: string): StoryImport {
     });
   }
   if (!episodes.length) throw new Error("The JSON has no episodes with scenes.");
-  return { characters, episodes: episodes.sort((a, b) => a.number - b.number), notes };
+  const media = parseMediaList(raw.media, notes);
+  return { characters, episodes: episodes.sort((a, b) => a.number - b.number), media, notes };
+}
+
+/**
+ * The "media" list: an object { "img_01": "https://…" } or an array [{ "ref": "img_01", "url": "https://…" }].
+ * Only https addresses; one file per picture name.
+ */
+export function parseMediaList(v: unknown, notes: string[] = []): ImportMedia[] {
+  const pairs: [unknown, unknown][] = Array.isArray(v) ? v.map((x) => [obj(x).ref ?? obj(x).image_ref, obj(x).url]) : Object.entries(obj(v));
+  const out = new Map<string, string>();
+  for (const [r, u] of pairs) {
+    const ref = typeof r === "string" ? refFromFileName(r) : "";
+    if (!/^[a-z0-9_.-]{1,40}$/.test(ref)) continue;
+    if (typeof u !== "string" || !/^https:\/\/[^\s]{4,1500}$/.test(u.trim())) {
+      notes.push(`Media "${ref}": not an https address, skipped.`);
+      continue;
+    }
+    out.set(ref, u.trim());
+  }
+  return [...out.entries()].map(([ref, url]) => ({ ref, url }));
+}
+
+/** Is this address on an allowed host (the host itself or a subdomain of one)? */
+export function hostAllowed(url: string, hosts: string[]): boolean {
+  let h: string;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    h = u.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hosts.some((a) => h === a || h.endsWith(`.${a}`));
+}
+
+/** Picture or clip, from the address's file ending (or the type the server answered with). */
+export function mediaKindOf(url: string, contentType = ""): { type: "image" | "video"; ext: string } | null {
+  const ct = contentType.split(";")[0].trim().toLowerCase();
+  const byType: Record<string, { type: "image" | "video"; ext: string }> = {
+    "image/jpeg": { type: "image", ext: "jpg" },
+    "image/png": { type: "image", ext: "png" },
+    "image/webp": { type: "image", ext: "webp" },
+    "video/mp4": { type: "video", ext: "mp4" },
+  };
+  if (byType[ct]) return byType[ct];
+  const m = /\.(jpe?g|png|webp|mp4)(?:$|[?#])/i.exec(url);
+  if (!m) return null;
+  const e = m[1].toLowerCase();
+  return e === "mp4" ? { type: "video", ext: "mp4" } : { type: "image", ext: e === "jpeg" ? "jpg" : e };
+}
+
+/** Put a fetched file on every scene with this picture name: pictures as the image, clips as the scene's video. */
+export function applyMedia(g: StoryGraph, ref: string, media: NonNullable<StoryGraph["scenes"][number]["image"]>): { story: StoryGraph; count: number } {
+  if (media.type === "image") return applyPicture(g, ref, media);
+  let count = 0;
+  const key = ref.toLowerCase();
+  const scenes = g.scenes.map((s) => {
+    if (s.ref !== key) return s;
+    count++;
+    return { ...s, video: media };
+  });
+  return { story: { ...g, scenes }, count };
 }
 
 /** Picture names used by these stories, with how many scenes use each (for the "pictures to make" list). */
