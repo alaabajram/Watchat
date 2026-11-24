@@ -134,7 +134,7 @@ export async function createConnectorAction(fd: FormData) {
     .insert({ tenant_id: admin.tenantId, admin_id: admin.id, label: str(fd, "label", 60) || "Claude", token_hash: sha256Hex(token), expires_at: new Date(Date.now() + 90 * 86_400_000).toISOString() });
   await audit(admin, "studio.connector_created", "admin_user", admin.id);
   // Shown once. The address is the same for everyone; the key goes in the connector's request header.
-  done(BOARD, `Connector ready (shown once, copy it now). Address: ${await siteUrl()}/api/mcp · Request header name: x-api-key · value: ${token}`);
+  done(BOARD, `Connector address (shown once, copy it now; treat it like a password): ${await siteUrl()}/api/mcp/${token} · Check it by opening it in your browser.`);
 }
 
 export async function revokeConnectorAction(fd: FormData) {

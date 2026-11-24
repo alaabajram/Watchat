@@ -108,7 +108,12 @@ describe("connector protocol", () => {
 });
 
 describe("connector key from headers", async () => {
-  const { keyFromHeaders } = await import("./connector");
+  const { keyFromHeaders, keyCandidates } = await import("./connector");
+  it("tries header keys first, then the address key, without duplicates", () => {
+    expect(keyCandidates(new Headers({ "x-api-key": "old" }), "new")).toEqual(["old", "new"]);
+    expect(keyCandidates(new Headers({ "x-api-key": "same" }), "same")).toEqual(["same"]);
+    expect(keyCandidates(new Headers(), null)).toEqual([]);
+  });
   it("reads Authorization: Bearer or X-Watchat-Key", () => {
     expect(keyFromHeaders(new Headers({ Authorization: "Bearer abc123" }))).toBe("abc123");
     expect(keyFromHeaders(new Headers({ authorization: "bearer  xyz " }))).toBe("xyz");

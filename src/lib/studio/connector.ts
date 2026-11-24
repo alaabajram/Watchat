@@ -10,6 +10,17 @@ import { db } from "@/lib/supabase";
 import { handleRpc } from "./mcp";
 import { STUDIO_INSTRUCTIONS, studioTools, type StudioCtx } from "./tools";
 
+/** Every key the request carries (headers first, then the one at the end of the address); the first valid one is used. */
+export function keyCandidates(h: Headers, fromPath?: string | null): string[] {
+  const out: string[] = [];
+  for (const name of ["x-api-key", "x-watchat-key", "authorization"]) {
+    const v = (h.get(name) ?? "").trim().replace(/^Bearer\s+/i, "").trim();
+    if (v && !/\s/.test(v) && !out.includes(v)) out.push(v);
+  }
+  if (fromPath && !out.includes(fromPath)) out.push(fromPath);
+  return out;
+}
+
 /**
  * The key from "x-api-key: <key>" (what Claude's connector form offers; "Authorization" is reserved there for
  * OAuth), "X-Watchat-Key: <key>" or "Authorization: Bearer <key>". A leading "Bearer " is accepted in any of them.
@@ -39,8 +50,12 @@ export async function contextFor(token: string): Promise<{ ctx: StudioCtx; token
   return { ctx: { tenantId: data.tenant_id, adminId: data.admin_id, adminName: admin.name ?? admin.email }, tokenId: data.id };
 }
 
-export async function handleConnector(req: NextRequest, token: string | null): Promise<NextResponse> {
-  const who = token ? await contextFor(token) : null;
+export async function handleConnector(req: NextRequest, keys: string[]): Promise<NextResponse> {
+  let who: Awaited<ReturnType<typeof contextFor>> = null;
+  for (const k of keys.slice(0, 4)) {
+    who = await contextFor(k);
+    if (who) break;
+  }
   // 404, not 401: a 401 makes Claude start an OAuth sign-in, which this connector doesn't use (the key is the sign-in).
   if (!who) return deny(404, "The Watchat connector key is missing, wrong or removed. Create a new one in Watchat Admin → Studio and put it in the connector's request header.");
   // Plenty for one episode, but stops a runaway loop from hammering the site.
