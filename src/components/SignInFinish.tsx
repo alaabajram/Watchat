@@ -5,6 +5,7 @@
 import { useState } from "react";
 import type { AccountSummary } from "@/lib/signin/accounts";
 import { MergePrompt } from "./SignInMethods";
+import { rememberSignIn } from "./SignInDoors";
 
 const T = {
   ar: { inUse: "هذا البريد مرتبط بحساب آخر. افتح الرابط على الجهاز الذي طلبته منه لدمج الحسابين.", title: "تسجيل الدخول إلى واتشات", go: "متابعة", busy: "لحظة…", expired: "انتهى هذا الرابط أو استُخدم من قبل. اطلب رابطًا جديدًا.", again: "اطلب رابطًا جديدًا", error: "حدث خطأ. حاول مرة أخرى." },
@@ -41,7 +42,10 @@ export function EmailFinish({ token, locale }: { token: string; locale: "ar" | "
             const r = await fetch("/api/signin/email/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })
               .then((x) => x.json() as Promise<Finish>)
               .catch(() => ({ error: "error" }) as Finish);
-            if (r.ok && r.to) return window.location.replace(r.to);
+            if (r.ok && r.to) {
+              rememberSignIn();
+              return window.location.replace(r.to);
+            }
             setBusy(false);
             if (r.merge) return setMerge(r.merge);
             setError(r.error === "expired" ? t.expired : r.error === "in_use" ? t.inUse : t.error);

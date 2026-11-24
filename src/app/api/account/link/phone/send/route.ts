@@ -11,5 +11,5 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return err(403, "forbidden");
   if (!(await getSessionViewer())) return err(401, "signed_out");
-  return sendCode(req, await readJson<{ phone?: string; lang?: string }>(req));
+  return sendCode(req, await readJson<{ phone?: string; ref?: string; lang?: string }>(req));
 }

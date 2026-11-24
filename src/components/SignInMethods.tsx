@@ -84,7 +84,7 @@ const T = {
 };
 
 type Merge = { token: string; summary: AccountSummary };
-type Answer = { ok?: boolean; already?: boolean; error?: string; phone?: string; shown?: string; href?: string; merge?: Merge; ping?: number };
+type Answer = { ok?: boolean; already?: boolean; error?: string; ref?: string; shown?: string; href?: string; merge?: Merge; ping?: number };
 
 async function post(url: string, body: unknown): Promise<Answer> {
   try {
@@ -218,7 +218,7 @@ type Copy = (typeof T)["en"];
 
 function PhoneAdd({ t, locale, onDone, onCancel }: { t: Copy; locale: Locale; onDone: (a: Answer) => void; onCancel: () => void }) {
   const [phone, setPhone] = useState("");
-  const [sent, setSent] = useState<{ phone: string; shown: string } | null>(null);
+  const [sent, setSent] = useState<{ ref: string; shown: string } | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -228,11 +228,11 @@ function PhoneAdd({ t, locale, onDone, onCancel }: { t: Copy; locale: Locale; on
     if (!sent) {
       const a = await post("/api/account/link/phone/send", { phone, lang: locale });
       setBusy(false);
-      if (a.ok && a.phone) setSent({ phone: a.phone, shown: a.shown ?? a.phone });
+      if (a.ok && a.ref) setSent({ ref: a.ref, shown: a.shown ?? "" });
       else setError(t.errors[a.error ?? "error"] ?? t.errors.error);
       return;
     }
-    const a = await post("/api/account/link/phone/check", { phone: sent.phone, code });
+    const a = await post("/api/account/link/phone/check", { ref: sent.ref, code });
     setBusy(false);
     if (a.ok || a.merge) onDone(a);
     else setError(t.errors[a.error ?? "error"] ?? t.errors.error);

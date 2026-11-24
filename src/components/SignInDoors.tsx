@@ -16,6 +16,8 @@ const T = {
     whatsapp: "المتابعة عبر واتساب",
     telegram: "المتابعة عبر تيليجرام",
     phone: "المتابعة برقم الهاتف",
+    continueAs: "المتابعة باسم",
+    otherNumber: "رقم آخر",
     email: "المتابعة بالبريد الإلكتروني",
     or: "أو",
     phoneLabel: "رقم الهاتف",
@@ -51,6 +53,8 @@ const T = {
     whatsapp: "Continue with WhatsApp",
     telegram: "Continue with Telegram",
     phone: "Continue with phone number",
+    continueAs: "Continue as",
+    otherNumber: "Use another number",
     email: "Continue with email",
     or: "or",
     phoneLabel: "Phone number",
@@ -84,10 +88,41 @@ const T = {
   },
 };
 
-async function post(url: string, body: unknown): Promise<{ ok?: boolean; error?: string; to?: string; phone?: string; shown?: string }> {
+type Hint = { ref: string; shown: string };
+type Answer = { ok?: boolean; error?: string; to?: string; ref?: string; shown?: string; remember?: Hint };
+
+/** This device signed in by phone before: the masked number and a sealed copy (never the number itself). */
+const HINT_KEY = "wc-phone-hint";
+export const A2HS_KEY = "wc-a2hs-pending";
+function readHint(): Hint | null {
+  try {
+    const h = JSON.parse(window.localStorage.getItem(HINT_KEY) ?? "null") as Hint | null;
+    return h && typeof h.ref === "string" && typeof h.shown === "string" ? h : null;
+  } catch {
+    return null;
+  }
+}
+function forgetHint() {
+  try {
+    window.localStorage.removeItem(HINT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+/** After any sign-in on this device: remember the phone hint (if any) and offer the Home Screen tip once. */
+export function rememberSignIn(hint?: Hint) {
+  try {
+    if (hint) window.localStorage.setItem(HINT_KEY, JSON.stringify(hint));
+    window.localStorage.setItem(A2HS_KEY, "1");
+  } catch {
+    /* storage blocked: nothing remembered */
+  }
+}
+
+async function post(url: string, body: unknown): Promise<Answer> {
   try {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    return (await r.json().catch(() => ({ error: "error" }))) as { ok?: boolean; error?: string };
+    return (await r.json().catch(() => ({ error: "error" }))) as Answer;
   } catch {
     return { error: "error" };
   }
@@ -96,14 +131,32 @@ async function post(url: string, body: unknown): Promise<{ ok?: boolean; error?:
 export function SignInDoors(p: { locale: Locale; doors: Door[]; waHref: string | null; tgHref: string | null; to: string; waLabel?: string; tgLabel?: string }) {
   const t = T[p.locale];
   const [open, setOpen] = useState<"phone" | "email" | null>(null);
+  const [hint, setHint] = useState<Hint | null>(null);
+  const [useHint, setUseHint] = useState(false);
+  useEffect(() => setHint(readHint()), []);
   const chats = p.doors.filter((d) => d === "whatsapp" || d === "telegram");
   const others = p.doors.filter((d) => d === "phone" || d === "email");
 
-  if (open === "phone") return <PhoneForm t={t} locale={p.locale} to={p.to} onBack={() => setOpen(null)} />;
+  if (open === "phone") return <PhoneForm t={t} locale={p.locale} to={p.to} hint={useHint ? hint : null} onBack={() => (setOpen(null), setUseHint(false))} />;
   if (open === "email") return <EmailForm t={t} locale={p.locale} to={p.to} onBack={() => setOpen(null)} />;
 
+  const phoneHint = hint && p.doors.includes("phone") ? hint : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {phoneHint && (
+        <button
+          type="button"
+          className="wc-btn"
+          style={{ minHeight: 58 }}
+          onClick={() => {
+            setUseHint(true);
+            setOpen("phone");
+          }}
+        >
+          <span aria-hidden="true">📱</span>
+          {t.continueAs} <bdi dir="ltr">{phoneHint.shown}</bdi>
+        </button>
+      )}
       {chats.map((d) =>
         d === "whatsapp" && p.waHref ? (
           <a key={d} className="wc-btn" href={p.waHref} style={{ minHeight: 58 }}>
@@ -131,14 +184,23 @@ export function SignInDoors(p: { locale: Locale; doors: Door[]; waHref: string |
 
 type Copy = (typeof T)["en"];
 
-function PhoneForm({ t, locale, to, onBack }: { t: Copy; locale: Locale; to: string; onBack: () => void }) {
+function PhoneForm({ t, locale, to, hint, onBack }: { t: Copy; locale: Locale; to: string; hint: Hint | null; onBack: () => void }) {
   const [phone, setPhone] = useState("");
-  const [sent, setSent] = useState<{ phone: string; shown: string } | null>(null);
+  const [sent, setSent] = useState<Hint | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
   const codeBox = useRef<HTMLInputElement>(null);
+  // "Continue as …": ask for a code to the remembered number straight away.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (hint && !asked.current) {
+      asked.current = true;
+      void send({ ref: hint.ref });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hint]);
 
   useEffect(() => {
     if (wait <= 0) return;
@@ -146,13 +208,17 @@ function PhoneForm({ t, locale, to, onBack }: { t: Copy; locale: Locale; to: str
     return () => window.clearTimeout(id);
   }, [wait]);
 
-  const send = async (number: string) => {
+  const send = async (what: { phone: string } | { ref: string }) => {
     setBusy(true);
     setError(null);
-    const r = await post("/api/signin/phone/send", { phone: number, lang: locale });
+    const r = await post("/api/signin/phone/send", { ...what, lang: locale });
     setBusy(false);
-    if (!r.ok || !r.phone) return setError(t.errors[r.error ?? "error"] ?? t.errors.error);
-    setSent({ phone: r.phone, shown: r.shown ?? r.phone });
+    if (!r.ok || !r.ref) {
+      // A remembered number the server no longer accepts (too old, new server key): forget it.
+      if ("ref" in what && r.error === "invalid_number") forgetHint();
+      return setError(t.errors[r.error ?? "error"] ?? t.errors.error);
+    }
+    setSent({ ref: r.ref, shown: r.shown ?? "" });
     setCode("");
     setWait(30);
     window.setTimeout(() => codeBox.current?.focus(), 50);
@@ -162,8 +228,11 @@ function PhoneForm({ t, locale, to, onBack }: { t: Copy; locale: Locale; to: str
     if (!sent || busy) return;
     setBusy(true);
     setError(null);
-    const r = await post("/api/signin/phone/check", { phone: sent.phone, code: value, to, lang: locale });
-    if (r.ok && r.to) return window.location.replace(r.to);
+    const r = await post("/api/signin/phone/check", { ref: sent.ref, code: value, to, lang: locale });
+    if (r.ok && r.to) {
+      rememberSignIn(r.remember);
+      return window.location.replace(r.to);
+    }
     setBusy(false);
     setError(t.errors[r.error ?? "error"] ?? t.errors.error);
   };
@@ -174,7 +243,7 @@ function PhoneForm({ t, locale, to, onBack }: { t: Copy; locale: Locale; to: str
       onSubmit={(e) => {
         e.preventDefault();
         if (sent) void verify(code);
-        else void send(phone);
+        else void send({ phone });
       }}
     >
       {!sent ? (
@@ -231,9 +300,9 @@ function PhoneForm({ t, locale, to, onBack }: { t: Copy; locale: Locale; to: str
         {sent ? (
           <>
             <button type="button" onClick={() => (setSent(null), setError(null))}>
-              {t.changeNumber}
+              {hint ? t.otherNumber : t.changeNumber}
             </button>
-            <button type="button" disabled={wait > 0 || busy} onClick={() => void send(sent.phone)}>
+            <button type="button" disabled={wait > 0 || busy} onClick={() => void send({ ref: sent.ref })}>
               {wait > 0 ? t.resendIn(wait) : t.resend}
             </button>
           </>
