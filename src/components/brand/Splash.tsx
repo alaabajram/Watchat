@@ -1,29 +1,27 @@
-// watchat.pro for visitors without a session: the animated logo and one way in — WhatsApp, or Telegram (in
-// Telegram blue) for visitors who come from the Telegram bot.
-// The bot answers the pre-filled «ابدأ» with the menu; the personal link it sends signs this browser in,
-// and from then on "/" opens the home screen instead.
+// watchat.pro for visitors without a session: the animated logo and every way in on one screen
+// (`SignInDoors`): WhatsApp and Telegram (the visitor's own app first), then phone number and email. Whichever
+// door they use, they end up in the same account, signed in on this browser.
 
 /* eslint-disable @next/next/no-img-element */
 import { AnimatedLogo } from "./AnimatedLogo";
-import { ChatIcon } from "./icons";
-import { TelegramSignIn } from "../TelegramSignIn";
+import { SignInDoors } from "../SignInDoors";
+import type { DoorSetup } from "@/lib/signin/server";
 import { webCopy, dirFor, type Locale } from "@/lib/web-copy";
 
 export function Splash({
   locale,
-  waHref,
+  setup,
   cta,
   hint,
   path = "/",
-  telegram,
 }: {
   locale: Locale;
-  waHref: string | null;
+  setup: DoorSetup;
+  /** WhatsApp button text ("Sign in with WhatsApp" on account pages). */
   cta?: string;
+  /** Shown under the doors when WhatsApp is one of them (how the WhatsApp way works). */
   hint?: string;
   path?: string;
-  /** Set for Telegram visitors: sign in with Telegram instead of WhatsApp (href opens the bot outside Telegram). */
-  telegram?: { href: string | null; to?: string } | null;
 }) {
   const t = webCopy(locale);
   const sep = path.includes("?") ? "&" : "?";
@@ -45,19 +43,27 @@ export function Splash({
       </div>
 
       <div className="wc-fade-in" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {telegram ? (
-          <TelegramSignIn href={telegram.href} label={cta ? t.signInWithTelegram : t.startInTelegram} to={telegram.to ?? (path.split("?")[0] || "/")} />
+        <SignInDoors
+          locale={locale}
+          doors={setup.doors}
+          waHref={setup.waHref}
+          tgHref={setup.tgHref}
+          to={setup.to}
+          waLabel={cta}
+          tgLabel={cta ? t.signInWithTelegram : undefined}
+        />
+        {setup.doors.length === 0 ? (
+          <p className="wc-signin-note" style={{ textAlign: "center" }}>
+            {t.noDoors}
+          </p>
         ) : (
-          waHref && (
-            <a className="wc-btn" href={waHref} style={{ minHeight: 60 }}>
-              <ChatIcon />
-              {cta ?? t.startInWhatsApp}
-            </a>
+          setup.doors[0] === "whatsapp" &&
+          (hint ?? t.splashHint) && (
+            <p style={{ fontSize: 14, lineHeight: 1.8, color: "var(--wc-muted)", textAlign: "start", whiteSpace: "pre-line", background: "var(--wc-card)", borderRadius: 16, padding: "10px 14px", margin: 0 }}>
+              {hint ?? t.splashHint}
+            </p>
           )
         )}
-        <p style={{ fontSize: 15, lineHeight: 1.9, color: "var(--wc-muted)", textAlign: "start", whiteSpace: "pre-line", background: telegram ? "rgba(36,129,204,0.16)" : "var(--wc-card)", borderRadius: 16, padding: "12px 16px" }}>
-          {telegram ? t.telegramHint : (hint ?? t.splashHint)}
-        </p>
       </div>
     </main>
     </div>

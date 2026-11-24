@@ -1,18 +1,17 @@
 // watchat.pro — one address, two doors:
-// • no session on this browser → splash with the animated logo and "Start in WhatsApp" (new viewers come in
-//   through the bot; the personal link it sends signs this browser in);
+// • no session on this browser → splash with the animated logo and every way in (WhatsApp, Telegram, phone
+//   number, email; `SignInDoors`);
 // • a session → the home screen (banner carousel, continue watching, explore).
 // The browser is recognised by the HttpOnly session cookie that src/proxy.ts keeps renewing.
 
 import { Splash } from "@/components/brand/Splash";
 import { HomeScreen } from "@/components/home/HomeScreen";
 import { getHome } from "@/lib/content";
-import { env } from "@/lib/env";
 import { getSessionViewer } from "@/lib/session";
 import { DEFAULT_SITE } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import { getBalance } from "@/lib/wallet";
-import { botLink, visitorChannel } from "@/lib/telegram/channel";
+import { doorSetup } from "@/lib/signin/server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +21,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
 
   if (!viewer) {
     const locale = params.lang === "en" ? "en" : "ar";
-    const wa = env.waDisplayNumber ? `https://wa.me/${env.waDisplayNumber}?text=${encodeURIComponent(locale === "en" ? "START" : "ابدأ")}` : null;
-    const tg = (await visitorChannel()) === "telegram" ? { href: await botLink() } : null;
-    return <Splash locale={locale} waHref={wa} telegram={tg} />;
+    const setup = await doorSetup({ waText: locale === "en" ? "START" : "ابدأ", to: "/" });
+    return <Splash locale={locale} setup={setup} />;
   }
 
   const [{ catalogue, watching }, balance, site] = await Promise.all([getHome(viewer.id), getBalance(viewer.id), getSiteSafe()]);
