@@ -6,11 +6,14 @@
 // voice line, up to 2 effects when a scene opens, and the speaker's voice (auto-advance waits for it). Nothing plays
 // before the viewer's first tap (browser rules); the mute button is remembered on the device. iPhones ignore
 // volume changes on audio elements, so there the bed plays without fades or ducking.
+// Chat stories also get chat-app feel (`chatFeel.ts`): typing tick, message pops, a "sent" whoosh on choices and
+// haptics (Telegram on every phone, vibrate on Android); the mute button silences them too.
 // Used by the viewer's watch page and by the Story builder's preview (where nothing is paid or saved).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PingIcon } from "@/components/brand/PingIcon";
 import { advance, audioPlan, musicOf, sceneOf, startOf } from "@/lib/story/engine";
+import { chatCue, unlock } from "./chatFeel";
 import type { Bi, Character, Choice, Scene, StoryGraph, StoryStyle } from "@/lib/story/types";
 
 type Locale = "ar" | "en";
@@ -141,6 +144,9 @@ export function StoryPlayer(p: StoryPlayerProps) {
   const fades = useRef(new Map<HTMLAudioElement, number>());
   const [voiceDone, setVoiceDone] = useState(true);
   const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(false);
+  mutedRef.current = muted;
+  const isChat = p.style === "chat";
   const hasSound = useMemo(() => p.story.scenes.some((s) => s.audio || s.music || s.video) || audioPlan(p.story).some((a) => a.media), [p.story]);
 
   // The mute choice is remembered on this device.
@@ -196,6 +202,28 @@ export function StoryPlayer(p: StoryPlayerProps) {
     }, 28);
     return () => window.clearInterval(id);
   }, [scene, started, p.locale, p.style]);
+
+  // Chat feel: a light tick when someone starts typing, then a pop when their message lands.
+  const sceneKey = scene?.id;
+  useEffect(() => {
+    if (!isChat || !started || !scene || ended) return;
+    if (scene.speaker && pick(scene.text, p.locale)) chatCue("typing", mutedRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneKey, started, isChat]);
+  const cueScene = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    // On the render that switches scenes, `typed` still counts the last message, so a message with text isn't
+    // done yet: wait for its own typing to finish.
+    const switched = cueScene.current !== sceneKey;
+    cueScene.current = sceneKey;
+    if (!isChat || !started || !scene || ended || !textDone) return;
+    const body = pick(scene.text, p.locale);
+    if (switched && body) return;
+    if (!body && !scene.image && !scene.video) return;
+    const who = scene.speaker ? people.get(scene.speaker) : null;
+    chatCue(!who ? "note" : who.owner ? "mine" : "incoming", mutedRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneKey, textDone, started, isChat]);
 
   // Sound for the scene: the music bed (carries on until another bed starts or a scene stops it), its effects and
   // the speaker's voice line.
@@ -298,6 +326,7 @@ export function StoryPlayer(p: StoryPlayerProps) {
   const choose = useCallback(
     async (c: Choice) => {
       if (!scene || busy) return;
+      if (isChat) chatCue("sent", mutedRef.current);
       const already = c.price === 0 || paidNow.has(c.id + scene.id) || (p.isPaid?.(scene, c) ?? false);
       setBusy(true);
       setMessage(null);
@@ -313,7 +342,7 @@ export function StoryPlayer(p: StoryPlayerProps) {
         finish(scene, step.ending);
       }
     },
-    [scene, busy, paidNow, p, t, flags, show, finish],
+    [scene, busy, paidNow, p, t, flags, show, finish, isChat],
   );
 
   const restart = () => {
@@ -336,7 +365,18 @@ export function StoryPlayer(p: StoryPlayerProps) {
   ) : null;
 
   return (
-    <div className={`wc-story wc-story-${p.style}`} dir={dir} onClick={started ? goOn : undefined}>
+    <div
+      className={`wc-story wc-story-${p.style}`}
+      dir={dir}
+      onClick={
+        started
+          ? () => {
+              if (isChat) unlock();
+              goOn();
+            }
+          : undefined
+      }
+    >
       {/* Sound never carries words that aren't on screen too (the text is always shown), so no captions track. */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={musicA} loop preload="auto" />
@@ -360,7 +400,7 @@ export function StoryPlayer(p: StoryPlayerProps) {
       <audio ref={sfxA} preload="auto" />
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={sfxB} preload="auto" />
-      {hasSound && started && (
+      {(hasSound || isChat) && started && (
         <button
           type="button"
           className="wc-story-mute"
@@ -450,6 +490,7 @@ export function StoryPlayer(p: StoryPlayerProps) {
           className="wc-story-start"
           onClick={(e) => {
             e.stopPropagation();
+            unlock();
             setStarted(true);
             p.onScene?.(scene, history);
           }}
