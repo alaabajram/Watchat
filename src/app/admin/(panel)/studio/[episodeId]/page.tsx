@@ -1,5 +1,6 @@
-// Studio review of one episode: the brief, the script (picture, speaker, Arabic, English, where it goes), the
-// problems the checks find, a phone preview, the note thread with Claude, and the moves for this stage.
+// Studio review of one episode: the brief, the script (picture, speaker, Arabic, English, sound, where it goes),
+// every planned sound with a player (and "Redo this audio" at the final check), the problems the checks find,
+// a phone preview with sound, the note thread with Claude, and the moves for this stage.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,11 +8,13 @@ import { Flash } from "@/components/admin/Flash";
 import { StudioPreview } from "@/components/story/StudioPreview";
 import { requireAdmin } from "@/lib/admin/auth";
 import { STAGE_INFO, STAGES, isStage, sanitizeNotes, teamMoves } from "@/lib/studio/stages";
+import { sanitizeBible, voicedCharacters } from "@/lib/studio/bible";
+import { audioPlan, mediaMissing } from "@/lib/story/engine";
 import { sanitizeCharacters, sanitizeStory } from "@/lib/story/sanitize";
 import { STORY_STYLES, type Route, type Scene, type StoryStyle } from "@/lib/story/types";
 import { validateStory } from "@/lib/story/validate";
 import { db } from "@/lib/supabase";
-import { addNoteAction, moveStageAction, publishFromStudioAction, updateBriefAction } from "../../../studio-actions";
+import { addNoteAction, moveStageAction, publishFromStudioAction, redoAudioAction, updateBriefAction } from "../../../studio-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +34,7 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
   if (!item || !isStage(item.stage)) notFound();
   const [{ data: ep }, { data: s }, { data: log }] = await Promise.all([
     db().from("episodes").select("id, number, title_ar, title_en, story_draft, story, story_version").eq("id", episodeId).maybeSingle(),
-    db().from("series").select("id, code, title_en, story_style, story_characters").eq("id", item.series_id).maybeSingle(),
+    db().from("series").select("id, code, title_en, story_style, story_characters, story_bible").eq("id", item.series_id).maybeSingle(),
     db().from("studio_credit_log").select("model, kind, credits, note, created_at").eq("episode_id", episodeId).order("created_at", { ascending: false }).limit(50),
   ]);
   if (!ep || !s) notFound();
@@ -39,7 +42,10 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
   const story = sanitizeStory(ep.story_draft ?? {});
   const characters = sanitizeCharacters(s.story_characters);
   const style = (STORY_STYLES.find((x) => x.key === s.story_style)?.key ?? "visual_novel") as StoryStyle;
-  const issues = story.scenes.length ? validateStory(story, { characters }) : [];
+  const issues = story.scenes.length ? validateStory(story, { characters, voices: voicedCharacters(sanitizeBible(s.story_bible)) }) : [];
+  const sounds = audioPlan(story);
+  const soundsMissing = mediaMissing(story).audio;
+  const canRedoSound = stage === "final_check" || stage === "approved";
   const notes = sanitizeNotes(item.notes);
   const num = (id: string | null) => (id ? `→ ${story.scenes.findIndex((x) => x.id === id) + 1}` : "■ end");
   const who = (sc: Scene) => (sc.speaker ? (characters.find((c) => c.id === sc.speaker)?.name.en ?? sc.speaker) : "Narrator");
@@ -119,7 +125,11 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
 
           <div className="card" style={{ margin: 0 }}>
             <h2 style={{ marginTop: 0 }}>
-              Script <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>· {story.scenes.length} scenes{story.scenes.length ? ` · pictures ${story.scenes.length - missing}/${story.scenes.length}` : ""}</span>
+              Script{" "}
+              <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>
+                · {story.scenes.length} scenes{story.scenes.length ? ` · pictures ${story.scenes.length - missing}/${story.scenes.length}` : ""}
+                {sounds.length ? ` · sounds ${sounds.length - soundsMissing.length}/${sounds.length}` : ""}
+              </span>
             </h2>
             {story.scenes.length === 0 ? (
               <p className="muted">Claude hasn&apos;t written it yet.</p>
@@ -133,6 +143,7 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
                       <th>Who</th>
                       <th>Arabic</th>
                       <th>English</th>
+                      <th>Sound</th>
                       <th>Then</th>
                     </tr>
                   </thead>
@@ -156,6 +167,22 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
                         <td style={{ fontSize: 13, color: characters.find((c) => c.id === sc.speaker)?.color }}>{who(sc)}</td>
                         <td dir="rtl" style={{ minWidth: 200 }}>{sc.text.ar}</td>
                         <td style={{ minWidth: 200 }}>{sc.text.en}</td>
+                        <td style={{ fontSize: 12, minWidth: 110 }}>
+                          {sc.musicRef && <div title="Music starts">♪ {sc.musicRef}</div>}
+                          {sc.stopMusic && <div>♪ stop</div>}
+                          {(sc.sfx ?? []).map((x) => (
+                            <div key={x.id} title={x.desc}>
+                              ✦ {x.id}
+                              {!x.media && <span className="muted"> (to make)</span>}
+                            </div>
+                          ))}
+                          {sc.voiceRef && (
+                            <div>
+                              🗣 {sc.voiceRef}
+                              {!sc.audio && <span className="muted"> (to make)</span>}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ fontSize: 12, whiteSpace: "pre-line", minWidth: 140 }}>{routeText(sc.route, num)}</td>
                       </tr>
                     ))}
@@ -164,6 +191,45 @@ export default async function StudioEpisodePage({ params, searchParams }: { para
               </div>
             )}
           </div>
+
+          {sounds.length > 0 && (
+            <div className="card" style={{ margin: 0 }}>
+              <h2 style={{ marginTop: 0 }}>
+                Sound <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>· ♪ music · ✦ effect · 🗣 voice{soundsMissing.length ? ` · ${soundsMissing.length} not made yet` : ""}</span>
+              </h2>
+              <div style={{ display: "grid", gap: 8 }}>
+                {sounds.map((a) => (
+                  <div key={a.ref} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px", gap: 10, alignItems: "center", borderTop: "1px solid #eee", paddingTop: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <strong>
+                        {a.kind === "music" ? "♪" : a.kind === "sfx" ? "✦" : "🗣"} {a.ref}
+                      </strong>{" "}
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {a.scenes.length ? `scene ${a.scenes.map((id) => story.scenes.findIndex((x) => x.id === id) + 1).join(", ")}` : "not used by any scene"}
+                      </span>
+                      {a.desc && <div style={{ fontSize: 13 }}>{a.desc}</div>}
+                    </div>
+                    {a.media ? (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <audio src={a.media.url} controls preload="none" style={{ width: "100%" }} />
+                    ) : (
+                      <span className="muted" style={{ fontSize: 13 }}>Not made yet</span>
+                    )}
+                    {a.media && canRedoSound && (
+                      <form action={redoAudioAction} className="row" style={{ gap: 6, gridColumn: "1 / -1" }}>
+                        <input type="hidden" name="episode_id" value={ep.id} />
+                        <input type="hidden" name="ref" value={a.ref} />
+                        <input name="note" placeholder={`What should change in ${a.ref}?`} style={{ flex: 1 }} />
+                        <button type="submit" className="secondary">
+                          Redo this audio
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="card" style={{ margin: 0 }}>
             <h2 style={{ marginTop: 0 }}>Brief</h2>

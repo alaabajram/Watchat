@@ -1,8 +1,8 @@
 // Studio production stages for a story episode, and who moves it where. Pure.
 //
-// brief ──Claude writes──► writing ──Claude submits──► script_review ──team approves──► pictures
-//   ──Claude generates & attaches──► (submits) final_check ──team approves──► approved ──Publish──► published
-// The team can send any review back with a note. Pictures are only made after the script is approved,
+// brief ──Claude writes──► writing ──Claude submits──► script_review ──team approves──► pictures ("Media":
+//   pictures, music, sound effects, voices) ──Claude generates & attaches──► (submits) final_check ──team approves──► approved ──Publish──► published
+// The team can send any review back with a note. Media is only made after the script is approved,
 // so no OpenArt credits are spent on a script that gets rewritten.
 
 export const STAGES = ["brief", "writing", "script_review", "pictures", "final_check", "approved", "published"] as const;
@@ -12,8 +12,8 @@ export const STAGE_INFO: Record<Stage, { label: string; hint: string; who: "clau
   brief: { label: "Brief", hint: "Waiting for Claude to write it", who: "claude" },
   writing: { label: "Writing", hint: "Claude is writing or fixing the script", who: "claude" },
   script_review: { label: "Script review", hint: "Read the lines and routes; approve or send back", who: "team" },
-  pictures: { label: "Pictures", hint: "Claude makes the pictures for the approved script", who: "claude" },
-  final_check: { label: "Final check", hint: "Check pictures, play it in the preview, approve", who: "team" },
+  pictures: { label: "Media", hint: "Claude makes the pictures and sound for the approved script", who: "claude" },
+  final_check: { label: "Final check", hint: "Check pictures, listen to the sound, play it in the preview, approve", who: "team" },
   approved: { label: "Ready", hint: "Approved; publish when you want it live", who: "team" },
   published: { label: "Published", hint: "Live for viewers", who: "done" },
 };
@@ -41,15 +41,15 @@ export function teamMoves(s: Stage): TeamMove[] {
       return [{ to: "script_review", label: "Script is ready for review", kind: "other" }];
     case "script_review":
       return [
-        { to: "pictures", label: "Approve script → make pictures", kind: "approve" },
+        { to: "pictures", label: "Approve script → make media", kind: "approve" },
         { to: "writing", label: "Send back to Claude", kind: "back", needsNote: true },
       ];
     case "pictures":
-      return [{ to: "final_check", label: "Pictures are done", kind: "other" }];
+      return [{ to: "final_check", label: "Media is done", kind: "other" }];
     case "final_check":
       return [
         { to: "approved", label: "Approve episode", kind: "approve" },
-        { to: "pictures", label: "Redo some pictures", kind: "back", needsNote: true },
+        { to: "pictures", label: "Redo some pictures or sound", kind: "back", needsNote: true },
         { to: "writing", label: "Rewrite the script", kind: "back", needsNote: true },
       ];
     case "approved":

@@ -1,12 +1,16 @@
 "use client";
 
 // Plays one story episode, full screen in the 9:16 frame: tap to go on, pick at choices (premium ones cost Ping),
-// sound and music, slow camera moves, typewriter text. Four looks: visual novel, chat story, motion comic, photo story.
+// sound, slow camera moves, typewriter text. Four looks: visual novel, chat story, motion comic, photo story.
+// Sound: a music bed that loops across scenes and crossfades (~800 ms) when it changes, ducks about 10 dB under a
+// voice line, up to 2 effects when a scene opens, and the speaker's voice (auto-advance waits for it). Nothing plays
+// before the viewer's first tap (browser rules); the mute button is remembered on the device. iPhones ignore
+// volume changes on audio elements, so there the bed plays without fades or ducking.
 // Used by the viewer's watch page and by the Story builder's preview (where nothing is paid or saved).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PingIcon } from "@/components/brand/PingIcon";
-import { advance, sceneOf, startOf } from "@/lib/story/engine";
+import { advance, audioPlan, musicOf, sceneOf, startOf } from "@/lib/story/engine";
 import type { Bi, Character, Choice, Scene, StoryGraph, StoryStyle } from "@/lib/story/types";
 
 type Locale = "ar" | "en";
@@ -28,6 +32,8 @@ const COPY = {
     error: "حدث خطأ، حاول مرة أخرى.",
     premiumNote: "خيار مميز: يُدفع مرة واحدة",
     muted: "الصوت مغلق",
+    mute: "كتم الصوت",
+    unmute: "تشغيل الصوت",
   },
   en: {
     tapToStart: "Tap to start",
@@ -45,6 +51,8 @@ const COPY = {
     error: "Something went wrong. Try again.",
     premiumNote: "Premium choice: pay once",
     muted: "Sound off",
+    mute: "Mute",
+    unmute: "Sound on",
   },
 } as const;
 
@@ -79,6 +87,34 @@ export type StoryPlayerProps = {
 
 const pick = (b: Bi, locale: Locale) => (locale === "en" ? b.en || b.ar : b.ar || b.en);
 
+const MUSIC_VOL = 0.45;
+const DUCKED = MUSIC_VOL * 0.316; // −10 dB under a voice line
+const CROSSFADE_MS = 800;
+const MUTE_KEY = "wc-story-muted";
+
+/** Smoothly move an element's volume (cancels its previous fade). */
+function ramp(el: HTMLAudioElement, to: number, ms: number, timers: Map<HTMLAudioElement, number>, then?: () => void) {
+  const prev = timers.get(el);
+  if (prev) window.clearInterval(prev);
+  const from = el.volume;
+  const steps = Math.max(1, Math.round(ms / 40));
+  let i = 0;
+  const id = window.setInterval(() => {
+    i++;
+    try {
+      el.volume = Math.min(1, Math.max(0, from + ((to - from) * i) / steps));
+    } catch {
+      /* some browsers refuse volume changes */
+    }
+    if (i >= steps) {
+      window.clearInterval(id);
+      timers.delete(el);
+      then?.();
+    }
+  }, 40);
+  timers.set(el, id);
+}
+
 export function StoryPlayer(p: StoryPlayerProps) {
   const t = COPY[p.locale];
   const dir = p.locale === "ar" ? "rtl" : "ltr";
@@ -94,9 +130,39 @@ export function StoryPlayer(p: StoryPlayerProps) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; store?: boolean } | null>(null);
   const [paidNow, setPaidNow] = useState<Set<string>>(() => new Set());
-  const musicRef = useRef<HTMLAudioElement>(null);
+  const musicA = useRef<HTMLAudioElement>(null);
+  const musicB = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
+  const sfxA = useRef<HTMLAudioElement>(null);
+  const sfxB = useRef<HTMLAudioElement>(null);
+  const musicOn = useRef<"a" | "b">("a");
   const musicSrc = useRef<string | null>(null);
+  const voicePlaying = useRef(false);
+  const fades = useRef(new Map<HTMLAudioElement, number>());
+  const [voiceDone, setVoiceDone] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const hasSound = useMemo(() => p.story.scenes.some((s) => s.audio || s.music || s.video) || audioPlan(p.story).some((a) => a.media), [p.story]);
+
+  // The mute choice is remembered on this device.
+  useEffect(() => {
+    try {
+      setMuted(window.localStorage.getItem(MUTE_KEY) === "1");
+    } catch {
+      /* storage blocked (private mode, framed): start with sound */
+    }
+  }, []);
+  useEffect(() => {
+    for (const r of [musicA, musicB, voiceRef, sfxA, sfxB]) if (r.current) r.current.muted = muted;
+  }, [muted]);
+  const toggleMute = () =>
+    setMuted((m) => {
+      try {
+        window.localStorage.setItem(MUTE_KEY, m ? "0" : "1");
+      } catch {
+        /* not remembered, still toggled */
+      }
+      return !m;
+    });
 
   // Builder: restart when the story or the "preview from" scene changes.
   useEffect(() => {
@@ -131,38 +197,67 @@ export function StoryPlayer(p: StoryPlayerProps) {
     return () => window.clearInterval(id);
   }, [scene, started, p.locale, p.style]);
 
-  // Sound: the scene's voice / effect, and music that carries on until changed or stopped.
+  // Sound for the scene: the music bed (carries on until another bed starts or a scene stops it), its effects and
+  // the speaker's voice line.
   useEffect(() => {
     if (!scene || !started) return;
+    const timers = fades.current;
+    // The last scene's voice stops first, so the music isn't left ducked.
     const voice = voiceRef.current;
+    voice?.pause();
+    voicePlaying.current = false;
+    const current = musicOn.current === "a" ? musicA.current : musicB.current;
+    const other = musicOn.current === "a" ? musicB.current : musicA.current;
+    const bed = musicOf(p.story, scene);
+    if (scene.stopMusic && current && musicSrc.current) {
+      musicSrc.current = null;
+      ramp(current, 0, CROSSFADE_MS, timers, () => current.pause());
+    } else if (bed?.url && bed.url !== musicSrc.current && current && other) {
+      // Crossfade: the new bed rises on the other element while the old one fades out.
+      musicSrc.current = bed.url;
+      other.src = bed.url;
+      other.volume = 0;
+      void other.play().catch(() => undefined);
+      ramp(other, voicePlaying.current ? DUCKED : MUSIC_VOL, CROSSFADE_MS, timers);
+      if (!current.paused) ramp(current, 0, CROSSFADE_MS, timers, () => current.pause());
+      musicOn.current = musicOn.current === "a" ? "b" : "a";
+    } else if (current && !current.paused && musicSrc.current) ramp(current, MUSIC_VOL, 250, timers);
+
+    [sfxA.current, sfxB.current].forEach((el, i) => {
+      if (!el) return;
+      el.pause();
+      const fx = (scene.sfx ?? [])[i]?.media;
+      if (fx?.url) {
+        el.src = fx.url;
+        el.currentTime = 0;
+        void el.play().catch(() => undefined);
+      }
+    });
+
     if (voice) {
-      voice.pause();
       if (scene.audio?.url) {
         voice.src = scene.audio.url;
-        void voice.play().catch(() => undefined);
-      }
+        setVoiceDone(false);
+        void voice.play().catch(() => setVoiceDone(true));
+      } else setVoiceDone(true);
     }
-    const music = musicRef.current;
-    if (music) {
-      if (scene.stopMusic) {
-        music.pause();
-        musicSrc.current = null;
-      } else if (scene.music?.url && scene.music.url !== musicSrc.current) {
-        musicSrc.current = scene.music.url;
-        music.src = scene.music.url;
-        music.volume = 0.45;
-        void music.play().catch(() => undefined);
-      }
-    }
-  }, [scene, started]);
+  }, [scene, started, p.story]);
 
-  useEffect(
-    () => () => {
-      musicRef.current?.pause();
-      voiceRef.current?.pause();
-    },
-    [],
-  );
+  // Duck the music while a voice line plays.
+  const duck = (on: boolean) => {
+    voicePlaying.current = on;
+    const bed = musicOn.current === "a" ? musicA.current : musicB.current;
+    if (bed && !bed.paused) ramp(bed, on ? DUCKED : MUSIC_VOL, 250, fades.current);
+  };
+
+  useEffect(() => {
+    const timers = fades.current;
+    const els = [musicA, musicB, voiceRef, sfxA, sfxB];
+    return () => {
+      timers.forEach((id) => window.clearInterval(id));
+      for (const r of els) r.current?.pause();
+    };
+  }, []);
 
   const show = useCallback(
     (next: Scene, setFlag: string | null) => {
@@ -193,12 +288,12 @@ export function StoryPlayer(p: StoryPlayerProps) {
     else if (step.kind === "end") finish(scene, step.ending);
   }, [scene, ended, textDone, text.length, p.story, flags, show, finish]);
 
-  // Moves on by itself after `auto` seconds (motion comics use this most).
+  // Moves on by itself after `auto` seconds (motion comics use this most), once the voice line has finished.
   useEffect(() => {
-    if (!scene || !started || ended || scene.route.type === "choices" || !scene.auto || !textDone) return;
+    if (!scene || !started || ended || scene.route.type === "choices" || !scene.auto || !textDone || !voiceDone) return;
     const id = window.setTimeout(goOn, scene.auto * 1000);
     return () => window.clearTimeout(id);
-  }, [scene, started, ended, textDone, goOn]);
+  }, [scene, started, ended, textDone, voiceDone, goOn]);
 
   const choose = useCallback(
     async (c: Choice) => {
@@ -234,7 +329,7 @@ export function StoryPlayer(p: StoryPlayerProps) {
   const speaker = scene.speaker ? people.get(scene.speaker) : null;
   const choices = scene.route.type === "choices" && textDone && !ended ? scene.route.options : [];
   const media = scene.video ? (
-    <video key={scene.video.url} className="wc-story-media" src={scene.video.url} autoPlay={started} playsInline loop={!scene.auto} controlsList="nodownload" disablePictureInPicture onContextMenu={(e) => e.preventDefault()} />
+    <video key={scene.video.url} className="wc-story-media" src={scene.video.url} autoPlay={started} muted={muted} playsInline loop={!scene.auto} controlsList="nodownload" disablePictureInPicture onContextMenu={(e) => e.preventDefault()} />
   ) : scene.image ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img key={scene.image.url} className={`wc-story-media wc-motion-${scene.motion}`} src={scene.image.url} alt="" draggable={false} onContextMenu={(e) => e.preventDefault()} />
@@ -242,10 +337,44 @@ export function StoryPlayer(p: StoryPlayerProps) {
 
   return (
     <div className={`wc-story wc-story-${p.style}`} dir={dir} onClick={started ? goOn : undefined}>
+      {/* Sound never carries words that aren't on screen too (the text is always shown), so no captions track. */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={musicRef} loop preload="auto" />
+      <audio ref={musicA} loop preload="auto" />
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio ref={voiceRef} preload="auto" />
+      <audio ref={musicB} loop preload="auto" />
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio
+        ref={voiceRef}
+        preload="auto"
+        onPlay={() => duck(true)}
+        onEnded={() => {
+          duck(false);
+          setVoiceDone(true);
+        }}
+        onError={() => {
+          duck(false);
+          setVoiceDone(true);
+        }}
+      />
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={sfxA} preload="auto" />
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio ref={sfxB} preload="auto" />
+      {hasSound && started && (
+        <button
+          type="button"
+          className="wc-story-mute"
+          aria-pressed={muted}
+          aria-label={muted ? t.unmute : t.mute}
+          title={muted ? t.unmute : t.mute}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
+      )}
 
       {p.style === "chat" ? (
         <ChatThread story={p.story} history={history} current={scene} typed={textDone} people={people} locale={p.locale} typingLabel={t.typing} />

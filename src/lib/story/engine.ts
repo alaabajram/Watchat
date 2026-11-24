@@ -1,7 +1,7 @@
 // Playing a story: where each scene leads, given the viewer's earlier choices. Pure; the reader (web and the
 // builder's preview) and the server (checking a premium choice) use the same rules.
 
-import type { Choice, Scene, StoryGraph } from "./types";
+import type { Choice, Scene, StoryGraph, StoryMedia } from "./types";
 
 export const sceneOf = (g: StoryGraph, id: string | null | undefined): Scene | null => (id ? (g.scenes.find((s) => s.id === id) ?? null) : null);
 
@@ -90,4 +90,43 @@ export function mainPath(g: StoryGraph, flags: ReadonlySet<string> = new Set()):
     s = step.scene;
   }
   return out;
+}
+
+/** The music a scene starts: its own file, else the episode bed it names (Studio scripts). */
+export function musicOf(g: StoryGraph, s: Scene): StoryMedia | null {
+  if (s.music) return s.music;
+  return s.musicRef ? ((g.music ?? []).find((b) => b.id === s.musicRef)?.media ?? null) : null;
+}
+
+export type AudioItem = { ref: string; kind: "music" | "sfx" | "voice"; desc: string; scenes: string[]; media: StoryMedia | null };
+
+/** Every planned sound in an episode (beds, effects, voice lines), the scenes using it and whether its file is there. */
+export function audioPlan(g: StoryGraph): AudioItem[] {
+  const out = new Map<string, AudioItem>();
+  for (const b of g.music ?? []) out.set(b.id, { ref: b.id, kind: "music", desc: [b.mood, b.desc].filter(Boolean).join(" · "), scenes: [], media: b.media });
+  for (const s of g.scenes) {
+    if (s.musicRef) {
+      const b = out.get(s.musicRef) ?? { ref: s.musicRef, kind: "music" as const, desc: "", scenes: [], media: null };
+      b.scenes.push(s.id);
+      out.set(s.musicRef, b);
+    }
+    for (const x of s.sfx ?? []) {
+      const it = out.get(x.id) ?? { ref: x.id, kind: "sfx" as const, desc: x.desc, scenes: [], media: null };
+      it.scenes.push(s.id);
+      it.media ??= x.media;
+      out.set(x.id, it);
+    }
+    if (s.voiceRef) out.set(s.voiceRef, { ref: s.voiceRef, kind: "voice", desc: s.text.en || s.text.ar, scenes: [s.id], media: s.audio });
+  }
+  return [...out.values()].sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+}
+
+/** What the Studio still has to attach before the final check: picture names and sound names. */
+export function mediaMissing(g: StoryGraph): { pictures: string[]; audio: string[] } {
+  return {
+    pictures: [...new Set(g.scenes.filter((s) => !s.image && !s.video).map((s) => s.ref ?? s.id))],
+    audio: audioPlan(g)
+      .filter((a) => !a.media && (a.kind !== "music" || a.scenes.length > 0))
+      .map((a) => a.ref),
+  };
 }

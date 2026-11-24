@@ -10,10 +10,12 @@ import { randomToken, sha256Hex } from "@/lib/crypto";
 import { siteUrl } from "@/lib/site/store";
 import { suggestCode } from "@/lib/admin/readiness";
 import { LANGS, originalLang } from "@/lib/storage/tracks";
-import { STORY_STYLES } from "@/lib/story/types";
+import { AUDIO_REF, STORY_STYLES } from "@/lib/story/types";
 import { sanitizeBible } from "@/lib/studio/bible";
+import { AUDIO_KINDS, audioRates } from "@/lib/studio/budget";
 import { addNote, canMove, isStage, sanitizeNotes, STAGE_INFO } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
+import { clearAudio } from "@/lib/story/import";
 import { db } from "@/lib/supabase";
 import { publishStory } from "./story-actions";
 
@@ -89,6 +91,30 @@ export async function moveStageAction(fd: FormData) {
   done(page(id), back ? `Sent back to Claude: ${STAGE_INFO[to].label}.` : `Moved to ${STAGE_INFO[to].label}.`);
 }
 
+/**
+ * "Redo this audio" (final check): the file comes off the episode, the cue stays (so Claude's media_missing
+ * lists it and it can't be resubmitted without a new file), a note goes to Claude and the episode goes back to Media.
+ */
+export async function redoAudioAction(fd: FormData) {
+  const admin = await requireAdmin("content");
+  const id = uuid(fd, "episode_id");
+  const ref = str(fd, "ref", 40).toLowerCase();
+  const note = str(fd, "note", 1000);
+  if (!id || !AUDIO_REF.test(ref)) done(BOARD, "Bad request.", "err");
+  if (!note) done(page(id), "Say what should change in the sound (the note goes to Claude).", "err");
+  const { ep } = await ownEpisode(admin.tenantId, id);
+  const { data: item } = await db().from("studio_items").select("stage, notes").eq("episode_id", id).eq("tenant_id", admin.tenantId).maybeSingle();
+  if (!item || !isStage(item.stage)) done(BOARD, "Not in the Studio.", "err");
+  if (item.stage !== "final_check" && item.stage !== "approved") done(page(id), "Sound can be sent back at the final check.", "err");
+  const r = clearAudio(sanitizeStory(ep.story_draft ?? {}), ref);
+  if (!r.count) done(page(id), `${ref} has no file to redo.`, "err");
+  await db().from("episodes").update({ story_draft: r.story }).eq("id", id);
+  const notes = addNote(sanitizeNotes(item.notes), { by: admin.name ?? admin.email, who: "team", text: `Redo ${ref}: ${note}`, stage: "pictures" });
+  await db().from("studio_items").update({ stage: "pictures", notes, updated_at: new Date().toISOString() }).eq("episode_id", id);
+  await audit(admin, "studio.redo_audio", "episode", id, { ref });
+  done(page(id), `${ref} sent back to Claude for a redo (episode is back at Media).`);
+}
+
 export async function addNoteAction(fd: FormData) {
   const admin = await requireAdmin("content");
   const id = uuid(fd, "episode_id");
@@ -121,8 +147,12 @@ export async function saveStudioSettingsAction(fd: FormData) {
   const monthly = Math.max(0, Math.min(10_000_000, int(fd, "monthly_credits", 24000)));
   const episode = Math.max(0, Math.min(1_000_000, int(fd, "episode_credits", 2500)));
   const usd = Math.max(0, Math.min(1, Number(str(fd, "usd_per_credit", 20)) || 0.0015));
-  await db().from("studio_settings").upsert({ tenant_id: admin.tenantId, monthly_credits: monthly, episode_credits: episode, usd_per_credit: usd, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
-  await audit(admin, "studio.budget", "tenant", admin.tenantId, { monthly, episode, usd });
+  const audio_rates = audioRates(Object.fromEntries(AUDIO_KINDS.map((k) => [k, str(fd, `audio_${k}`, 12)])));
+  const { error } = await db()
+    .from("studio_settings")
+    .upsert({ tenant_id: admin.tenantId, monthly_credits: monthly, episode_credits: episode, usd_per_credit: usd, audio_rates, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
+  if (error) done(BOARD, `Couldn't save the budget: ${error.message}`, "err");
+  await audit(admin, "studio.budget", "tenant", admin.tenantId, { monthly, episode, usd, audio_rates });
   done(BOARD, "Credit budget saved.");
 }
 
@@ -160,13 +190,21 @@ export async function saveBibleAction(fd: FormData) {
   const { data: s } = await db().from("series").select("id, story_bible").eq("id", id).eq("tenant_id", admin.tenantId).maybeSingle();
   if (!s) done(BOARD, "Series not found.", "err");
   const current = sanitizeBible(s.story_bible);
-  const characters = current.characters.map((c) => ({ ...c, look: str(fd, `look_${c.id}`, 800) || c.look, portrait: fd.get(`clear_${c.id}`) === "on" ? null : c.portrait }));
+  const characters = current.characters.map((c) => ({
+    ...c,
+    look: str(fd, `look_${c.id}`, 800) || c.look,
+    portrait: fd.get(`clear_${c.id}`) === "on" ? null : c.portrait,
+    voice: fd.has(`voice_${c.id}`) ? str(fd, `voice_${c.id}`, 300) : c.voice,
+    voiceSample: fd.get(`clear_voice_${c.id}`) === "on" ? null : c.voiceSample,
+  }));
+  const theme = { desc: fd.has("theme_desc") ? str(fd, "theme_desc", 400) : current.theme.desc, url: fd.get("clear_theme") === "on" ? null : current.theme.url };
   const outline = current.outline.map((o) => ({ ...o, brief: str(fd, `outline_${o.number}`, 1500) || o.brief }));
   const bible = sanitizeBible({
     style: str(fd, "style", 800),
     dialect: str(fd, "dialect", 60),
     rules: str(fd, "rules", 6000),
     characters,
+    theme,
     locked: fd.get("locked") === "on",
     brief: str(fd, "brief", 4000) || current.brief,
     planned: int(fd, "planned", current.planned),

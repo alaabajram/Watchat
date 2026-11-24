@@ -4,13 +4,13 @@
 import { randomToken } from "@/lib/crypto";
 import { copyToCloudflare } from "@/lib/storage/cloudflare";
 import { db } from "@/lib/supabase";
-import { applyMedia, hostAllowed, mediaKindOf } from "./import";
+import { applyMedia, FETCH_MAX_MB, hostAllowed, mediaKindOf } from "./import";
 import { sanitizeStory } from "./sanitize";
 
 /** Hosts a media list may point at: OpenArt (and its subdomains), plus any in STORY_IMPORT_HOSTS. */
 export const importHosts = () => ["openart.ai", ...(process.env.STORY_IMPORT_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)];
 
-export async function copyStoryMedia(series: { id: string; code: string }, ref: string, url: string, onlyEpisode?: string): Promise<{ scenes: number; type: "image" | "video" }> {
+export async function copyStoryMedia(series: { id: string; code: string }, ref: string, url: string, onlyEpisode?: string): Promise<{ scenes: number; type: "image" | "video" | "audio" }> {
   const key = ref.toLowerCase();
   if (!/^[a-z0-9_.-]{1,40}$/.test(key)) throw new Error("Bad picture name.");
   const hosts = importHosts();
@@ -38,8 +38,8 @@ export async function copyStoryMedia(series: { id: string; code: string }, ref: 
     if (e instanceof Error && e.message.startsWith(ref)) throw e;
   }
   const kind = mediaKindOf(url, contentType);
-  if (!kind) throw new Error(`${ref}: only JPG, PNG, WebP pictures and MP4 clips can be imported.`);
-  const limit = kind.type === "image" ? 10 : 60;
+  if (!kind) throw new Error(`${ref}: only JPG, PNG, WebP pictures, MP4 clips and MP3, M4A or WAV sounds can be imported.`);
+  const limit = FETCH_MAX_MB[kind.type];
   if (size > limit * 1048576) throw new Error(`${ref}: the file is over ${limit} MB.`);
 
   const copied = await copyToCloudflare(url, `${series.code}/story/${Date.now()}-${randomToken(6)}.${kind.ext}`);

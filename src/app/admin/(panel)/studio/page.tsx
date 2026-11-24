@@ -7,9 +7,10 @@ import { can, requireAdmin } from "@/lib/admin/auth";
 import { LANG_KEYS, LANGS } from "@/lib/storage/tracks";
 import { STORY_STYLES } from "@/lib/story/types";
 import { sanitizeBible, setupStatus, SETUP_LABEL } from "@/lib/studio/bible";
-import { monthStart } from "@/lib/studio/budget";
+import { AUDIO_KINDS, AUDIO_RATES, audioRates, monthStart } from "@/lib/studio/budget";
 import { sanitizeNotes, openNotes, STAGE_INFO, STAGES, type Stage } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
+import { audioPlan } from "@/lib/story/engine";
 import { db } from "@/lib/supabase";
 import { createBriefAction, createConnectorAction, createStudioSeriesAction, revokeConnectorAction, saveStudioSettingsAction } from "../../studio-actions";
 
@@ -42,7 +43,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
       .order("updated_at", { ascending: false })
       .limit(200),
     db().from("series").select("id, code, title_en, title_ar, status, story_style, story_bible, episodes(count)").eq("tenant_id", admin.tenantId).eq("format", "story").order("created_at", { ascending: false }),
-    db().from("studio_settings").select("monthly_credits, episode_credits, usd_per_credit").eq("tenant_id", admin.tenantId).maybeSingle(),
+    db().from("studio_settings").select("*").eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("studio_credit_log").select("credits").eq("tenant_id", admin.tenantId).gte("created_at", monthStart()),
     db().from("studio_tokens").select("id, label, created_at, expires_at, last_used_at, admin_id, admin_users(name, email)").eq("tenant_id", admin.tenantId).is("revoked_at", null).order("created_at", { ascending: false }),
   ]);
@@ -50,6 +51,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   const monthly = settings?.monthly_credits ?? 24000;
   const episodeCap = settings?.episode_credits ?? 2500;
   const usd = Number(settings?.usd_per_credit ?? 0.0015);
+  const rates = audioRates(settings?.audio_rates);
   const used = (log ?? []).reduce((a, r) => a + (r.credits ?? 0), 0);
   const pct = monthly ? Math.min(100, Math.round((used / monthly) * 100)) : 100;
   const columns = STAGES.filter((s) => s !== "published");
@@ -61,7 +63,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
       <p className="muted" style={{ marginTop: 0 }}>
         Story series made with Claude (Watchat Studio connector) and OpenArt. <strong>New series:</strong> you describe the idea → Claude writes the bible,
         characters, portraits and an episode outline → you review and lock it → you send the episodes to Claude. <strong>Each episode:</strong> Claude writes
-        the script → you approve → Claude makes the pictures → you check and publish. Claude never publishes, and asks the credit budget before every picture.
+        the script → you approve → Claude makes the pictures and sound → you check and publish. Claude never publishes, and asks the credit budget before every picture or sound.
       </p>
       <Flash ok={sp.ok} err={sp.err} />
 
@@ -226,6 +228,8 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
                 {list.map((r) => {
                   const g = r.episodes.story_draft ? sanitizeStory(r.episodes.story_draft) : null;
                   const pics = g ? g.scenes.filter((x) => x.image || x.video).length : 0;
+                  const sounds = g ? audioPlan(g) : [];
+                  const soundsMade = sounds.filter((a) => a.media).length;
                   const open = openNotes(sanitizeNotes(r.notes)).length;
                   return (
                     <Link key={r.episode_id} href={`/admin/studio/${r.episode_id}`} className="card" style={{ margin: 0, padding: 10, display: "block", textDecoration: "none", color: "inherit" }}>
@@ -234,7 +238,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
                       </div>
                       <div style={{ fontWeight: 600 }}>{r.episodes.title_en ?? ""}</div>
                       <div className="muted" style={{ fontSize: 12 }}>
-                        {g ? `${g.scenes.length} scenes · pictures ${pics}/${g.scenes.length}` : (r.brief ?? "").slice(0, 70)}
+                        {g ? `${g.scenes.length} scenes · pictures ${pics}/${g.scenes.length}${sounds.length ? ` · sounds ${soundsMade}/${sounds.length}` : ""}` : (r.brief ?? "").slice(0, 70)}
                       </div>
                       <div className="muted" style={{ fontSize: 12 }}>
                         {r.credits_used ? `${r.credits_used} credits · ` : ""}
@@ -283,6 +287,16 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
                 </label>
                 <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 13 }}>
                   Set the monthly number to your OpenArt plan&apos;s credits (Pro 24,000; Wonder 106,000) or lower, so Claude stops before the plan runs out.
+                </span>
+                <strong style={{ gridColumn: "1 / -1", fontSize: 14 }}>Sound rates (credits per second, from OpenArt)</strong>
+                {AUDIO_KINDS.map((k) => (
+                  <label key={k}>
+                    {AUDIO_RATES[k].label.replace(" (per second)", "")}
+                    <input name={`audio_${k}`} type="number" step="0.5" min={0} defaultValue={rates[k]} />
+                  </label>
+                ))}
+                <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 13 }}>
+                  Starting values: copy OpenArt&apos;s real rates here so the monthly count stays right (Claude&apos;s estimate is also never lower than the cost OpenArt shows it).
                 </span>
                 <button type="submit">Save budget</button>
               </form>

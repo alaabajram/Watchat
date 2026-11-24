@@ -424,3 +424,11 @@ html.wc-in-telegram body { padding-top: var(--wc-tg-top, 0px); }
 @media (prefers-reduced-motion: reduce) {
   .wc-story-media, .wc-story-choice, .wc-chat-row { animation: none !important; }
 }
+
+/* Story sound: mute button under the watch top bar (top corner in the builder's phone) */
+.wc-story-mute {
+  position: absolute; z-index: 5; inset-inline-end: 14px; top: calc(70px + max(env(safe-area-inset-top), var(--wc-tg-top, 0px)));
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(20, 16, 26, 0.6); color: #fff;
+  font-size: 18px; line-height: 1; display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.story-phone .wc-story-mute { top: 10px; width: 34px; height: 34px; font-size: 15px; }

@@ -46,6 +46,14 @@ export type Route =
   | { type: "branch"; flag: string; ifSet: string | null; ifNot: string | null } // depends on an earlier choice (any episode)
   | { type: "end"; ending: Bi | null }; // the episode ends here; an ending name marks one of several endings
 
+/**
+ * Planned sound (Studio scripts): Claude writes the cues with ids, then attaches the files made in OpenArt.
+ * An episode has at most 2 music beds; a scene names the bed it starts (`musicRef`) or stops it, plays up to
+ * 2 sound effects when it opens, and may have its speaker's voice line (`voiceRef`, the file lands in `audio`).
+ */
+export type MusicBed = { id: string; desc: string; mood: string; media: StoryMedia | null };
+export type SfxCue = { id: string; desc: string; media: StoryMedia | null };
+
 export type Scene = {
   id: string;
   /** Builder-only name ("Layla at the door"). */
@@ -64,11 +72,17 @@ export type Scene = {
   /** Seconds before moving on by itself (0 = wait for a tap). Ignored at choices. */
   auto: number;
   route: Route;
+  /** Episode music bed this scene starts ("mus_01"); its file is on the bed. */
+  musicRef?: string;
+  /** Sound effects that play when the scene opens (at most 2). */
+  sfx?: SfxCue[];
+  /** Voice line id ("vo_s06"): the speaker says this scene's text; the file is the scene's `audio`. */
+  voiceRef?: string;
   /** Picture name from an imported script (e.g. "img_05"): "Match pictures by name" fills `image` from the file with this name. */
   ref?: string;
 };
 
-export type StoryGraph = { v: 1; start: string | null; scenes: Scene[] };
+export type StoryGraph = { v: 1; start: string | null; scenes: Scene[]; /** Planned music beds (Studio). */ music?: MusicBed[] };
 
 export const EMPTY_STORY: StoryGraph = { v: 1, start: null, scenes: [] };
 
@@ -81,7 +95,16 @@ export const LIMITS = {
   characters: 30,
   maxPrice: 500,
   maxAuto: 60,
+  musicBeds: 2,
+  sfxPerScene: 2,
 } as const;
+
+/** Audio names: "mus_01", "sfx_03", "vo_s06". */
+export const AUDIO_REF = /^(mus|sfx|vo)_[a-z0-9_-]{1,30}$/i;
+export const audioKindOfRef = (ref: string): "music" | "sfx" | "voice" | null => {
+  const m = /^(mus|sfx|vo)_/i.exec(ref);
+  return m ? ({ mus: "music", sfx: "sfx", vo: "voice" } as const)[m[1].toLowerCase() as "mus" | "sfx" | "vo"] : null;
+};
 
 /** Uploads a scene accepts (web only, so bigger than WhatsApp's limits). */
 export const STORY_UPLOADS: Record<string, { type: StoryMediaType; ext: string; maxMb: number }> = {
@@ -91,6 +114,7 @@ export const STORY_UPLOADS: Record<string, { type: StoryMediaType; ext: string; 
   "video/mp4": { type: "video", ext: "mp4", maxMb: 60 },
   "audio/mpeg": { type: "audio", ext: "mp3", maxMb: 20 },
   "audio/mp4": { type: "audio", ext: "m4a", maxMb: 20 },
+  "audio/wav": { type: "audio", ext: "wav", maxMb: 20 },
 };
 export const STORY_ACCEPT: Record<"image" | "video" | "audio", string> = {
   image: "image/jpeg,image/png,image/webp",

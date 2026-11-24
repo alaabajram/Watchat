@@ -2,7 +2,7 @@
 // drops what doesn't fit, clamps sizes. Media keep only their stored path; the server re-derives the URL
 // (see `withUrls`), so a story can never point at an address the browser made up.
 
-import { LIMITS, type Bi, type Character, type Choice, type Motion, type Route, type Scene, type StoryGraph, type StoryMedia, type StoryMediaType } from "./types";
+import { AUDIO_REF, LIMITS, type Bi, type Character, type Choice, type Motion, type MusicBed, type Route, type Scene, type SfxCue, type StoryGraph, type StoryMedia, type StoryMediaType } from "./types";
 
 const ID = /^[a-z0-9_-]{1,40}$/i;
 const REF = /^[a-z0-9_.-]{1,40}$/i;
@@ -61,24 +61,67 @@ function sanitizeRoute(v: unknown): Route {
   return { type: "next", to: target(o.to) };
 }
 
+const audioId = (v: unknown, kind: "mus" | "sfx" | "vo"): string | null => {
+  const id = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return AUDIO_REF.test(id) && id.startsWith(`${kind}_`) ? id : null;
+};
+
+/** Up to 6 kept so the checks can say "too many" instead of silently dropping (the limit is 2). */
+function sanitizeSfx(v: unknown): SfxCue[] {
+  const out: SfxCue[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(v) ? v : []) {
+    const o = typeof raw === "string" ? { id: raw } : obj(raw);
+    const id = audioId(o.id, "sfx");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, desc: str(o.desc, 200).trim(), media: sanitizeMedia(o.media, "audio") });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+export function sanitizeMusicBeds(v: unknown): MusicBed[] {
+  const out: MusicBed[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(v) ? v : []) {
+    const o = obj(raw);
+    const id = audioId(o.id, "mus");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, desc: str(o.desc, 300).trim(), mood: str(o.mood, 80).trim(), media: sanitizeMedia(o.media, "audio") });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
 function sanitizeScene(v: unknown): Scene | null {
   const o = obj(v);
   if (typeof o.id !== "string" || !ID.test(o.id)) return null;
   const ref = typeof o.ref === "string" ? o.ref.trim() : typeof o.image_ref === "string" ? o.image_ref.trim() : "";
+  // Studio scripts write sound as cues: "audio": { "music": "mus_01" | "stop", "sfx": [{ "id", "desc" }], "voice": { "id" } }.
+  const cueForm = o.audio && typeof o.audio === "object" && !("type" in (o.audio as object)) ? obj(o.audio) : null;
+  const musicRef = audioId(cueForm ? cueForm.music : o.musicRef, "mus");
+  const voiceIn = cueForm ? cueForm.voice : o.voiceRef;
+  const voiceRef = audioId(typeof voiceIn === "string" ? voiceIn : obj(voiceIn).id, "vo");
+  const sfx = sanitizeSfx(cueForm ? cueForm.sfx : o.sfx);
   return {
     id: o.id,
     name: str(o.name, LIMITS.name).trim(),
     image: sanitizeMedia(o.image, "image"),
     video: sanitizeMedia(o.video, "video"),
-    audio: sanitizeMedia(o.audio, "audio"),
+    audio: cueForm ? null : sanitizeMedia(o.audio, "audio"),
     music: sanitizeMedia(o.music, "audio"),
-    stopMusic: o.stopMusic === true,
+    stopMusic: o.stopMusic === true || (cueForm !== null && cueForm.music === "stop"),
     speaker: target(o.speaker),
     text: bi(o.text, LIMITS.text),
     motion: MOTION_KEYS.includes(o.motion as Motion) ? (o.motion as Motion) : "none",
     auto: int(o.auto, 0, LIMITS.maxAuto),
     route: sanitizeRoute(o.route),
     ...(REF.test(ref) ? { ref: ref.toLowerCase() } : {}),
+    ...(musicRef ? { musicRef } : {}),
+    ...(sfx.length ? { sfx } : {}),
+    ...(voiceRef ? { voiceRef } : {}),
   };
 }
 
@@ -105,7 +148,8 @@ export function sanitizeStory(v: unknown): StoryGraph {
     }
   }
   const start = typeof o.start === "string" && seen.has(o.start) ? o.start : (scenes[0]?.id ?? null);
-  return { v: 1, start, scenes };
+  const music = sanitizeMusicBeds(o.music);
+  return { v: 1, start, scenes, ...(music.length ? { music } : {}) };
 }
 
 export function sanitizeCharacters(v: unknown): Character[] {
@@ -128,7 +172,10 @@ export function sanitizeCharacters(v: unknown): Character[] {
 
 /** Every stored media path in a story (for keeping file links fresh on the server). */
 export function mediaOfStory(g: StoryGraph): StoryMedia[] {
-  return g.scenes.flatMap((s) => [s.image, s.video, s.audio, s.music].filter((m): m is StoryMedia => m !== null));
+  return [
+    ...(g.music ?? []).map((b) => b.media),
+    ...g.scenes.flatMap((s) => [s.image, s.video, s.audio, s.music, ...(s.sfx ?? []).map((x) => x.media)]),
+  ].filter((m): m is StoryMedia => m !== null);
 }
 
 /** Replace each media URL with the one derived from its path (server passes `publicUrlFor`); unknown paths are removed. */
@@ -140,5 +187,16 @@ export function withUrls<T extends StoryGraph | Character[]>(value: T, urlFor: (
   };
   if (Array.isArray(value)) return value.map((c) => ({ ...c, avatar: fix(c.avatar) })) as T;
   const g = value as StoryGraph;
-  return { ...g, scenes: g.scenes.map((s) => ({ ...s, image: fix(s.image), video: fix(s.video), audio: fix(s.audio), music: fix(s.music) })) } as T;
+  return {
+    ...g,
+    ...(g.music ? { music: g.music.map((b) => ({ ...b, media: fix(b.media) })) } : {}),
+    scenes: g.scenes.map((s) => ({
+      ...s,
+      image: fix(s.image),
+      video: fix(s.video),
+      audio: fix(s.audio),
+      music: fix(s.music),
+      ...(s.sfx ? { sfx: s.sfx.map((x) => ({ ...x, media: fix(x.media) })) } : {}),
+    })),
+  } as T;
 }

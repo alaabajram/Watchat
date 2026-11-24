@@ -81,13 +81,53 @@ export function SceneEditor(p: Props) {
       <div className="story-media-grid">
         <MediaField seriesId={p.seriesId} label={s.ref ? `Picture · ${s.ref}` : "Picture"} type="image" value={s.image} onChange={(image) => set({ image })} hint={s.ref ? `Script picture name: ${s.ref}.jpg` : "Vertical 9:16 works best (1080×1920)."} />
         <MediaField seriesId={p.seriesId} label="Clip (instead of a picture)" type="video" value={s.video} onChange={(video) => set({ video })} hint="Short MP4, plays with sound." />
-        <MediaField seriesId={p.seriesId} label="Voice / sound" type="audio" value={s.audio} onChange={(audio) => set({ audio })} hint="Plays once with this scene." />
+        <MediaField
+          seriesId={p.seriesId}
+          label={s.voiceRef ? `Voice · ${s.voiceRef}` : "Voice / sound"}
+          type="audio"
+          value={s.audio}
+          onChange={(audio) => set({ audio })}
+          hint={s.voiceRef ? "The speaker says this scene's line; auto-advance waits for it." : "Plays once with this scene."}
+        />
         <div>
-          <MediaField seriesId={p.seriesId} label="Music" type="audio" value={s.music} onChange={(music) => set({ music, stopMusic: music ? false : s.stopMusic })} hint="Loops and carries on into the next scenes." />
+          <MediaField
+            seriesId={p.seriesId}
+            label="Music"
+            type="audio"
+            value={s.music}
+            onChange={(music) => set({ music, stopMusic: music ? false : s.stopMusic })}
+            hint={s.musicRef && !s.music ? `Episode music ${s.musicRef} starts here (Studio). A file here replaces it.` : "Loops and carries on into the next scenes."}
+          />
           <label className="inline" style={{ fontWeight: 400, fontSize: 13 }}>
             <input type="checkbox" checked={s.stopMusic} onChange={(e) => set({ stopMusic: e.target.checked, music: e.target.checked ? null : s.music })} /> Stop the music here
           </label>
         </div>
+        {(s.sfx ?? []).map((x) => (
+          <div key={x.id}>
+            <MediaField
+              seriesId={p.seriesId}
+              label={`Effect · ${x.id}`}
+              type="audio"
+              value={x.media}
+              onChange={(media) => set({ sfx: (s.sfx ?? []).map((c) => (c.id === x.id ? { ...c, media } : c)) })}
+              hint={x.desc || "Plays when the scene opens."}
+            />
+            <button type="button" className="secondary small" onClick={() => set({ sfx: (s.sfx ?? []).filter((c) => c.id !== x.id) })}>
+              Remove effect
+            </button>
+          </div>
+        ))}
+        {(s.sfx ?? []).length < LIMITS.sfxPerScene && (
+          <div style={{ alignSelf: "center" }}>
+            <button
+              type="button"
+              className="secondary small"
+              onClick={() => set({ sfx: [...(s.sfx ?? []), { id: nextId(`sfx_${s.id}_`, (s.sfx ?? []).map((c) => c.id)), desc: "", media: null }] })}
+            >
+              ＋ Sound effect
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid3" style={{ alignItems: "end" }}>

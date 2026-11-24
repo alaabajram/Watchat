@@ -16,6 +16,30 @@ export const MODEL_RATES: Record<string, { kind: "image" | "video"; credits: num
 export const MAX_COUNT = 12;
 export const MAX_VIDEO_SECONDS = 15;
 
+/**
+ * Sound: credits per second by what it is (OpenArt's audio models vary, so the team sets these in Admin → Studio
+ * from the rates OpenArt shows; these are starting values). Lip-sync is priced like a short video.
+ */
+export type AudioKind = "music" | "sfx" | "voice" | "lipsync";
+export const AUDIO_KINDS: AudioKind[] = ["music", "sfx", "voice", "lipsync"];
+export const AUDIO_RATES: Record<AudioKind, { credits: number; maxSeconds: number; label: string }> = {
+  music: { credits: 4, maxSeconds: 180, label: "Music (per second)" },
+  sfx: { credits: 3, maxSeconds: 15, label: "Sound effect (per second)" },
+  voice: { credits: 2, maxSeconds: 30, label: "Voice line (per second)" },
+  lipsync: { credits: 35, maxSeconds: 15, label: "Lip-sync clip (per second)" },
+};
+
+/** The team's audio rates over the starting values (only positive numbers count). */
+export function audioRates(overrides: unknown): Record<AudioKind, number> {
+  const o = overrides && typeof overrides === "object" ? (overrides as Record<string, unknown>) : {};
+  return Object.fromEntries(
+    AUDIO_KINDS.map((k) => {
+      const n = Number(o[k]);
+      return [k, Number.isFinite(n) && n > 0 ? Math.min(10000, Math.round(n * 100) / 100) : AUDIO_RATES[k].credits];
+    }),
+  ) as Record<AudioKind, number>;
+}
+
 /** "Nano Banana Pro" / "nano_banana_pro" / "kling 3.0" → a key of MODEL_RATES (or the cleaned name). */
 export function modelKey(name: string): string {
   const k = name
@@ -28,12 +52,21 @@ export function modelKey(name: string): string {
   return hit ?? k.slice(0, 40);
 }
 
-export type CreditAsk = { model: string; kind: "image" | "video"; count: number; seconds?: number; credits?: number };
+export type CreditAsk = { model: string; kind: "image" | "video" | "audio"; audioKind?: AudioKind; count: number; seconds?: number; credits?: number };
 
-/** Credits for a planned generation, or an error when it can't be estimated. */
-export function estimateCredits(a: CreditAsk): { credits: number; model: string } | { error: string } {
+/** Credits for a planned generation, or an error when it can't be estimated. `rates`: the team's audio rates. */
+export function estimateCredits(a: CreditAsk, rates: Record<AudioKind, number> = audioRates({})): { credits: number; model: string } | { error: string } {
   const count = Math.round(a.count);
   if (!Number.isFinite(count) || count < 1 || count > MAX_COUNT) return { error: `count must be 1–${MAX_COUNT} per request.` };
+  if (a.kind === "audio") {
+    const k = a.audioKind;
+    if (!k || !AUDIO_KINDS.includes(k)) return { error: `audio_kind must be one of ${AUDIO_KINDS.join(", ")}.` };
+    const s = Math.round(Number(a.seconds) || 0);
+    const max = AUDIO_RATES[k].maxSeconds;
+    if (s < 1 || s > max) return { error: `seconds must be 1–${max} for ${k}.` };
+    const claimed = Math.max(0, Math.round(Number(a.credits) || 0));
+    return { credits: Math.max(Math.ceil(rates[k] * s * count), claimed), model: `${modelKey(a.model || k)}` };
+  }
   const model = modelKey(a.model);
   const rate = MODEL_RATES[model];
   const claimed = Math.max(0, Math.round(Number(a.credits) || 0));

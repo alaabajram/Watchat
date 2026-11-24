@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeBible, mergeBible, setupStatus } from "./bible";
-import { checkBudget, estimateCredits, modelKey } from "./budget";
+import { sanitizeBible, mergeBible, setupStatus, voicedCharacters } from "./bible";
+import { audioRates, checkBudget, estimateCredits, modelKey } from "./budget";
 import { handleRpc, ToolError, type Tool } from "./mcp";
 import { addNote, afterSubmit, canMove, claudeMay, closeNotes, openNotes, teamMoves } from "./stages";
 
@@ -57,9 +57,9 @@ describe("studio credit budget", () => {
 describe("series bible", () => {
   it("cleans input and locks characters once approved", () => {
     const b = sanitizeBible({ style: " photoreal ", rules: "Gulf dialect\n\nNo swearing", characters: [{ id: "Amal", look: "29, olive skin", portrait: "javascript:x" }, { id: "amal" }], locked: false });
-    expect(b).toEqual({ style: "photoreal", dialect: "", rules: ["Gulf dialect", "No swearing"], characters: [{ id: "amal", look: "29, olive skin", portrait: null }], locked: false, brief: "", planned: 0, outline: [] });
+    expect(b).toEqual({ style: "photoreal", dialect: "", rules: ["Gulf dialect", "No swearing"], characters: [{ id: "amal", look: "29, olive skin", portrait: null, voice: "", voiceSample: null }], theme: { desc: "", url: null }, locked: false, brief: "", planned: 0, outline: [] });
     const merged = mergeBible(b, { characters: [{ id: "amal", look: "29, olive skin, wavy hair", portrait: "https://img/amal.png" }] });
-    expect(merged.bible.characters[0]).toEqual({ id: "amal", look: "29, olive skin, wavy hair", portrait: "https://img/amal.png" });
+    expect(merged.bible.characters[0]).toEqual({ id: "amal", look: "29, olive skin, wavy hair", portrait: "https://img/amal.png", voice: "", voiceSample: null });
     const locked = mergeBible({ ...merged.bible, locked: true }, { characters: [{ id: "amal", look: "different", portrait: null }], style: "cartoon" });
     expect(locked.refused).toHaveLength(2);
     expect(locked.bible.characters[0].look).toBe("29, olive skin, wavy hair");
@@ -138,5 +138,35 @@ describe("series setup", () => {
     expect(setupStatus(merged)).toBe("to_review");
     expect(setupStatus({ ...merged, locked: true })).toBe("locked");
     expect(mergeBible({ ...merged, locked: true }, { outline }).refused).toHaveLength(1);
+  });
+});
+
+describe("studio sound", () => {
+  it("estimates sound by kind and seconds, never below what Claude claims, with the team's rates", () => {
+    expect(estimateCredits({ model: "", kind: "audio", audioKind: "voice", count: 3, seconds: 5 })).toEqual({ credits: 30, model: "voice" });
+    expect(estimateCredits({ model: "x", kind: "audio", audioKind: "music", count: 1, seconds: 60, credits: 500 })).toMatchObject({ credits: 500 });
+    expect(estimateCredits({ model: "x", kind: "audio", audioKind: "music", count: 1, seconds: 60 }, audioRates({ music: 10 }))).toMatchObject({ credits: 600 });
+    expect(estimateCredits({ model: "x", kind: "audio", count: 1, seconds: 5 })).toHaveProperty("error");
+    expect(estimateCredits({ model: "x", kind: "audio", audioKind: "sfx", count: 1, seconds: 40 })).toHaveProperty("error");
+    expect(audioRates({ voice: -3, sfx: "7" })).toMatchObject({ voice: 2, sfx: 7 });
+  });
+
+  it("keeps the theme and locked voices in the bible; only voiced characters with a sample may speak", () => {
+    const b = sanitizeBible({
+      theme: { desc: "oud", url: "https://cdn.example/t.mp3" },
+      characters: [
+        { id: "karim", look: "x", voice: "warm baritone, 30s, Gulf", voice_sample: "https://cdn.example/k.mp3" },
+        { id: "warda", look: "y", voice: "" },
+        { id: "sami", look: "z", voice: "boyish" },
+      ],
+    });
+    expect(b.theme).toEqual({ desc: "oud", url: "https://cdn.example/t.mp3" });
+    expect(voicedCharacters(b)).toEqual(["karim"]);
+    const merged = mergeBible(b, { characters: [{ id: "sami", voiceSample: "https://cdn.example/s.mp3" }], theme: { desc: "oud and strings" } }).bible;
+    expect(merged.characters.find((c) => c.id === "sami")).toMatchObject({ look: "z", voice: "boyish", voiceSample: "https://cdn.example/s.mp3" });
+    expect(merged.theme).toEqual({ desc: "oud and strings", url: "https://cdn.example/t.mp3" });
+    const locked = mergeBible({ ...b, locked: true }, { theme: { desc: "new" } });
+    expect(locked.refused.join()).toMatch(/theme/);
+    expect(locked.bible.theme.desc).toBe("oud");
   });
 });
