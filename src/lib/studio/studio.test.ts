@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeBible, mergeBible, setupStatus, voicedCharacters } from "./bible";
 import { audioRates, checkBudget, estimateCredits, modelKey } from "./budget";
+import { artSlot, artworkPlacement, sanitizeProposals, STUDIO_ART, STUDIO_ART_SLOTS } from "./artwork";
 import { handleRpc, ToolError, type Tool } from "./mcp";
 import { addNote, afterSubmit, canMove, claudeMay, closeNotes, openNotes, teamMoves } from "./stages";
 
@@ -168,5 +169,35 @@ describe("studio sound", () => {
     const locked = mergeBible({ ...b, locked: true }, { theme: { desc: "new" } });
     expect(locked.refused.join()).toMatch(/theme/);
     expect(locked.bible.theme.desc).toBe("oud");
+  });
+});
+
+describe("series artwork from the Studio", () => {
+  it("knows the slots, their shapes and loose names", () => {
+    expect(STUDIO_ART.poster).toMatchObject({ field: "poster_url", ratio: "2:3", w: 1000, h: 1500 });
+    expect(STUDIO_ART.banner_wide.ratio).toBe("16:9");
+    expect(STUDIO_ART_SLOTS).toEqual(["poster", "banner_wide", "banner_wa", "square"]);
+    expect(artSlot("Banner-Wide")).toBe("banner_wide");
+    expect(artSlot("poster_url")).toBe("poster");
+    expect(artSlot("cover")).toBeNull();
+  });
+
+  it("never replaces a live series' picture without the team", () => {
+    expect(artworkPlacement("draft", "https://x/p.jpg")).toBe("set");
+    expect(artworkPlacement("live", null)).toBe("set");
+    expect(artworkPlacement("live", "https://x/p.jpg")).toBe("proposal");
+  });
+
+  it("keeps clean proposals only", () => {
+    const p = sanitizeProposals({ poster: { url: "https://imagedelivery.net/a/b/watchat", path: "cfimg:b", note: "Amal on the rooftop" }, square: { url: "javascript:x" }, cover: { url: "https://x" } });
+    expect(Object.keys(p)).toEqual(["poster"]);
+    expect(p.poster?.path).toBe("cfimg:b");
+    expect(sanitizeProposals(null)).toEqual({});
+  });
+
+  it("checks the artwork cap with its own message", () => {
+    const r = checkBudget({ monthly: 24000, monthUsed: 0, episodeCap: 400, episodeUsed: 380 }, 40, "This series' artwork");
+    expect(r).toMatchObject({ ok: false, episodeLeft: 20 });
+    expect(!r.ok && r.reason).toContain("This series' artwork credit cap");
   });
 });

@@ -13,6 +13,8 @@ import { LANGS, originalLang } from "@/lib/storage/tracks";
 import { AUDIO_REF, STORY_STYLES } from "@/lib/story/types";
 import { sanitizeBible } from "@/lib/studio/bible";
 import { AUDIO_KINDS, audioRates } from "@/lib/studio/budget";
+import { ARTWORK_CAP_DEFAULT, artSlot, sanitizeProposals, STUDIO_ART } from "@/lib/studio/artwork";
+import { deleteStored } from "@/lib/storage/cloudflare";
 import { addNote, canMove, isStage, sanitizeNotes, STAGE_INFO } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
 import { clearAudio } from "@/lib/story/import";
@@ -147,12 +149,13 @@ export async function saveStudioSettingsAction(fd: FormData) {
   const monthly = Math.max(0, Math.min(10_000_000, int(fd, "monthly_credits", 24000)));
   const episode = Math.max(0, Math.min(1_000_000, int(fd, "episode_credits", 2500)));
   const usd = Math.max(0, Math.min(1, Number(str(fd, "usd_per_credit", 20)) || 0.0015));
+  const artwork = Math.max(0, Math.min(1_000_000, int(fd, "artwork_credits", ARTWORK_CAP_DEFAULT)));
   const audio_rates = audioRates(Object.fromEntries(AUDIO_KINDS.map((k) => [k, str(fd, `audio_${k}`, 12)])));
   const { error } = await db()
     .from("studio_settings")
-    .upsert({ tenant_id: admin.tenantId, monthly_credits: monthly, episode_credits: episode, usd_per_credit: usd, audio_rates, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
+    .upsert({ tenant_id: admin.tenantId, monthly_credits: monthly, episode_credits: episode, artwork_credits: artwork, usd_per_credit: usd, audio_rates, updated_at: new Date().toISOString() }, { onConflict: "tenant_id" });
   if (error) done(BOARD, `Couldn't save the budget: ${error.message}`, "err");
-  await audit(admin, "studio.budget", "tenant", admin.tenantId, { monthly, episode, usd, audio_rates });
+  await audit(admin, "studio.budget", "tenant", admin.tenantId, { monthly, episode, artwork, usd, audio_rates });
   done(BOARD, "Credit budget saved.");
 }
 
@@ -283,4 +286,27 @@ export async function sendOutlineAction(fd: FormData) {
   }
   await audit(admin, "studio.outline_sent", "series", s.id, { numbers: items.map((o) => o.number) });
   done(BOARD, sent ? `${sent} episode(s) of ${s.code} are waiting for Claude. Say: "Write episode ${items[0].number} of ${s.code}".` : "Those episodes are already in the Studio.");
+}
+
+/** Artwork Claude made for a live series' filled slot: put it on the series ("use") or throw it away ("discard"). */
+export async function artworkProposalAction(fd: FormData) {
+  const admin = await requireAdmin("content");
+  const seriesId = uuid(fd, "series");
+  const slot = artSlot(str(fd, "slot", 20));
+  const use = str(fd, "do", 10) === "use";
+  if (!seriesId || !slot) done(BOARD, "Bad request.", "err");
+  const { data: s } = await db().from("series").select("id, code, studio_artwork").eq("id", seriesId!).eq("tenant_id", admin.tenantId).maybeSingle();
+  const proposals = sanitizeProposals(s?.studio_artwork);
+  const p = proposals[slot!];
+  if (!s || !p) done(BOARD, "That picture is no longer waiting.", "err");
+  delete proposals[slot!];
+  const field = STUDIO_ART[slot!].field;
+  await db()
+    .from("series")
+    .update({ studio_artwork: proposals, ...(use ? { [field]: p!.url } : {}) })
+    .eq("id", s!.id);
+  if (!use && p!.path) await deleteStored(p!.path).catch(() => undefined);
+  await audit(admin, use ? "studio.artwork_used" : "studio.artwork_discarded", "series", s!.id, { slot });
+  revalidatePath("/admin/series");
+  done(BOARD, use ? `${s!.code}: the new ${slot!.replace("_", " ")} is on the series.` : "Discarded.");
 }
