@@ -12,7 +12,8 @@ import { sanitizeNotes, openNotes, STAGE_INFO, STAGES, type Stage } from "@/lib/
 import { sanitizeStory } from "@/lib/story/sanitize";
 import { audioPlan } from "@/lib/story/engine";
 import { db } from "@/lib/supabase";
-import { createBriefAction, createConnectorAction, createStudioSeriesAction, revokeConnectorAction, saveStudioSettingsAction } from "../../studio-actions";
+import { ARTWORK_CAP_DEFAULT, sanitizeProposals, STUDIO_ART, STUDIO_ART_SLOTS } from "@/lib/studio/artwork";
+import { artworkProposalAction, createBriefAction, createConnectorAction, createStudioSeriesAction, revokeConnectorAction, saveStudioSettingsAction } from "../../studio-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
       .eq("tenant_id", admin.tenantId)
       .order("updated_at", { ascending: false })
       .limit(200),
-    db().from("series").select("id, code, title_en, title_ar, status, story_style, story_bible, episodes(count)").eq("tenant_id", admin.tenantId).eq("format", "story").order("created_at", { ascending: false }),
+    db().from("series").select("id, code, title_en, title_ar, status, story_style, story_bible, studio_artwork, poster_url, banner_wide_url, banner_wa_url, square_url, episodes(count)").eq("tenant_id", admin.tenantId).eq("format", "story").order("created_at", { ascending: false }),
     db().from("studio_settings").select("*").eq("tenant_id", admin.tenantId).maybeSingle(),
     db().from("studio_credit_log").select("credits").eq("tenant_id", admin.tenantId).gte("created_at", monthStart()),
     db().from("studio_tokens").select("id, label, created_at, expires_at, last_used_at, admin_id, admin_users(name, email)").eq("tenant_id", admin.tenantId).is("revoked_at", null).order("created_at", { ascending: false }),
@@ -50,6 +51,11 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
   const rows = (items ?? []) as unknown as Row[];
   const monthly = settings?.monthly_credits ?? 24000;
   const episodeCap = settings?.episode_credits ?? 2500;
+  const artworkCap = settings?.artwork_credits ?? ARTWORK_CAP_DEFAULT;
+  const waitingArt = (stories ?? []).flatMap((s) => {
+    const p = sanitizeProposals(s.studio_artwork);
+    return STUDIO_ART_SLOTS.filter((k) => p[k]).map((k) => ({ s, slot: k, p: p[k]!, current: (s as unknown as Record<string, string | null>)[STUDIO_ART[k].field] }));
+  });
   const usd = Number(settings?.usd_per_credit ?? 0.0015);
   const rates = audioRates(settings?.audio_rates);
   const used = (log ?? []).reduce((a, r) => a + (r.credits ?? 0), 0);
@@ -152,6 +158,41 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
           )}
         </details>
       </div>
+
+      {waitingArt.length > 0 && (
+        <div className="card">
+          <h2 style={{ marginTop: 0 }}>New artwork from Claude</h2>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>These series are live, so Claude&apos;s pictures don&apos;t replace the current ones until you choose.</p>
+          <div style={{ display: "grid", gap: 14 }}>
+            {waitingArt.map(({ s, slot, p, current }) => (
+              <div key={`${s.id}-${slot}`} style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 160 }}>
+                  <strong>{s.code}</strong> · {STUDIO_ART[slot].use.split(":")[0]}
+                  {p.note && <div className="muted" style={{ fontSize: 12 }}>{p.note}</div>}
+                </div>
+                {current && (
+                  <figure style={{ margin: 0, textAlign: "center" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={current} alt="" style={{ height: 110, borderRadius: 8, opacity: 0.6 }} />
+                    <figcaption className="muted" style={{ fontSize: 11 }}>Now</figcaption>
+                  </figure>
+                )}
+                <figure style={{ margin: 0, textAlign: "center" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" style={{ height: 110, borderRadius: 8 }} />
+                  <figcaption className="muted" style={{ fontSize: 11 }}>From Claude</figcaption>
+                </figure>
+                <form action={artworkProposalAction} style={{ display: "flex", gap: 8 }}>
+                  <input type="hidden" name="series" value={s.id} />
+                  <input type="hidden" name="slot" value={slot} />
+                  <button type="submit" name="do" value="use">Use it</button>
+                  <button type="submit" name="do" value="discard" className="secondary">Discard</button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2 style={{ marginTop: 0 }}>Series in the Studio</h2>
@@ -267,7 +308,7 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
           </div>
           <p style={{ marginBottom: 0 }}>
             <strong>{used.toLocaleString()}</strong> of {monthly.toLocaleString()} credits used · {Math.max(0, monthly - used).toLocaleString()} left (≈ $
-            {(Math.max(0, monthly - used) * usd).toFixed(2)}) · cap {episodeCap.toLocaleString()} per episode
+            {(Math.max(0, monthly - used) * usd).toFixed(2)}) · cap {episodeCap.toLocaleString()} per episode, {artworkCap.toLocaleString()} per series for artwork
           </p>
           {can(admin, "team") && (
             <details style={{ marginTop: 10 }}>
@@ -282,11 +323,15 @@ export default async function StudioPage({ searchParams }: { searchParams: Promi
                   <input name="episode_credits" type="number" min={0} defaultValue={episodeCap} />
                 </label>
                 <label>
+                  Artwork cap per series
+                  <input name="artwork_credits" type="number" min={0} defaultValue={artworkCap} />
+                </label>
+                <label>
                   $ per credit
                   <input name="usd_per_credit" type="number" step="0.0001" min={0} defaultValue={usd} />
                 </label>
                 <span className="muted" style={{ gridColumn: "1 / -1", fontSize: 13 }}>
-                  Set the monthly number to your OpenArt plan&apos;s credits (Pro 24,000; Wonder 106,000) or lower, so Claude stops before the plan runs out.
+                  Set the monthly number to your OpenArt plan&apos;s credits (Pro 24,000; Wonder 106,000) or lower, so Claude stops before the plan runs out. The artwork cap covers a series&apos; poster, banners and square together (400 ≈ 10 Nano Banana Pro pictures).
                 </span>
                 <strong style={{ gridColumn: "1 / -1", fontSize: 14 }}>Sound rates (credits per second, from OpenArt)</strong>
                 {AUDIO_KINDS.map((k) => (

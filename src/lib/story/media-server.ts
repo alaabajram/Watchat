@@ -10,9 +10,8 @@ import { sanitizeStory } from "./sanitize";
 /** Hosts a media list may point at: OpenArt (and its subdomains), plus any in STORY_IMPORT_HOSTS. */
 export const importHosts = () => ["openart.ai", ...(process.env.STORY_IMPORT_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean)];
 
-export async function copyStoryMedia(series: { id: string; code: string }, ref: string, url: string, onlyEpisode?: string): Promise<{ scenes: number; type: "image" | "video" | "audio" }> {
-  const key = ref.toLowerCase();
-  if (!/^[a-z0-9_.-]{1,40}$/.test(key)) throw new Error("Bad picture name.");
+/** Check a remote file (allowed host, also after redirects; type; size) before copying it. */
+async function checkRemote(ref: string, url: string) {
   const hosts = importHosts();
   if (!hostAllowed(url, hosts)) {
     let host = url.slice(0, 40);
@@ -41,7 +40,22 @@ export async function copyStoryMedia(series: { id: string; code: string }, ref: 
   if (!kind) throw new Error(`${ref}: only JPG, PNG, WebP pictures, MP4 clips and MP3, M4A or WAV sounds can be imported.`);
   const limit = FETCH_MAX_MB[kind.type];
   if (size > limit * 1048576) throw new Error(`${ref}: the file is over ${limit} MB.`);
+  return kind;
+}
 
+/** Copy a series artwork picture (poster, banners, square) into Watchat's storage. */
+export async function copyArtwork(code: string, slot: string, url: string): Promise<{ url: string; path: string }> {
+  const kind = await checkRemote(slot, url);
+  if (kind.type !== "image") throw new Error(`${slot}: artwork must be a JPG, PNG or WebP picture.`);
+  const copied = await copyToCloudflare(url, `${code}/art/${slot}-${Date.now()}-${randomToken(6)}.${kind.ext}`);
+  if (!copied) throw new Error("Connect Cloudflare Images first (Admin → Brand & site → Storage).");
+  return { url: copied.publicUrl, path: copied.path };
+}
+
+export async function copyStoryMedia(series: { id: string; code: string }, ref: string, url: string, onlyEpisode?: string): Promise<{ scenes: number; type: "image" | "video" | "audio" }> {
+  const key = ref.toLowerCase();
+  if (!/^[a-z0-9_.-]{1,40}$/.test(key)) throw new Error("Bad picture name.");
+  const kind = await checkRemote(ref, url);
   const copied = await copyToCloudflare(url, `${series.code}/story/${Date.now()}-${randomToken(6)}.${kind.ext}`);
   if (!copied) throw new Error(`Connect Cloudflare ${kind.type === "image" ? "Images" : "R2"} first (Admin → Brand & site → Storage).`);
   const media = { path: copied.path, url: copied.publicUrl, type: kind.type, name: key };

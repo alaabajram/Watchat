@@ -86,11 +86,12 @@ export function estimateCredits(a: CreditAsk, rates: Record<AudioKind, number> =
 
 export type BudgetState = { monthly: number; monthUsed: number; episodeCap: number; episodeUsed: number };
 
-export function checkBudget(b: BudgetState, want: number): { ok: true; monthLeft: number; episodeLeft: number } | { ok: false; reason: string; monthLeft: number; episodeLeft: number } {
+/** `cap`: what the second limit is ("This episode's" by default, or e.g. "This series' artwork"). */
+export function checkBudget(b: BudgetState, want: number, cap = "This episode's"): { ok: true; monthLeft: number; episodeLeft: number } | { ok: false; reason: string; monthLeft: number; episodeLeft: number } {
   const monthLeft = Math.max(0, b.monthly - b.monthUsed);
   const episodeLeft = Math.max(0, b.episodeCap - b.episodeUsed);
   if (want > monthLeft) return { ok: false, reason: `Not enough credits left this month (${monthLeft} left, ${want} needed). Stop and tell the team.`, monthLeft, episodeLeft };
-  if (want > episodeLeft) return { ok: false, reason: `This episode's credit cap is reached (${episodeLeft} left of ${b.episodeCap}, ${want} needed). Stop and tell the team.`, monthLeft, episodeLeft };
+  if (want > episodeLeft) return { ok: false, reason: `${cap} credit cap is reached (${episodeLeft} left of ${b.episodeCap}, ${want} needed). Stop and tell the team.`, monthLeft, episodeLeft };
   return { ok: true, monthLeft: monthLeft - want, episodeLeft: episodeLeft - want };
 }
 

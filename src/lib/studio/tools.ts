@@ -3,7 +3,7 @@
 // and submit for review. It can never publish, and only works on episodes the team opened a brief for.
 
 import { hostAllowed, keepMade, mediaKindOf } from "@/lib/story/import";
-import { copyStoryMedia, importHosts } from "@/lib/story/media-server";
+import { copyArtwork, copyStoryMedia, importHosts } from "@/lib/story/media-server";
 import { parseStoryImport } from "@/lib/story/import";
 import { audioPlan, flagsSetIn, mediaMissing } from "@/lib/story/engine";
 import { sanitizeCharacters, sanitizeStory } from "@/lib/story/sanitize";
@@ -15,6 +15,7 @@ import { db } from "@/lib/supabase";
 import { mergeBible, sanitizeBible, setupStatus, SETUP_LABEL, voicedCharacters, type Bible, type BiblePatch } from "./bible";
 import { AUDIO_KINDS, AUDIO_RATES, audioRates, checkBudget, estimateCredits, MODEL_RATES, monthStart, type AudioKind } from "./budget";
 import { ToolError, type Tool } from "./mcp";
+import { ARTWORK_CAP_DEFAULT, artSlot, artworkPlacement, sanitizeProposals, STUDIO_ART, STUDIO_ART_SLOTS } from "./artwork";
 import { addNote, afterSubmit, claudeMay, closeNotes, openNotes, sanitizeNotes, STAGE_INFO, isStage, type Stage } from "./stages";
 
 export type StudioCtx = { tenantId: string; adminId: string; adminName: string };
@@ -27,7 +28,8 @@ Rules (cost-aware; follow them exactly):
 3. Writing stage: save the script with watchat_save_episode_script (pictures by image_ref; sound as cues: 1–2 music beds, ≤2 sound effects per scene, voice lines only for characters with a locked voice), fix every error it reports, then watchat_submit_for_review and STOP. Every choice must change the story: each option gets its own next scene (paths may rejoin later), or at least a different "sets" flag that a later scene branches on. Do not make any pictures or sound before the team approves the script (stage "pictures", shown as Media).
 4. Media stage: BEFORE every OpenArt generation call watchat_reserve_credits with the model, kind (image|video|audio), count, and for audio the audio_kind (music|sfx|voice|lipsync) and seconds. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture or sound; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with watchat_attach_media (file addresses named by the script: img_NN, mus_NN, sfx_NN, vo_sNN), then watchat_submit_for_review (refused while anything in media_missing is left).
 5. Sound: one score per episode built on the series theme (no per-scene music changes beyond the 1–2 beds); always make a voice line from the character's voice sample as the reference, never without it; sound effects only where the brief or script marks them; dialogue follows the bible dialect, and for Arabic series make the English voice lines only if the team asks. The on-screen text stays: every voiced scene keeps its Arabic and English text.
-6. Keep your messages to the user short. Never invent file addresses.`;
+6. Keep your messages to the user short. Never invent file addresses.
+7. Series artwork (poster, banner_wide, banner_wa, square): only when the team asks for it. Read watchat_get_series for the sizes and what is already there, reserve credits with artwork set to the slot (no episode; its own per-series cap), make the picture at that slot's shape with the bible's style line (title lettering only if asked), at most one retake, then watchat_attach_artwork. On a live series a filled slot isn't replaced: it waits for the team's "Use it".`;
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const text = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -37,7 +39,7 @@ async function seriesByCode(ctx: StudioCtx, code: unknown) {
   if (!/^[A-Z0-9_-]{2,30}$/.test(c)) throw new ToolError("Give the series code, e.g. HOLIDAY01 (watchat_overview lists them).");
   const { data } = await db()
     .from("series")
-    .select("id, code, title_ar, title_en, synopsis_en, tagline_en, format, story_style, story_characters, story_bible")
+    .select("id, code, status, title_ar, title_en, synopsis_en, tagline_en, format, story_style, story_characters, story_bible, poster_url, banner_wide_url, banner_wa_url, square_url, studio_artwork")
     .eq("tenant_id", ctx.tenantId)
     .eq("code", c)
     .maybeSingle();
@@ -60,7 +62,7 @@ async function episodeOf(seriesId: string, number: unknown) {
 async function settings(tenantId: string) {
   // "*": audio_rates arrived later (works before and after that migration).
   const { data } = await db().from("studio_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
-  return { monthly: data?.monthly_credits ?? 24000, episodeCap: data?.episode_credits ?? 2500, usd: Number(data?.usd_per_credit ?? 0.0015), audio: audioRates(data?.audio_rates) };
+  return { monthly: data?.monthly_credits ?? 24000, episodeCap: data?.episode_credits ?? 2500, artworkCap: data?.artwork_credits ?? ARTWORK_CAP_DEFAULT, usd: Number(data?.usd_per_credit ?? 0.0015), audio: audioRates(data?.audio_rates) };
 }
 
 /** Copy a reference file (portrait, voice sample, theme tune) from OpenArt into Watchat's storage. */
@@ -77,6 +79,12 @@ const scriptChecks = (story: StoryGraph, chars: Character[], bible: Bible) => va
 
 export async function creditsThisMonth(tenantId: string): Promise<number> {
   const { data } = await db().from("studio_credit_log").select("credits").eq("tenant_id", tenantId).gte("created_at", monthStart());
+  return (data ?? []).reduce((a, r) => a + (r.credits ?? 0), 0);
+}
+
+/** Credits already reserved for a series' artwork (all time: the cap is per series). */
+async function artworkCreditsUsed(seriesId: string): Promise<number> {
+  const { data } = await db().from("studio_credit_log").select("credits").eq("series_id", seriesId).eq("kind", "artwork");
   return (data ?? []).reduce((a, r) => a + (r.credits ?? 0), 0);
 }
 
@@ -136,7 +144,7 @@ export const studioTools: Tool<StudioCtx>[] = [
       const { data: storySeries } = await db().from("series").select("code, title_en, story_bible").eq("tenant_id", ctx.tenantId).eq("format", "story");
       const rows = (items ?? []) as unknown as { stage: Stage; brief: string | null; credits_used: number; episodes: { number: number; title_en: string | null }; series: { code: string; title_en: string; story_style: string } }[];
       return {
-        budget: { monthly_credits: st.monthly, used_this_month: used, left: Math.max(0, st.monthly - used), episode_cap: st.episodeCap, approx_usd_left: Math.round(Math.max(0, st.monthly - used) * st.usd * 100) / 100 },
+        budget: { monthly_credits: st.monthly, used_this_month: used, left: Math.max(0, st.monthly - used), episode_cap: st.episodeCap, artwork_cap_per_series: st.artworkCap, approx_usd_left: Math.round(Math.max(0, st.monthly - used) * st.usd * 100) / 100 },
         series_to_set_up: (storySeries ?? [])
           .map((x) => ({ x, b: sanitizeBible(x.story_bible) }))
           .filter(({ b }) => b.brief && setupStatus(b) === "needs_claude")
@@ -160,12 +168,17 @@ export const studioTools: Tool<StudioCtx>[] = [
       const s = await seriesByCode(ctx, a.series);
       const bible = sanitizeBible(s.story_bible);
       const chars = sanitizeCharacters(s.story_characters);
+      const st = await settings(ctx.tenantId);
       const { data: eps } = await db().from("episodes").select("id, number, title_en, story_draft, story").eq("series_id", s.id).order("number");
       const { data: items } = await db().from("studio_items").select("episode_id, stage").eq("series_id", s.id);
       const stageOf = new Map((items ?? []).map((i) => [i.episode_id, i.stage]));
       const graphs = (eps ?? []).flatMap((e) => [e.story_draft, e.story]).filter(Boolean).map((g) => sanitizeStory(g));
+      const art = s as unknown as Record<string, string | null>;
+      const proposals = sanitizeProposals(s.studio_artwork);
+      const artUsed = await artworkCreditsUsed(s.id);
       return {
         code: s.code,
+        status: s.status,
         title: { ar: s.title_ar, en: s.title_en },
         synopsis: s.synopsis_en,
         tagline: s.tagline_en,
@@ -180,6 +193,15 @@ export const studioTools: Tool<StudioCtx>[] = [
           return { id: c.id, name: c.name, color: c.color, look: b?.look ?? "", portrait: b?.portrait ?? null, voice: b?.voice || null, voice_sample: b?.voiceSample ?? null, may_have_voice_lines: Boolean(b?.voice && b.voiceSample) };
         }),
         flags_set_by_earlier_choices: flagsSetIn(graphs),
+        artwork: {
+          credits: { used: artUsed, cap: st.artworkCap, left: Math.max(0, st.artworkCap - artUsed) },
+          slots: Object.fromEntries(
+            STUDIO_ART_SLOTS.map((k) => [
+              k,
+              { size: `${STUDIO_ART[k].w}×${STUDIO_ART[k].h} (${STUDIO_ART[k].ratio})`, use: STUDIO_ART[k].use, has_picture: Boolean(art[STUDIO_ART[k].field]), waiting_for_team: Boolean(proposals[k]) },
+            ]),
+          ),
+        },
         episodes: (eps ?? []).map((e) => ({ number: e.number, title: e.title_en, stage: stageOf.get(e.id) ?? "not in Studio", scenes: e.story_draft ? sanitizeStory(e.story_draft).scenes.length : 0, live: Boolean(e.story) })),
       };
     },
@@ -355,12 +377,13 @@ export const studioTools: Tool<StudioCtx>[] = [
     name: "watchat_reserve_credits",
     title: "Reserve OpenArt credits",
     description:
-      'Call BEFORE every OpenArt generation. Give the model (e.g. "nano-banana-pro", "nano-banana-2", "kling-3", or the audio model\'s name), kind (image|video|audio), count (1–12), seconds for a video or any audio, audio_kind for audio (music|sfx|voice|lipsync), and the credits OpenArt shows if you know them. Returns ok or a refusal: never generate after a refusal. For an episode it needs stage "pictures" (Media); for portraits, voice samples and the theme tune leave out the episode (series bible not locked yet).',
+      'Call BEFORE every OpenArt generation. Give the model (e.g. "nano-banana-pro", "nano-banana-2", "kling-3", or the audio model\'s name), kind (image|video|audio), count (1–12), seconds for a video or any audio, audio_kind for audio (music|sfx|voice|lipsync), and the credits OpenArt shows if you know them. Returns ok or a refusal: never generate after a refusal. For an episode it needs stage "pictures" (Media); for portraits, voice samples and the theme tune leave out the episode (series bible not locked yet); for series artwork set "artwork" to the slot (poster, banner_wide, banner_wa, square) and leave out the episode — it counts against the series\' artwork cap.',
     inputSchema: {
       type: "object",
       properties: {
         ...SERIES,
-        episode: { type: "integer", minimum: 1, description: "Episode number; leave out for character portraits" },
+        episode: { type: "integer", minimum: 1, description: "Episode number; leave out for character portraits and artwork" },
+        artwork: { type: "string", enum: STUDIO_ART_SLOTS, description: "Series artwork slot this picture is for" },
         model: { type: "string" },
         kind: { type: "string", enum: ["image", "video", "audio"] },
         audio_kind: { type: "string", enum: ["music", "sfx", "voice", "lipsync"], description: "For kind audio" },
@@ -383,6 +406,19 @@ export const studioTools: Tool<StudioCtx>[] = [
       const used = await creditsThisMonth(ctx.tenantId);
       let episodeId: string | null = null;
       let episodeUsed = 0;
+      if (a.artwork !== undefined && a.artwork !== null) {
+        const slot = artSlot(a.artwork);
+        if (!slot) throw new ToolError(`artwork must be one of ${STUDIO_ART_SLOTS.join(", ")}.`);
+        if (a.episode !== undefined && a.episode !== null) throw new ToolError("Artwork belongs to the series: leave out the episode.");
+        if (kind !== "image") throw new ToolError("Artwork is a picture: kind must be image.");
+        const artUsed = await artworkCreditsUsed(s.id);
+        const v = checkBudget({ monthly: st.monthly, monthUsed: used, episodeCap: st.artworkCap, episodeUsed: artUsed }, est.credits, "This series' artwork");
+        if (!v.ok) return { ok: false, reason: v.reason, month_left: v.monthLeft, artwork_left: v.episodeLeft };
+        await db()
+          .from("studio_credit_log")
+          .insert({ tenant_id: ctx.tenantId, series_id: s.id, episode_id: null, model: est.model, kind: "artwork", credits: est.credits, note: `${slot}${text(a.purpose, 180) ? `: ${text(a.purpose, 180)}` : ""}` });
+        return { ok: true, reserved: est.credits, month_left: v.monthLeft, artwork_left: v.episodeLeft, size: `${STUDIO_ART[slot].w}×${STUDIO_ART[slot].h} (${STUDIO_ART[slot].ratio})` };
+      }
       if (a.episode !== undefined && a.episode !== null) {
         const { ep, item } = await episodeOf(s.id, a.episode);
         if (!claudeMay.attachMedia(item.stage)) throw new ToolError(`Episode ${ep.number} is at "${STAGE_INFO[item.stage].label}". Pictures and sound are made only after the team approves the script (stage "pictures", shown as Media).`);
@@ -431,6 +467,45 @@ export const studioTools: Tool<StudioCtx>[] = [
       }
       const { data: after } = await db().from("episodes").select("story_draft").eq("id", ep.id).maybeSingle();
       return { results, media_missing: after?.story_draft ? mediaMissing(sanitizeStory(after.story_draft)) : { pictures: [], audio: [] } };
+    },
+  },
+  {
+    name: "watchat_attach_artwork",
+    title: "Attach series artwork",
+    description:
+      'Put a picture OpenArt made on the series page: slot is poster (1000×1500, 2:3), banner_wide (1920×1080, 16:9), banner_wa (1200×628) or square (1080×1080); url is the OpenArt file address (JPG, PNG or WebP). It is copied into Watchat\'s storage. It goes straight onto the series unless the series is live and that slot already has a picture: then it waits for the team ("Use it" in Admin → Studio). Reserve credits with artwork set to the slot before generating.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...SERIES,
+        slot: { type: "string", enum: STUDIO_ART_SLOTS },
+        url: { type: "string", description: "OpenArt file address" },
+        note: { type: "string", description: "Short note for the team (what it shows)" },
+      },
+      required: ["series", "slot", "url"],
+      additionalProperties: false,
+    },
+    run: async (a, ctx) => {
+      const s = await seriesByCode(ctx, a.series);
+      const slot = artSlot(a.slot);
+      if (!slot) throw new ToolError(`slot must be one of ${STUDIO_ART_SLOTS.join(", ")}.`);
+      const url = text(a.url, 1500);
+      if (!url) throw new ToolError("Give the OpenArt file address.");
+      const { field } = STUDIO_ART[slot];
+      let copied: { url: string; path: string };
+      try {
+        copied = await copyArtwork(s.code, slot, url);
+      } catch (e) {
+        throw new ToolError(e instanceof Error ? e.message : "Couldn't copy the picture.");
+      }
+      const current = (s as unknown as Record<string, string | null>)[field];
+      if (artworkPlacement(s.status, current) === "set") {
+        await db().from("series").update({ [field]: copied.url }).eq("id", s.id).eq("tenant_id", ctx.tenantId);
+        return { placed: "on the series", slot, message: `The ${slot.replace("_", " ")} is on ${s.code}'s series page.` };
+      }
+      const proposals = { ...sanitizeProposals(s.studio_artwork), [slot]: { url: copied.url, path: copied.path, at: new Date().toISOString(), note: text(a.note, 200) } };
+      await db().from("series").update({ studio_artwork: proposals }).eq("id", s.id).eq("tenant_id", ctx.tenantId);
+      return { placed: "waiting for the team", slot, message: `${s.code} is live and already has a ${slot.replace("_", " ")}: the team decides in Admin → Studio. Stop here.` };
     },
   },
   {
