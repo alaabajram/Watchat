@@ -15,7 +15,7 @@ import { sanitizeBible } from "@/lib/studio/bible";
 import { AUDIO_KINDS, audioRates } from "@/lib/studio/budget";
 import { ARTWORK_CAP_DEFAULT, artSlot, sanitizeProposals, STUDIO_ART } from "@/lib/studio/artwork";
 import { deleteStored } from "@/lib/storage/cloudflare";
-import { addNote, canMove, isStage, sanitizeNotes, STAGE_INFO } from "@/lib/studio/stages";
+import { addNote, canMove, isStage, sanitizeNotes, STAGE_INFO, teamMoves } from "@/lib/studio/stages";
 import { sanitizeStory } from "@/lib/story/sanitize";
 import { clearAudio } from "@/lib/story/import";
 import { db } from "@/lib/supabase";
@@ -85,7 +85,8 @@ export async function moveStageAction(fd: FormData) {
   const { data: item } = await db().from("studio_items").select("stage, notes").eq("episode_id", id).eq("tenant_id", admin.tenantId).maybeSingle();
   if (!item || !isStage(item.stage)) done(BOARD, "Not in the Studio.", "err");
   if (!canMove(item.stage, to)) done(page(id), `Can't go from ${STAGE_INFO[item.stage].label} to ${STAGE_INFO[to].label}.`, "err");
-  const back = ["writing", "pictures"].includes(to) && ["script_review", "final_check"].includes(item.stage);
+  // Only the moves marked "back" (send back to Claude) need a note; approving script review → Media doesn't.
+  const back = teamMoves(item.stage).find((m) => m.to === to)?.kind === "back";
   if (back && !note) done(page(id), "Say what Claude should change (the note goes to Claude).", "err");
   const notes = note ? addNote(sanitizeNotes(item.notes), { by: admin.name ?? admin.email, who: "team", text: note, stage: to }) : sanitizeNotes(item.notes);
   await db().from("studio_items").update({ stage: to, notes, updated_at: new Date().toISOString() }).eq("episode_id", id);
