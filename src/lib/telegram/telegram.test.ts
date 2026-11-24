@@ -153,3 +153,16 @@ describe("framed Mini App (Telegram Web / Desktop)", () => {
     expect(loadedInFrame(new Headers({ "sec-fetch-dest": "document" }))).toBe(false);
   });
 });
+
+describe("account linking updates", () => {
+  const msg = (m: Record<string, unknown>) => ({ update_id: 7, message: { chat: { id: 42, type: "private" }, from: { id: 42, first_name: "A", language_code: "en" }, date: 1, ...m } });
+  it("reads 'connect Telegram' links", () => {
+    expect(parseUpdate(msg({ text: "/start link_abcdefghijklmnopqrstuvwxyz012345" }))?.link).toEqual({ chatId: 42, token: "abcdefghijklmnopqrstuvwxyz012345", en: true });
+    expect(parseUpdate(msg({ text: "/start HOLIDAY01" }))?.link).toBeUndefined();
+  });
+  it("accepts only the viewer's own shared number", () => {
+    expect(parseUpdate(msg({ contact: { phone_number: "971501234567", user_id: 42 } }))?.contact).toEqual({ chatId: 42, phone: "+971501234567", en: true });
+    expect(parseUpdate(msg({ contact: { phone_number: "971501234567", user_id: 99 } }))?.contact).toBeUndefined();
+    expect(parseUpdate(msg({ contact: { phone_number: "971501234567" } }))?.msg).toBeNull();
+  });
+});

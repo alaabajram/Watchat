@@ -1,5 +1,6 @@
 // Production implementation of BotDeps on Supabase + Meta Cloud API.
 
+import { resolveViewer } from "../signin/accounts";
 import { onNewViewer } from "../economy/rewards";
 import { seriesLicensed, storedViewerMarket } from "../economy/store";
 import { publishedSharedFlow } from "../flows/shared-store";
@@ -118,12 +119,12 @@ export function createSupabaseDeps(opts: { source?: "bot" | "flow" } = {}): BotD
       const tenantId = await currentTenantId();
       viewerChannel = channelOfAddress(msg.from);
       const hmac = phoneHmac(msg.from);
-      const { data: existing } = await db()
-        .from("viewers")
-        .select("id, language, pin_hint_at")
-        .eq("tenant_id", tenantId)
-        .eq("phone_hmac", hmac)
-        .maybeSingle();
+      // The account this chat opens: its own, the one it was added to, or the one a merged account became.
+      const resolved = await resolveViewer(tenantId, hmac);
+      const sameKind = resolved && resolved.kind === (channelOfAddress(msg.from) === "telegram" ? "telegram" : "phone");
+      const { data: existing } = sameKind
+        ? await db().from("viewers").select("id, language, pin_hint_at").eq("id", resolved.id).maybeSingle()
+        : await db().from("viewers").select("id, language, pin_hint_at").eq("tenant_id", tenantId).eq("phone_hmac", hmac).maybeSingle();
 
       if (existing) {
         await db()

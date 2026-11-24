@@ -2,10 +2,12 @@
 // account of that email — or a new one (welcome Ping). A tap, not the link itself, so mail scanners that open
 // links can't use it up.
 
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { sha256Hex } from "@/lib/crypto";
 import { allow, clientIp } from "@/lib/security/rate-limit";
 import { err, readJson, sameOrigin } from "@/lib/security/request";
+import { getSessionViewer } from "@/lib/session";
+import { addLogin } from "@/lib/signin/accounts";
 import { viewerForEmail, withSession } from "@/lib/signin/server";
 import { currentTenantId, db } from "@/lib/supabase";
 
@@ -27,9 +29,17 @@ export async function POST(req: NextRequest) {
     .eq("token_hash", sha256Hex(token))
     .is("used_at", null)
     .gt("expires_at", new Date().toISOString())
-    .select("email_hmac, next_path, ui_locale")
+    .select("email_hmac, next_path, ui_locale, link_viewer_id")
     .maybeSingle();
   if (!row) return err(400, "expired");
+  // "Add an email" link: the address joins the account that asked (or offers a merge to that account's own browser).
+  if (row.link_viewer_id) {
+    const r = await addLogin(tenantId, row.link_viewer_id, { hmac: row.email_hmac, kind: "email", label: null });
+    if (r.ok) return NextResponse.json({ ok: true, to: "/me?linked=email" });
+    const signedIn = await getSessionViewer();
+    if ("merge" in r && signedIn?.id === row.link_viewer_id) return NextResponse.json({ ok: false, merge: r.merge });
+    return err(409, "in_use");
+  }
   const v = await viewerForEmail(row.email_hmac, row.ui_locale === "en" ? "en" : "ar");
   return withSession(req, v.id, { ok: true, to: row.next_path ?? "/" });
 }
