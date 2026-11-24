@@ -66,7 +66,7 @@ export async function handleConnector(req: NextRequest, keys: string[]): Promise
   } catch {
     return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, { status: 400 });
   }
-  const out = await handleRpc(body, { name: "watchat-studio", version: "1.0.0", instructions: STUDIO_INSTRUCTIONS, tools: studioTools }, who.ctx);
+  const out = await handleRpc(body, { name: "watchat-studio", version: "1.1.0", instructions: STUDIO_INSTRUCTIONS, tools: studioTools }, who.ctx);
   if (out === null) return new NextResponse(null, { status: 202 });
   return NextResponse.json(out);
 }
