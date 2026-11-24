@@ -23,6 +23,8 @@ type Props = {
   onMove: (dir: -1 | 1) => void;
   onMakeStart: () => void;
   onPreviewFrom: () => void;
+  /** Make a new scene and send this choice to it (its own branch). */
+  onBranch: (choiceIndex: number) => void;
 };
 
 const sceneLabel = (s: Scene, i: number) => `${i + 1}. ${s.name || (s.text.ar || s.text.en).slice(0, 28) || "Scene"}`;
@@ -203,6 +205,9 @@ export function SceneEditor(p: Props) {
                 <input dir="rtl" value={c.label.ar} maxLength={LIMITS.label} onChange={(e) => setChoice(i, { label: { ...c.label, ar: e.target.value } })} placeholder={`الخيار ${i + 1}`} />
                 <input value={c.label.en} maxLength={LIMITS.label} onChange={(e) => setChoice(i, { label: { ...c.label, en: e.target.value } })} placeholder={`Choice ${i + 1}`} />
                 {target(c.to, (to) => setChoice(i, { to }))}
+                <button type="button" className="secondary small" onClick={() => p.onBranch(i)} title="Make a new scene for this choice and send it there">
+                  ＋ New scene
+                </button>
                 <label className="inline" style={{ fontWeight: 400, fontSize: 13 }} title="0 = free. A price makes it a premium choice, paid once with Ping.">
                   Ping
                   <input type="number" min={0} max={LIMITS.maxPrice} value={c.price} onChange={(e) => setChoice(i, { price: Math.max(0, Math.min(LIMITS.maxPrice, Number(e.target.value) || 0)) })} style={{ width: 70 }} />
@@ -230,7 +235,8 @@ export function SceneEditor(p: Props) {
               </button>
             )}
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              Up to {LIMITS.choices} choices. A Ping price makes one premium (paid once, free on replays); always keep a free one.
+              Up to {LIMITS.choices} choices. Each choice needs its own next scene (paths can meet again later) or a different &quot;Remember as&quot;
+              that a later scene reacts to. A Ping price makes one premium (paid once, free on replays); always keep a free one.
             </p>
           </div>
         )}
