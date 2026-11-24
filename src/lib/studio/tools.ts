@@ -2,18 +2,18 @@
 // series bible, write episode scripts into drafts, reserve OpenArt credits before generating, attach the files
 // and submit for review. It can never publish, and only works on episodes the team opened a brief for.
 
-import { hostAllowed } from "@/lib/story/import";
+import { hostAllowed, keepMade, mediaKindOf } from "@/lib/story/import";
 import { copyStoryMedia, importHosts } from "@/lib/story/media-server";
 import { parseStoryImport } from "@/lib/story/import";
-import { flagsSetIn } from "@/lib/story/engine";
+import { audioPlan, flagsSetIn, mediaMissing } from "@/lib/story/engine";
 import { sanitizeCharacters, sanitizeStory } from "@/lib/story/sanitize";
 import type { Character, StoryGraph } from "@/lib/story/types";
 import { validateStory } from "@/lib/story/validate";
 import { copyToCloudflare } from "@/lib/storage/cloudflare";
 import { randomToken } from "@/lib/crypto";
 import { db } from "@/lib/supabase";
-import { mergeBible, sanitizeBible, setupStatus, SETUP_LABEL, type BibleCharacter } from "./bible";
-import { checkBudget, estimateCredits, MODEL_RATES, monthStart } from "./budget";
+import { mergeBible, sanitizeBible, setupStatus, SETUP_LABEL, voicedCharacters, type Bible, type BiblePatch } from "./bible";
+import { AUDIO_KINDS, AUDIO_RATES, audioRates, checkBudget, estimateCredits, MODEL_RATES, monthStart, type AudioKind } from "./budget";
 import { ToolError, type Tool } from "./mcp";
 import { addNote, afterSubmit, claudeMay, closeNotes, openNotes, sanitizeNotes, STAGE_INFO, isStage, type Stage } from "./stages";
 
@@ -21,12 +21,13 @@ export type StudioCtx = { tenantId: string; adminId: string; adminName: string }
 
 export const STUDIO_INSTRUCTIONS = `Watchat Studio (the Watchat micro-drama platform, not any other studio): you write and illustrate episodes of Arabic-first interactive story series for the Watchat team.
 Rules (cost-aware; follow them exactly):
-0. Series setup: for a series listed under series_to_set_up, read watchat_get_series (the team's brief), then with watchat_save_series_bible save the style line (one sentence for every picture prompt), dialect, house rules, the characters (id, Arabic/English name, colour, a locked 40–60 word look) and an episode outline (one short brief per planned episode, cliffhanger endings). Then make ONE reference portrait per main character (reserve credits first, leave out the episode number) and save their file addresses with watchat_save_series_bible. Then STOP: the team reviews, locks the bible and sends the episodes to you.
+0. Series setup: for a series listed under series_to_set_up, read watchat_get_series (the team's brief), then with watchat_save_series_bible save the style line (one sentence for every picture prompt), dialect, house rules, the characters (id, Arabic/English name, colour, a locked 40–60 word look, and for speaking characters a locked 15–30 word voice: age, tone, accent, pace), a theme-music description and an episode outline (one short brief per planned episode, cliffhanger endings). Then make ONE reference portrait per main character, ONE voice sample per speaking main character and the theme tune (reserve credits first for each, leave out the episode number) and save their file addresses with watchat_save_series_bible. Then STOP: the team reviews, locks the bible and sends the episodes to you.
 1. Start with watchat_overview. Work on ONE series setup or ONE episode per conversation, and only on what is listed as waiting for you (series_to_set_up, or episodes at stage brief, writing or pictures).
 2. Read watchat_get_series (bible, characters, earlier flags) and watchat_get_episode (brief, team notes) before writing. Follow the bible's style line, dialect and rules, and every open team note.
-3. Writing stage: save the script with watchat_save_episode_script, fix every error it reports, then watchat_submit_for_review and STOP. Do not make any pictures before the team approves the script (stage "pictures").
-4. Pictures stage: BEFORE every OpenArt generation call watchat_reserve_credits with the model, kind and count. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with watchat_attach_media (file addresses), then watchat_submit_for_review.
-5. Keep your messages to the user short. Never invent file addresses.`;
+3. Writing stage: save the script with watchat_save_episode_script (pictures by image_ref; sound as cues: 1–2 music beds, ≤2 sound effects per scene, voice lines only for characters with a locked voice), fix every error it reports, then watchat_submit_for_review and STOP. Do not make any pictures or sound before the team approves the script (stage "pictures", shown as Media).
+4. Media stage: BEFORE every OpenArt generation call watchat_reserve_credits with the model, kind (image|video|audio), count, and for audio the audio_kind (music|sfx|voice|lipsync) and seconds. If it refuses, stop and tell the user; never generate without an "ok". Prefer Nano Banana Pro for pictures; make at most one retake per picture or sound; reuse pictures across scenes (≤12 unique per episode); make clips only if the brief asks for them. Attach results with watchat_attach_media (file addresses named by the script: img_NN, mus_NN, sfx_NN, vo_sNN), then watchat_submit_for_review (refused while anything in media_missing is left).
+5. Sound: one score per episode built on the series theme (no per-scene music changes beyond the 1–2 beds); always make a voice line from the character's voice sample as the reference, never without it; sound effects only where the brief or script marks them; dialogue follows the bible dialect, and for Arabic series make the English voice lines only if the team asks. The on-screen text stays: every voiced scene keeps its Arabic and English text.
+6. Keep your messages to the user short. Never invent file addresses.`;
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const text = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -57,24 +58,56 @@ async function episodeOf(seriesId: string, number: unknown) {
 }
 
 async function settings(tenantId: string) {
-  const { data } = await db().from("studio_settings").select("monthly_credits, episode_credits, usd_per_credit").eq("tenant_id", tenantId).maybeSingle();
-  return { monthly: data?.monthly_credits ?? 24000, episodeCap: data?.episode_credits ?? 2500, usd: Number(data?.usd_per_credit ?? 0.0015) };
+  // "*": audio_rates arrived later (works before and after that migration).
+  const { data } = await db().from("studio_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
+  return { monthly: data?.monthly_credits ?? 24000, episodeCap: data?.episode_credits ?? 2500, usd: Number(data?.usd_per_credit ?? 0.0015), audio: audioRates(data?.audio_rates) };
 }
+
+/** Copy a reference file (portrait, voice sample, theme tune) from OpenArt into Watchat's storage. */
+async function copyReference(code: string, name: string, url: string, kind: "image" | "audio"): Promise<string | null> {
+  if (!hostAllowed(url, importHosts())) throw new ToolError(`${name}: reference files must come from OpenArt.`);
+  const k = mediaKindOf(url);
+  if (k && k.type !== kind) throw new ToolError(`${name}: expected ${kind === "image" ? "a picture" : "a sound (mp3, m4a or wav)"}.`);
+  const ext = k?.ext ?? (kind === "image" ? "jpg" : "mp3");
+  const copied = await copyToCloudflare(url, `${code}/story/${name}-${randomToken(4)}.${ext}`);
+  return copied?.publicUrl ?? null;
+}
+
+const scriptChecks = (story: StoryGraph, chars: Character[], bible: Bible) => validateStory(story, { characters: chars, voices: voicedCharacters(bible) });
 
 export async function creditsThisMonth(tenantId: string): Promise<number> {
   const { data } = await db().from("studio_credit_log").select("credits").eq("tenant_id", tenantId).gte("created_at", monthStart());
   return (data ?? []).reduce((a, r) => a + (r.credits ?? 0), 0);
 }
 
-const missingPictures = (g: StoryGraph) => [...new Set(g.scenes.filter((s) => !s.image && !s.video).map((s) => s.ref ?? s.id))];
-
-/** A compact script for Claude to read (no media addresses, just whether a scene has its picture). */
+/** A compact script for Claude to read (no media addresses, just whether each picture and sound is there). */
 function compactScript(g: StoryGraph) {
   return {
     start: g.start,
-    scenes: g.scenes.map((s) => ({ id: s.id, name: s.name, image_ref: s.ref ?? null, has_picture: Boolean(s.image || s.video), speaker: s.speaker, text: s.text, motion: s.motion, auto: s.auto, route: s.route })),
+    music: (g.music ?? []).map((b) => ({ id: b.id, desc: b.desc, mood: b.mood, has_file: Boolean(b.media) })),
+    scenes: g.scenes.map((s) => ({
+      id: s.id,
+      name: s.name,
+      image_ref: s.ref ?? null,
+      has_picture: Boolean(s.image || s.video),
+      speaker: s.speaker,
+      text: s.text,
+      motion: s.motion,
+      auto: s.auto,
+      route: s.route,
+      ...(s.musicRef || s.stopMusic || s.sfx?.length || s.voiceRef
+        ? {
+            audio: {
+              ...(s.musicRef ? { music: s.musicRef } : s.stopMusic ? { music: "stop" } : {}),
+              ...(s.sfx?.length ? { sfx: s.sfx.map((x) => ({ id: x.id, desc: x.desc, has_file: Boolean(x.media) })) } : {}),
+              ...(s.voiceRef ? { voice: { id: s.voiceRef, has_file: Boolean(s.audio) } } : {}),
+            },
+          }
+        : {}),
+    })),
   };
 }
+
 
 async function setItem(episodeId: string, patch: Record<string, unknown>) {
   await db().from("studio_items").update({ ...patch, updated_at: new Date().toISOString() }).eq("episode_id", episodeId);
@@ -113,13 +146,14 @@ export const studioTools: Tool<StudioCtx>[] = [
           .map((r) => ({ series: r.series.code, episode: r.episodes.number, stage: r.stage, todo: STAGE_INFO[r.stage].hint, brief: (r.brief ?? "").slice(0, 300) })),
         with_the_team: rows.filter((r) => STAGE_INFO[r.stage].who === "team").map((r) => ({ series: r.series.code, episode: r.episodes.number, stage: r.stage })),
         models: Object.fromEntries(Object.entries(MODEL_RATES).map(([k, v]) => [k, `${v.credits} credits per ${v.kind === "image" ? "image" : "second"}`])),
+        audio: Object.fromEntries(AUDIO_KINDS.map((k) => [k, `${st.audio[k]} credits per second (max ${AUDIO_RATES[k].maxSeconds} s)`])),
       };
     },
   },
   {
     name: "watchat_get_series",
     title: "Get series",
-    description: "A story series: synopsis, look (style), the bible (style line, dialect, rules, each character's locked look and reference portrait), characters, flags earlier choices set, and its episodes with their stages.",
+    description: "A story series: synopsis, look (style), the bible (style line, dialect, rules, theme music, each character's locked look, reference portrait, locked voice and voice sample), characters, flags earlier choices set, and its episodes with their stages.",
     readOnly: true,
     inputSchema: { type: "object", properties: SERIES, required: ["series"], additionalProperties: false },
     run: async (a, ctx) => {
@@ -139,11 +173,11 @@ export const studioTools: Tool<StudioCtx>[] = [
         setup: SETUP_LABEL[setupStatus(bible)],
         team_brief: bible.brief,
         planned_episodes: bible.planned,
-        bible: { style: bible.style, dialect: bible.dialect, rules: bible.rules, locked: bible.locked },
+        bible: { style: bible.style, dialect: bible.dialect, rules: bible.rules, theme_music: { desc: bible.theme.desc, file: bible.theme.url }, locked: bible.locked },
         outline: bible.outline,
         characters: chars.map((c) => {
           const b = bible.characters.find((x) => x.id === c.id);
-          return { id: c.id, name: c.name, color: c.color, look: b?.look ?? "", portrait: b?.portrait ?? null };
+          return { id: c.id, name: c.name, color: c.color, look: b?.look ?? "", portrait: b?.portrait ?? null, voice: b?.voice || null, voice_sample: b?.voiceSample ?? null, may_have_voice_lines: Boolean(b?.voice && b.voiceSample) };
         }),
         flags_set_by_earlier_choices: flagsSetIn(graphs),
         episodes: (eps ?? []).map((e) => ({ number: e.number, title: e.title_en, stage: stageOf.get(e.id) ?? "not in Studio", scenes: e.story_draft ? sanitizeStory(e.story_draft).scenes.length : 0, live: Boolean(e.story) })),
@@ -153,7 +187,7 @@ export const studioTools: Tool<StudioCtx>[] = [
   {
     name: "watchat_get_episode",
     title: "Get episode",
-    description: "One episode: its stage, the team's brief and open review notes (do what they ask), the current script draft, its problems, and the picture names still missing.",
+    description: "One episode: its stage, the team's brief and open review notes (do what they ask), the current script draft with its sound cues, its problems, and the pictures and sounds still missing.",
     readOnly: true,
     inputSchema: { type: "object", properties: EPISODE, required: ["series", "episode"], additionalProperties: false },
     run: async (a, ctx) => {
@@ -170,8 +204,8 @@ export const studioTools: Tool<StudioCtx>[] = [
         open_team_notes: openNotes(item.notes).map((n) => n.text),
         credits: { used: item.credits_used, cap: st.episodeCap },
         script: draft ? compactScript(draft) : null,
-        problems: draft ? validateStory(draft, { characters: sanitizeCharacters(s.story_characters) }).map((i) => `${i.level}: ${i.message}`) : [],
-        pictures_missing: draft ? missingPictures(draft) : [],
+        problems: draft ? scriptChecks(draft, sanitizeCharacters(s.story_characters), sanitizeBible(s.story_bible)).map((i) => `${i.level}: ${i.message}`) : [],
+        media_missing: draft ? mediaMissing(draft) : { pictures: [], audio: [] },
       };
     },
   },
@@ -179,7 +213,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     name: "watchat_save_series_bible",
     title: "Save series bible",
     description:
-      "Set up or update the series bible: the style line used in every picture prompt, the dialect, house rules, characters (id, Arabic/English name, colour, locked look, reference portrait file address from OpenArt) and the episode outline (number, Arabic/English title, a short brief per episode). Refused once the team locks it.",
+      "Set up or update the series bible: the style line used in every picture prompt, the dialect, house rules, theme music (description and OpenArt file address), characters (id, Arabic/English name, colour, locked look, reference portrait file, locked voice description and voice sample file, both from OpenArt) and the episode outline (number, Arabic/English title, a short brief per episode). Refused once the team locks it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -187,11 +221,22 @@ export const studioTools: Tool<StudioCtx>[] = [
         style: { type: "string", description: "One style line pasted into every picture prompt" },
         dialect: { type: "string" },
         rules: { type: "array", items: { type: "string" } },
+        theme_desc: { type: "string", description: "The series theme tune: instruments, mood, tempo" },
+        theme_url: { type: "string", description: "OpenArt file address of the theme tune (mp3, m4a or wav)" },
         characters: {
           type: "array",
           items: {
             type: "object",
-            properties: { id: { type: "string" }, name_ar: { type: "string" }, name_en: { type: "string" }, color: { type: "string" }, look: { type: "string" }, portrait_url: { type: "string" } },
+            properties: {
+              id: { type: "string" },
+              name_ar: { type: "string" },
+              name_en: { type: "string" },
+              color: { type: "string" },
+              look: { type: "string" },
+              portrait_url: { type: "string" },
+              voice: { type: "string", description: "Locked 15–30 word voice: age, tone, accent, pace. Leave out for characters who never speak aloud." },
+              voice_sample_url: { type: "string", description: "OpenArt file address of the reference voice clip" },
+            },
             required: ["id"],
           },
         },
@@ -212,25 +257,25 @@ export const studioTools: Tool<StudioCtx>[] = [
       const s = await seriesByCode(ctx, a.series);
       const current = sanitizeBible(s.story_bible);
       const incoming = (Array.isArray(a.characters) ? a.characters : []).map(obj);
-      // Reference portraits are copied into Watchat's storage so they outlive OpenArt.
-      const chars: BibleCharacter[] = [];
+      // Reference portraits, voice samples and the theme are copied into Watchat's storage so they outlive OpenArt.
+      const chars: NonNullable<BiblePatch["characters"]> = [];
       for (const c of incoming.slice(0, 20)) {
         const id = text(c.id, 40).toLowerCase();
         if (!/^[a-z0-9_-]{1,40}$/.test(id)) continue;
-        let portrait: string | null = null;
-        const url = text(c.portrait_url, 1500);
-        if (url && !current.locked) {
-          if (!hostAllowed(url, importHosts())) throw new ToolError(`${id}: portrait files must come from OpenArt.`);
-          const copied = await copyToCloudflare(url, `${s.code}/story/portrait-${id}-${randomToken(4)}.jpg`);
-          portrait = copied?.publicUrl ?? null;
-        }
-        chars.push({ id, look: text(c.look, 800), portrait });
+        const portraitUrl = text(c.portrait_url, 1500);
+        const sampleUrl = text(c.voice_sample_url, 1500);
+        const portrait = portraitUrl && !current.locked ? await copyReference(s.code, `portrait-${id}`, portraitUrl, "image") : null;
+        const voiceSample = sampleUrl && !current.locked ? await copyReference(s.code, `voice-${id}`, sampleUrl, "audio") : null;
+        chars.push({ id, look: text(c.look, 800), voice: text(c.voice, 300), ...(portrait ? { portrait } : {}), ...(voiceSample ? { voiceSample } : {}) });
       }
+      const themeUrl = text(a.theme_url, 1500);
+      const theme = { desc: text(a.theme_desc, 400), ...(themeUrl && !current.locked ? { url: await copyReference(s.code, "theme", themeUrl, "audio") } : {}) };
       const { bible, refused } = mergeBible(current, {
         style: text(a.style, 800),
         dialect: text(a.dialect, 60),
         rules: Array.isArray(a.rules) ? a.rules.map((r) => text(r, 200)).filter(Boolean).slice(0, 25) : [],
         characters: chars,
+        theme,
         outline: sanitizeBible({ outline: Array.isArray(a.outline) ? a.outline : [] }).outline,
       });
       if (refused.length && !bible.characters.length && !bible.style) throw new ToolError(refused.join(" "));
@@ -256,9 +301,13 @@ export const studioTools: Tool<StudioCtx>[] = [
         saved: !current.locked,
         refused,
         setup: SETUP_LABEL[setupStatus(bible)],
-        characters: bible.characters.map((c) => ({ id: c.id, has_portrait: Boolean(c.portrait) })),
+        characters: bible.characters.map((c) => ({ id: c.id, has_portrait: Boolean(c.portrait), voice: c.voice ? (c.voiceSample ? "locked voice + sample" : "voice described, sample missing") : "no voice" })),
+        theme_music: bible.theme.url ? "file saved" : bible.theme.desc ? "described, file missing" : "missing",
         outline_episodes: bible.outline.length,
-        next: setupStatus(bible) === "to_review" ? "Make the reference portraits if not done, then stop: the team reviews and locks the bible." : "Add the missing parts (style, characters, outline).",
+        next:
+          setupStatus(bible) === "to_review"
+            ? "Make the reference portraits, voice samples and theme tune if not done, then stop: the team reviews and locks the bible."
+            : "Add the missing parts (style, characters, outline).",
       };
     },
   },
@@ -266,7 +315,7 @@ export const studioTools: Tool<StudioCtx>[] = [
     name: "watchat_save_episode_script",
     title: "Save episode script",
     description:
-      'Save the episode\'s script as its draft (stage brief or writing only). "script" is {"title":{"ar","en"},"story":{"v":1,"start":"s1","scenes":[...]}} with scenes {id, name, image_ref, speaker (character id or null), text{ar,en}, motion, auto, route}. Routes: {"type":"next","to":"s2"} | {"type":"choices","options":[{"id","label":{"ar","en"},"to","price","sets"}]} | {"type":"branch","flag","ifSet","ifNot"} | {"type":"end","ending":null}. Returns problems to fix; fix all errors before submitting.',
+      'Save the episode\'s script as its draft (stage brief or writing only). "script" is {"title":{"ar","en"},"story":{"v":1,"start":"s1","scenes":[...]}} with scenes {id, name, image_ref, speaker (character id or null), text{ar,en}, motion, auto, route}. Routes: {"type":"next","to":"s2"} | {"type":"choices","options":[{"id","label":{"ar","en"},"to","price","sets"}]} | {"type":"branch","flag","ifSet","ifNot"} | {"type":"end","ending":null}. Sound (optional): story.music = [{"id":"mus_01","desc","mood"}] (1–2 beds per episode) and per scene "audio": {"music":"mus_01" (starts that bed) | "stop", "sfx":[{"id":"sfx_03","desc"}] (≤2), "voice":{"id":"vo_s06"} (only when the speaker has a locked voice; the line is the scene text)}. Returns problems to fix; fix all errors before submitting.',
     inputSchema: {
       type: "object",
       properties: { ...EPISODE, script: { type: "object", description: "The episode script (see the description)" } },
@@ -281,20 +330,15 @@ export const studioTools: Tool<StudioCtx>[] = [
       const so = obj(script);
       const chars = sanitizeCharacters(s.story_characters);
       const parsed = parseStoryImport(JSON.stringify({ characters: chars, episodes: [{ number: ep.number, title: so.title, story: so.story ?? so }] }));
-      let story = parsed.episodes[0].story;
-      // Keep pictures already placed on scenes whose picture name stays the same (a rewrite after review).
-      const old = ep.story_draft ? sanitizeStory(ep.story_draft) : null;
-      if (old) {
-        const byRef = new Map(old.scenes.filter((x) => x.ref && (x.image || x.video)).map((x) => [x.ref!, x]));
-        story = { ...story, scenes: story.scenes.map((x) => (x.ref && byRef.has(x.ref) ? { ...x, image: byRef.get(x.ref)!.image, video: byRef.get(x.ref)!.video } : x)) };
-      }
+      // Keep pictures and sounds already made for the same names (a rewrite after review).
+      const story = keepMade(parsed.episodes[0].story, ep.story_draft ? sanitizeStory(ep.story_draft) : null);
       const t = obj(so.title);
       await db()
         .from("episodes")
         .update({ story_draft: story, ...(text(t.ar) ? { title_ar: text(t.ar) } : {}), ...(text(t.en) ? { title_en: text(t.en) } : {}) })
         .eq("id", ep.id);
       await setItem(ep.id, { stage: "writing" });
-      const problems = validateStory(story, { characters: chars });
+      const problems = scriptChecks(story, chars, sanitizeBible(s.story_bible));
       return {
         saved: true,
         scenes: story.scenes.length,
@@ -302,6 +346,7 @@ export const studioTools: Tool<StudioCtx>[] = [
         warnings: problems.filter((p) => p.level === "warning").map((p) => p.message),
         notes: parsed.notes,
         picture_names: [...new Set(story.scenes.map((x) => x.ref).filter(Boolean))],
+        sound_names: audioPlan(story).map((x) => x.ref),
         next: problems.some((p) => p.level === "error") ? "Fix the errors and save again." : "Call watchat_submit_for_review, then stop until the team approves the script.",
       };
     },
@@ -310,16 +355,17 @@ export const studioTools: Tool<StudioCtx>[] = [
     name: "watchat_reserve_credits",
     title: "Reserve OpenArt credits",
     description:
-      'Call BEFORE every OpenArt generation. Give the model (e.g. "nano-banana-pro", "nano-banana-2", "kling-3"), kind (image|video), count (1–12), seconds for a video, and the credits OpenArt shows if you know them. Returns ok or a refusal: never generate after a refusal. For an episode it needs stage "pictures"; for character portraits leave out the episode (series bible not locked yet).',
+      'Call BEFORE every OpenArt generation. Give the model (e.g. "nano-banana-pro", "nano-banana-2", "kling-3", or the audio model\'s name), kind (image|video|audio), count (1–12), seconds for a video or any audio, audio_kind for audio (music|sfx|voice|lipsync), and the credits OpenArt shows if you know them. Returns ok or a refusal: never generate after a refusal. For an episode it needs stage "pictures" (Media); for portraits, voice samples and the theme tune leave out the episode (series bible not locked yet).',
     inputSchema: {
       type: "object",
       properties: {
         ...SERIES,
         episode: { type: "integer", minimum: 1, description: "Episode number; leave out for character portraits" },
         model: { type: "string" },
-        kind: { type: "string", enum: ["image", "video"] },
+        kind: { type: "string", enum: ["image", "video", "audio"] },
+        audio_kind: { type: "string", enum: ["music", "sfx", "voice", "lipsync"], description: "For kind audio" },
         count: { type: "integer", minimum: 1, maximum: 12 },
-        seconds: { type: "integer", minimum: 1, maximum: 15 },
+        seconds: { type: "integer", minimum: 1, maximum: 180, description: "Clip or sound length" },
         credits: { type: "integer", minimum: 0, description: "Total credits OpenArt shows for this generation, if known" },
         purpose: { type: "string", description: "e.g. img_05 retake, portraits" },
       },
@@ -328,45 +374,49 @@ export const studioTools: Tool<StudioCtx>[] = [
     },
     run: async (a, ctx) => {
       const s = await seriesByCode(ctx, a.series);
-      const est = estimateCredits({ model: text(a.model, 60), kind: a.kind === "video" ? "video" : "image", count: Number(a.count), seconds: Number(a.seconds) || undefined, credits: Number(a.credits) || undefined });
-      if ("error" in est) throw new ToolError(est.error);
+      const kind = a.kind === "video" ? "video" : a.kind === "audio" ? "audio" : "image";
+      const audioKind = AUDIO_KINDS.find((k) => k === a.audio_kind) as AudioKind | undefined;
       const st = await settings(ctx.tenantId);
+      const est = estimateCredits({ model: text(a.model, 60), kind, audioKind, count: Number(a.count), seconds: Number(a.seconds) || undefined, credits: Number(a.credits) || undefined }, st.audio);
+      if ("error" in est) throw new ToolError(est.error);
+      const logKind = kind === "audio" ? `audio:${audioKind}` : kind;
       const used = await creditsThisMonth(ctx.tenantId);
       let episodeId: string | null = null;
       let episodeUsed = 0;
       if (a.episode !== undefined && a.episode !== null) {
         const { ep, item } = await episodeOf(s.id, a.episode);
-        if (!claudeMay.attachMedia(item.stage)) throw new ToolError(`Episode ${ep.number} is at "${STAGE_INFO[item.stage].label}". Pictures are made only after the team approves the script (stage "pictures").`);
+        if (!claudeMay.attachMedia(item.stage)) throw new ToolError(`Episode ${ep.number} is at "${STAGE_INFO[item.stage].label}". Pictures and sound are made only after the team approves the script (stage "pictures", shown as Media).`);
         episodeId = ep.id;
         episodeUsed = item.credits_used;
       } else {
-        if (sanitizeBible(s.story_bible).locked) throw new ToolError("The characters are locked; portraits can't be regenerated. Give an episode number for scene pictures.");
-        if (est.credits > 600) throw new ToolError("Portraits are limited to 600 credits per request.");
+        if (sanitizeBible(s.story_bible).locked) throw new ToolError("The bible is locked; portraits, voice samples and the theme can't be regenerated. Give an episode number for scene pictures and sound.");
+        if (kind === "video" || audioKind === "lipsync" || audioKind === "sfx") throw new ToolError("Without an episode only portraits, voice samples and the theme tune can be made.");
+        if (est.credits > 600) throw new ToolError("Series setup files are limited to 600 credits per request.");
       }
       const verdict = checkBudget({ monthly: st.monthly, monthUsed: used, episodeCap: episodeId ? st.episodeCap : Number.MAX_SAFE_INTEGER, episodeUsed }, est.credits);
       if (!verdict.ok) return { ok: false, reason: verdict.reason, month_left: verdict.monthLeft, episode_left: episodeId ? verdict.episodeLeft : null };
       await db()
         .from("studio_credit_log")
-        .insert({ tenant_id: ctx.tenantId, series_id: s.id, episode_id: episodeId, model: est.model, kind: a.kind === "video" ? "video" : "image", credits: est.credits, note: text(a.purpose, 200) || null });
+        .insert({ tenant_id: ctx.tenantId, series_id: s.id, episode_id: episodeId, model: est.model, kind: logKind, credits: est.credits, note: text(a.purpose, 200) || null });
       if (episodeId) await setItem(episodeId, { credits_used: episodeUsed + est.credits });
       return { ok: true, reserved: est.credits, month_left: verdict.monthLeft, episode_left: episodeId ? verdict.episodeLeft : null };
     },
   },
   {
     name: "watchat_attach_media",
-    title: "Attach pictures and clips",
+    title: "Attach pictures, clips and sound",
     description:
-      'Put OpenArt results on the episode\'s scenes (stage "pictures" only): media is {"img_01": "https://…", …}, at most 8 per call, using the picture names from the script. Each file is copied into Watchat\'s storage and placed on every scene with that picture name (MP4s become the scene\'s clip). Use only real addresses OpenArt returned.',
+      'Put OpenArt results on the episode (stage "pictures", shown as Media, only): media is {"img_01": "https://…", "mus_01": "https://…", "sfx_03": …, "vo_s06": …}, at most 8 per call, using the names from the script. Each file is copied into Watchat\'s storage: pictures go on every scene with that picture name (MP4s become the scene\'s clip); sounds (mp3, m4a, wav, ≤10 MB) go on that music bed, sound effect or voice line. Use only real addresses OpenArt returned.',
     inputSchema: {
       type: "object",
-      properties: { ...EPISODE, media: { type: "object", additionalProperties: { type: "string" }, description: "picture name → OpenArt file address" } },
+      properties: { ...EPISODE, media: { type: "object", additionalProperties: { type: "string" }, description: "picture or sound name → OpenArt file address" } },
       required: ["series", "episode", "media"],
       additionalProperties: false,
     },
     run: async (a, ctx) => {
       const s = await seriesByCode(ctx, a.series);
       const { ep, item } = await episodeOf(s.id, a.episode);
-      if (!claudeMay.attachMedia(item.stage)) throw new ToolError(`Episode ${ep.number} is at "${STAGE_INFO[item.stage].label}"; pictures can be attached only at stage "pictures".`);
+      if (!claudeMay.attachMedia(item.stage)) throw new ToolError(`Episode ${ep.number} is at "${STAGE_INFO[item.stage].label}"; pictures and sound can be attached only at stage "pictures" (Media).`);
       const entries = Object.entries(obj(a.media)).filter((e): e is [string, string] => typeof e[1] === "string");
       if (!entries.length) throw new ToolError('Give media as {"img_01": "https://…"}.');
       if (entries.length > 8) throw new ToolError("At most 8 files per call; send the rest in another call.");
@@ -374,19 +424,19 @@ export const studioTools: Tool<StudioCtx>[] = [
       for (const [ref, url] of entries) {
         try {
           const r = await copyStoryMedia({ id: s.id, code: s.code }, ref, url, ep.id);
-          results[ref] = r.scenes ? `placed on ${r.scenes} scene(s) as ${r.type}` : "no scene uses this picture name";
+          results[ref] = r.scenes ? `placed on ${r.scenes} scene(s) as ${r.type}` : "nothing in the script uses this name";
         } catch (e) {
           results[ref] = `failed: ${e instanceof Error ? e.message : "error"}`;
         }
       }
       const { data: after } = await db().from("episodes").select("story_draft").eq("id", ep.id).maybeSingle();
-      return { results, pictures_missing: after?.story_draft ? missingPictures(sanitizeStory(after.story_draft)) : [] };
+      return { results, media_missing: after?.story_draft ? mediaMissing(sanitizeStory(after.story_draft)) : { pictures: [], audio: [] } };
     },
   },
   {
     name: "watchat_submit_for_review",
     title: "Submit for review",
-    description: "Hand the episode to the team: after writing → script review; after pictures → final check. Refused while the script has errors or pictures are missing. Add a short note about what you did or what the team should look at. Then stop.",
+    description: "Hand the episode to the team: after writing → script review; after media → final check. Refused while the script has errors or any picture or sound is missing. Add a short note about what you did or what the team should look at. Then stop.",
     inputSchema: { type: "object", properties: { ...EPISODE, note: { type: "string" } }, required: ["series", "episode"], additionalProperties: false },
     run: async (a, ctx) => {
       const s = await seriesByCode(ctx, a.series);
@@ -395,11 +445,12 @@ export const studioTools: Tool<StudioCtx>[] = [
       if (!to) throw new ToolError(`Episode ${ep.number} is already with the team ("${STAGE_INFO[item.stage].label}").`);
       const draft = ep.story_draft ? sanitizeStory(ep.story_draft) : null;
       if (!draft || !draft.scenes.length) throw new ToolError("Save the script first (watchat_save_episode_script).");
-      const errors = validateStory(draft, { characters: sanitizeCharacters(s.story_characters) }).filter((p) => p.level === "error");
+      const errors = scriptChecks(draft, sanitizeCharacters(s.story_characters), sanitizeBible(s.story_bible)).filter((p) => p.level === "error");
       if (errors.length) throw new ToolError(`Fix these first: ${errors.map((e) => e.message).join(" ")}`);
       if (to === "final_check") {
-        const missing = missingPictures(draft);
-        if (missing.length) throw new ToolError(`Pictures still missing: ${missing.join(", ")}. Attach them first.`);
+        const missing = mediaMissing(draft);
+        const parts = [missing.pictures.length ? `pictures ${missing.pictures.join(", ")}` : "", missing.audio.length ? `sounds ${missing.audio.join(", ")}` : ""].filter(Boolean);
+        if (parts.length) throw new ToolError(`Still missing: ${parts.join("; ")}. Attach them first.`);
       }
       const notes = addNote(closeNotes(item.notes), { by: "Claude", who: "claude", text: text(a.note, 1000) || `Submitted for ${STAGE_INFO[to].label.toLowerCase()}.`, stage: to });
       await setItem(ep.id, { stage: to, notes });

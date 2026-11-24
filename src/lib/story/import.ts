@@ -4,7 +4,7 @@
 // what was changed. Nothing is published: episodes land as drafts.
 
 import { sanitizeCharacters, sanitizeStory } from "./sanitize";
-import type { Bi, Character, StoryGraph } from "./types";
+import { audioKindOfRef, type Bi, type Character, type StoryGraph, type StoryMedia } from "./types";
 
 export type ImportedEpisode = { number: number; title: Bi; story: StoryGraph };
 /** A file to fetch for a picture name: `"img_05": "https://…"` in the script's "media" list. */
@@ -118,25 +118,69 @@ export function hostAllowed(url: string, hosts: string[]): boolean {
   return hosts.some((a) => h === a || h.endsWith(`.${a}`));
 }
 
-/** Picture or clip, from the address's file ending (or the type the server answered with). */
-export function mediaKindOf(url: string, contentType = ""): { type: "image" | "video"; ext: string } | null {
+export type FetchedKind = { type: "image" | "video" | "audio"; ext: string };
+
+/** Picture, clip or sound, from the type the server answered with (or the address's file ending). */
+export function mediaKindOf(url: string, contentType = ""): FetchedKind | null {
   const ct = contentType.split(";")[0].trim().toLowerCase();
-  const byType: Record<string, { type: "image" | "video"; ext: string }> = {
+  const byType: Record<string, FetchedKind> = {
     "image/jpeg": { type: "image", ext: "jpg" },
     "image/png": { type: "image", ext: "png" },
     "image/webp": { type: "image", ext: "webp" },
     "video/mp4": { type: "video", ext: "mp4" },
+    "audio/mpeg": { type: "audio", ext: "mp3" },
+    "audio/mp3": { type: "audio", ext: "mp3" },
+    "audio/mp4": { type: "audio", ext: "m4a" },
+    "audio/x-m4a": { type: "audio", ext: "m4a" },
+    "audio/wav": { type: "audio", ext: "wav" },
+    "audio/x-wav": { type: "audio", ext: "wav" },
+    "audio/wave": { type: "audio", ext: "wav" },
   };
   if (byType[ct]) return byType[ct];
-  const m = /\.(jpe?g|png|webp|mp4)(?:$|[?#])/i.exec(url);
+  const m = /\.(jpe?g|png|webp|mp4|mp3|m4a|wav)(?:$|[?#])/i.exec(url);
   if (!m) return null;
   const e = m[1].toLowerCase();
-  return e === "mp4" ? { type: "video", ext: "mp4" } : { type: "image", ext: e === "jpeg" ? "jpg" : e };
+  if (e === "mp4") return { type: "video", ext: "mp4" };
+  if (e === "mp3" || e === "m4a" || e === "wav") return { type: "audio", ext: e };
+  return { type: "image", ext: e === "jpeg" ? "jpg" : e };
+}
+
+/** Max size per kind when fetching from a media list (sounds are small; WhatsApp-free, web only). */
+export const FETCH_MAX_MB: Record<FetchedKind["type"], number> = { image: 10, video: 60, audio: 10 };
+
+/**
+ * Put a sound on the episode by its name: "mus_01" on that music bed, "sfx_03" on every scene cue with that
+ * id, "vo_s06" as the voice of the scene with that voice line.
+ */
+export function applyAudio(g: StoryGraph, ref: string, media: StoryMedia): { story: StoryGraph; count: number } {
+  const key = ref.toLowerCase();
+  const kind = audioKindOfRef(key);
+  let count = 0;
+  if (kind === "music") {
+    if (!(g.music ?? []).some((b) => b.id === key)) return { story: g, count: 0 };
+    const music = (g.music ?? []).map((b) => (b.id === key ? { ...b, media } : b));
+    // Reported as the scenes it plays under (at least 1: the bed itself).
+    count = Math.max(1, g.scenes.filter((s) => s.musicRef === key).length);
+    return { story: { ...g, music }, count };
+  }
+  const scenes = g.scenes.map((s) => {
+    if (kind === "sfx" && s.sfx?.some((x) => x.id === key)) {
+      count++;
+      return { ...s, sfx: s.sfx.map((x) => (x.id === key ? { ...x, media } : x)) };
+    }
+    if (kind === "voice" && s.voiceRef === key) {
+      count++;
+      return { ...s, audio: media };
+    }
+    return s;
+  });
+  return { story: { ...g, scenes }, count };
 }
 
 /** Put a fetched file on every scene with this picture name: pictures as the image, clips as the scene's video. */
 export function applyMedia(g: StoryGraph, ref: string, media: NonNullable<StoryGraph["scenes"][number]["image"]>): { story: StoryGraph; count: number } {
   if (media.type === "image") return applyPicture(g, ref, media);
+  if (media.type === "audio") return applyAudio(g, ref, media);
   let count = 0;
   const key = ref.toLowerCase();
   const scenes = g.scenes.map((s) => {
@@ -180,3 +224,42 @@ export const refFromFileName = (name: string) =>
     .replace(/\s*\(\d+\)$/, "")
     .trim()
     .toLowerCase();
+
+/** Take a sound's file off the episode (the team asked for a redo), keeping its cue so it shows as missing. */
+export function clearAudio(g: StoryGraph, ref: string): { story: StoryGraph; count: number } {
+  const key = ref.toLowerCase();
+  let count = 0;
+  const music = g.music?.map((b) => (b.id === key && b.media ? (count++, { ...b, media: null }) : b));
+  const scenes = g.scenes.map((s) => {
+    let next = s;
+    if (s.sfx?.some((x) => x.id === key && x.media)) {
+      count++;
+      next = { ...next, sfx: s.sfx.map((x) => (x.id === key ? { ...x, media: null } : x)) };
+    }
+    if (s.voiceRef === key && s.audio) {
+      count++;
+      next = { ...next, audio: null };
+    }
+    return next;
+  });
+  return { story: { ...g, scenes, ...(music ? { music } : {}) }, count };
+}
+
+/** Keep pictures and sounds already made when a script is rewritten (same picture name / sound id). */
+export function keepMade(next: StoryGraph, old: StoryGraph | null): StoryGraph {
+  if (!old) return next;
+  const pics = new Map(old.scenes.filter((x) => x.ref && (x.image || x.video)).map((x) => [x.ref!, x]));
+  const beds = new Map((old.music ?? []).filter((b) => b.media).map((b) => [b.id, b.media]));
+  const sfx = new Map(old.scenes.flatMap((x) => x.sfx ?? []).filter((x) => x.media).map((x) => [x.id, x.media]));
+  const voices = new Map(old.scenes.filter((x) => x.voiceRef && x.audio).map((x) => [x.voiceRef!, x.audio]));
+  return {
+    ...next,
+    ...(next.music ? { music: next.music.map((b) => ({ ...b, media: b.media ?? beds.get(b.id) ?? null })) } : {}),
+    scenes: next.scenes.map((x) => ({
+      ...x,
+      ...(x.ref && pics.has(x.ref) ? { image: pics.get(x.ref)!.image, video: pics.get(x.ref)!.video } : {}),
+      ...(x.sfx ? { sfx: x.sfx.map((c) => ({ ...c, media: c.media ?? sfx.get(c.id) ?? null })) } : {}),
+      ...(x.voiceRef && !x.audio && voices.has(x.voiceRef) ? { audio: voices.get(x.voiceRef)! } : {}),
+    })),
+  };
+}

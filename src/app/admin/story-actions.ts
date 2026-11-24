@@ -180,10 +180,10 @@ export async function importStoryScript(seriesId: string, text: string): Promise
 
 /**
  * Fetch one file from a script's media list (e.g. an OpenArt result), copy it to Watchat's storage and put it on
- * every scene with that picture name, in every episode's draft. Pictures fill the scene's image, MP4s its clip.
+ * every scene with that name, in every episode's draft. Pictures fill the scene's image, MP4s its clip, sounds their cue.
  * Called once per file by the builder so each stays well within a request's time.
  */
-export async function fetchStoryMedia(seriesId: string, ref: string, url: string): Promise<{ scenes: number; type: "image" | "video" }> {
+export async function fetchStoryMedia(seriesId: string, ref: string, url: string): Promise<{ scenes: number; type: "image" | "video" | "audio" }> {
   const admin = await requireAdmin("content");
   const s = await ownSeries(admin.tenantId, seriesId);
   return copyStoryMedia(s, ref, url);

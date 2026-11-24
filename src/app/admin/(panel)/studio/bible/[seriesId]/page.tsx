@@ -1,5 +1,5 @@
-// Studio → series bible: the style line every picture prompt uses, the dialect, house rules and each
-// character's locked look and reference portrait. Claude writes the first version; the team edits and locks it.
+// Studio → series bible: the style line every picture prompt uses, the dialect, house rules, the theme tune and
+// each character's locked look, reference portrait, locked voice and voice sample. Claude writes the first version; the team edits and locks it.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -74,6 +74,22 @@ export default async function BiblePage({ params, searchParams }: { params: Prom
           House rules (one per line)
           <textarea name="rules" rows={5} defaultValue={bible.rules.join("\n")} placeholder={"No swearing\nNasser is funny, never mean\nNo faces in the bottom third"} />
         </label>
+        <h2 style={{ margin: "6px 0 0" }}>Theme music</h2>
+        <label>
+          The series theme (every episode&apos;s music is built on it)
+          <textarea name="theme_desc" rows={2} defaultValue={bible.theme.desc} placeholder="Warm oud and soft strings, slow then lifting, hopeful; 70 bpm" />
+        </label>
+        {bible.theme.url ? (
+          <div style={{ display: "grid", gap: 4 }}>
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <audio src={bible.theme.url} controls preload="none" style={{ width: "100%", maxWidth: 420 }} />
+            <label className="inline" style={{ fontWeight: 400, fontSize: 13 }}>
+              <input type="checkbox" name="clear_theme" /> Remove this tune (Claude makes a new one; unlock first)
+            </label>
+          </div>
+        ) : (
+          <span className="muted" style={{ fontSize: 13 }}>No tune yet: Claude makes it during setup.</span>
+        )}
         <h2 style={{ margin: "6px 0 0" }}>Characters</h2>
         {bible.characters.length === 0 && <p className="muted">Claude adds the characters and their portraits with the bible.</p>}
         {bible.characters.map((c) => {
@@ -98,6 +114,18 @@ export default async function BiblePage({ params, searchParams }: { params: Prom
                     <input type="checkbox" name={`clear_${c.id}`} /> Remove this portrait (Claude makes a new one; unlock first)
                   </label>
                 )}
+                <textarea name={`voice_${c.id}`} rows={2} defaultValue={c.voice} placeholder="Locked voice: age, tone, accent, pace (empty = never speaks aloud)" />
+                {c.voiceSample ? (
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <audio src={c.voiceSample} controls preload="none" style={{ width: 280 }} />
+                    <label className="inline" style={{ fontWeight: 400, fontSize: 13 }}>
+                      <input type="checkbox" name={`clear_voice_${c.id}`} /> Remove this voice sample
+                    </label>
+                  </div>
+                ) : (
+                  <span className="muted" style={{ fontSize: 12 }}>{c.voice ? "Voice sample missing: Claude makes it during setup. No voice lines until it's there." : "No voice: this character has no voice lines."}</span>
+                )}
               </div>
             </div>
           );
@@ -114,7 +142,7 @@ export default async function BiblePage({ params, searchParams }: { params: Prom
           ))
         )}
         <label className="inline" style={{ fontWeight: 600 }}>
-          <input type="checkbox" name="locked" defaultChecked={bible.locked} /> Lock the bible (Claude can&apos;t change characters, style, rules or outline; no new portraits)
+          <input type="checkbox" name="locked" defaultChecked={bible.locked} /> Lock the bible (Claude can&apos;t change characters, voices, theme, style, rules or outline; no new portraits or voice samples)
         </label>
         <button type="submit" style={{ justifySelf: "start" }}>
           Save bible

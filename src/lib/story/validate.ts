@@ -2,7 +2,7 @@
 // shows the same list live and Publish refuses while there are errors.
 
 import { endsHere, reachable, sceneOf, targetsOf } from "./engine";
-import type { Character, StoryGraph } from "./types";
+import { LIMITS, type Character, type StoryGraph } from "./types";
 
 export type StoryIssue = { level: "error" | "warning"; sceneId: string | null; message: string };
 
@@ -11,8 +11,9 @@ const label = (name: string, id: string) => (name ? `"${name}"` : id);
 /**
  * `flagsKnown`: flags any choice of this series sets (other episodes included), so a branch here can depend on them.
  * `characters`: the series' people, so a scene's speaker must still exist.
+ * `voices`: characters with a locked voice in the series bible (Studio); voice lines for anyone else are refused.
  */
-export function validateStory(g: StoryGraph, opts: { flagsKnown?: string[]; characters?: Character[] } = {}): StoryIssue[] {
+export function validateStory(g: StoryGraph, opts: { flagsKnown?: string[]; characters?: Character[]; voices?: string[] } = {}): StoryIssue[] {
   const issues: StoryIssue[] = [];
   const err = (sceneId: string | null, message: string) => issues.push({ level: "error", sceneId, message });
   const warn = (sceneId: string | null, message: string) => issues.push({ level: "warning", sceneId, message });
@@ -24,6 +25,9 @@ export function validateStory(g: StoryGraph, opts: { flagsKnown?: string[]; char
   if (!sceneOf(g, g.start)) err(null, "Pick the scene the episode starts with.");
 
   const known = new Set(opts.flagsKnown ?? []);
+  const beds = new Set((g.music ?? []).map((b) => b.id));
+  if ((g.music ?? []).length > LIMITS.musicBeds) err(null, `At most ${LIMITS.musicBeds} music beds per episode (there are ${(g.music ?? []).length}).`);
+  const voices = opts.voices ? new Set(opts.voices) : null;
   const people = new Set((opts.characters ?? []).map((c) => c.id));
   for (const s of g.scenes) {
     const n = label(s.name, s.id);
@@ -33,6 +37,14 @@ export function validateStory(g: StoryGraph, opts: { flagsKnown?: string[]; char
     if (hasText && !s.text.ar) warn(s.id, `Scene ${n} has no Arabic text (Arabic viewers will see the English).`);
     if (hasText && !s.text.en) warn(s.id, `Scene ${n} has no English text (English viewers will see the Arabic).`);
     if (s.speaker && opts.characters && !people.has(s.speaker)) err(s.id, `Scene ${n}: its speaker was removed from the characters.`);
+
+    if (s.musicRef && !beds.has(s.musicRef)) err(s.id, `Scene ${n} starts music "${s.musicRef}", but the episode has no music bed with that id.`);
+    if ((s.sfx ?? []).length > LIMITS.sfxPerScene) err(s.id, `Scene ${n} has ${(s.sfx ?? []).length} sound effects; at most ${LIMITS.sfxPerScene}.`);
+    if (s.voiceRef) {
+      if (!s.speaker) err(s.id, `Scene ${n} has a voice line but no speaker (narrator scenes have no voice).`);
+      else if (voices && !voices.has(s.speaker)) err(s.id, `Scene ${n}: ${s.speaker} has no locked voice in the series bible, so they can't have a voice line.`);
+      if (!hasText) err(s.id, `Scene ${n} has a voice line but no text (the text is always shown on screen).`);
+    }
 
     const r = s.route;
     if (r.type === "choices") {
