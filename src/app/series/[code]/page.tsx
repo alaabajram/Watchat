@@ -52,26 +52,26 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
       {viewer ? <TopBar locale={locale} balance={balance} backHref="/" backLabel={t.home} /> : <div style={{ height: 8 }} />}
       <main style={{ maxWidth: 600, margin: "0 auto", padding: "8px 0 24px", display: "flex", flexDirection: "column", gap: 22 }}>
         <div style={{ padding: "0 16px" }}>
-          <article className="wc-hero" style={{ maxWidth: "none" }}>
-            <div className="wc-hero-frame">
-              <div className="wc-hero-art" style={{ aspectRatio: "4 / 4.4" }}>
+          <article className="wc-detail">
+            <div className="wc-detail-frame">
+              <div className="wc-detail-art" style={{ aspectRatio: "4 / 4.4" }}>
                 {art ? <img src={art} alt="" /> : <span className="wc-poster-fallback">{title}</span>}
-                <span className="wc-hero-shade" />
+                <span className="wc-detail-shade" />
               </div>
-              <span className="wc-hero-status">
+              <span className="wc-detail-status">
                 <span className="wc-dot" aria-hidden="true" />
                 {status}
               </span>
-              {meta?.rank && meta.rank <= 3 ? <span className="wc-hero-top">{t.topN(meta.rank)}</span> : null}
-              <div className="wc-hero-actions">
+              {meta?.rank && meta.rank <= 3 ? <span className="wc-detail-top">{t.topN(meta.rank)}</span> : null}
+              <div className="wc-detail-actions">
                 <Link className="wc-btn wc-btn-sm" href={`/watch/${series.code}/${continueEp ?? 1}`}>
                   <PlayIcon size={16} />
                   {continueEp ? t.continueEp(continueEp) : t.watchNow}
                 </Link>
-                {meta && (meta.dub || meta.subs) && <span className="wc-hero-chip">HD · {meta.dub ? t.engDub : t.engSubs}</span>}
+                {meta && (meta.dub || meta.subs) && <span className="wc-detail-chip">HD · {meta.dub ? t.engDub : t.engSubs}</span>}
               </div>
             </div>
-            <div className="wc-hero-body">
+            <div className="wc-detail-body">
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <h1 style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3, margin: 0 }}>{title}</h1>
@@ -80,7 +80,7 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
                 {viewer && <BookmarkButton code={series.code} saved={meta?.saved ?? false} labels={{ add: t.saveToList, remove: t.removeFromList }} />}
               </div>
               {story && <p style={{ color: "var(--wc-muted)", fontSize: 15 }}>{story}</p>}
-              <div className="wc-hero-meta">
+              <div className="wc-detail-meta">
                 {meta && meta.views > 0 && (
                   <>
                     <span>
@@ -91,7 +91,7 @@ export default async function SeriesPage({ params }: { params: Promise<{ code: s
                 )}
                 <span>{t.episodesCount(meta?.planned ?? episodes.length)}</span>
                 {share && (
-                  <a href={share} target="_blank" rel="noopener noreferrer" className="wc-hero-share">
+                  <a href={share} target="_blank" rel="noopener noreferrer" className="wc-detail-share">
                     <ShareIcon size={16} /> {t.share}
                   </a>
                 )}

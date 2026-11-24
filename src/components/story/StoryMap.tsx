@@ -1,9 +1,10 @@
 "use client";
 
 // The episode's routing at a glance: scenes in columns by how far they are from the start, arrows for every
-// route (continue, each choice, both ways of a branch). Click a scene to edit it.
+// route (continue, each choice, both ways of a branch). A long path wraps onto the next line (like text) so the
+// whole episode fits the width; − / + / Fit zoom. Click a scene to edit it.
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { targetsOf } from "@/lib/story/engine";
 import type { Scene, StoryGraph } from "@/lib/story/types";
 
@@ -11,8 +12,22 @@ const W = 150;
 const H = 46;
 const GX = 60;
 const GY = 18;
+const BAND_GAP = 34;
 
 export function StoryMap(p: { story: StoryGraph; selected: string | null; onSelect: (id: string) => void; issueIds: Set<string> }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [avail, setAvail] = useState(900);
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAvail(el.clientWidth || 900));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // How many columns fit on one line at this zoom.
+  const perRow = Math.max(2, Math.floor((avail / zoom - 20) / (W + GX)));
+
   const layout = useMemo(() => {
     // Column = shortest number of steps from the start; scenes nobody reaches go in a last column.
     const col = new Map<string, number>();
@@ -30,18 +45,35 @@ export function StoryMap(p: { story: StoryGraph; selected: string | null; onSele
     }
     const maxCol = Math.max(0, ...col.values());
     for (const s of p.story.scenes) if (!col.has(s.id)) col.set(s.id, maxCol + 1);
+    // Row inside each column, then lines ("bands") of perRow columns each.
     const rows = new Map<number, number>();
-    const pos = new Map<string, { x: number; y: number }>();
+    const rowOf = new Map<string, number>();
     for (const s of p.story.scenes) {
       const c = col.get(s.id) ?? 0;
       const r = rows.get(c) ?? 0;
       rows.set(c, r + 1);
-      pos.set(s.id, { x: 10 + c * (W + GX), y: 10 + r * (H + GY) });
+      rowOf.set(s.id, r);
     }
-    const width = 20 + (Math.max(0, ...col.values()) + 1) * (W + GX);
-    const height = 20 + Math.max(1, ...rows.values()) * (H + GY);
+    const cols = Math.max(0, ...col.values()) + 1;
+    const bands = Math.ceil(cols / perRow);
+    const bandTop: number[] = [];
+    let y = 10;
+    for (let b = 0; b < bands; b++) {
+      bandTop.push(y);
+      let tallest = 1;
+      for (let c = b * perRow; c < Math.min(cols, (b + 1) * perRow); c++) tallest = Math.max(tallest, rows.get(c) ?? 0);
+      y += tallest * (H + GY) + BAND_GAP;
+    }
+    const pos = new Map<string, { x: number; y: number; band: number }>();
+    for (const s of p.story.scenes) {
+      const c = col.get(s.id) ?? 0;
+      const band = Math.floor(c / perRow);
+      pos.set(s.id, { x: 10 + (c % perRow) * (W + GX), y: bandTop[band] + (rowOf.get(s.id) ?? 0) * (H + GY), band });
+    }
+    const width = 20 + Math.min(cols, perRow) * (W + GX) - GX + 10;
+    const height = y - BAND_GAP + 10;
     return { pos, width, height };
-  }, [p.story]);
+  }, [p.story, perRow]);
 
   const edges: { from: Scene; to: string; label: string; kind: "next" | "choice" | "premium" | "yes" | "no" }[] = [];
   for (const s of p.story.scenes) {
@@ -56,9 +88,25 @@ export function StoryMap(p: { story: StoryGraph; selected: string | null; onSele
   const color = { next: "#9a93a6", choice: "#3b82f6", premium: "#ff5a48", yes: "#16a34a", no: "#a16207" };
 
   if (!p.story.scenes.length) return null;
+  const z = (f: number) => setZoom((v) => Math.min(1.6, Math.max(0.4, Math.round(v * f * 100) / 100)));
   return (
-    <div style={{ overflow: "auto", border: "1px solid #e7e3ee", borderRadius: 12, background: "#faf9fc", maxHeight: 340 }}>
-      <svg width={layout.width} height={layout.height} style={{ display: "block", direction: "ltr" }}>
+    <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+      <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+        <span className="muted" style={{ fontSize: 12, marginInlineEnd: "auto" }}>
+          {p.story.scenes.length} scenes · {Math.round(zoom * 100)}%
+        </span>
+        <button type="button" className="secondary small" onClick={() => z(1 / 1.2)} aria-label="Zoom out">
+          −
+        </button>
+        <button type="button" className="secondary small" onClick={() => setZoom(1)}>
+          Fit
+        </button>
+        <button type="button" className="secondary small" onClick={() => z(1.2)} aria-label="Zoom in">
+          +
+        </button>
+      </div>
+    <div ref={box} style={{ overflow: "auto", border: "1px solid #e7e3ee", borderRadius: 12, background: "#faf9fc", maxHeight: "70vh", width: "100%" }}>
+      <svg width={layout.width * zoom} height={layout.height * zoom} viewBox={`0 0 ${layout.width} ${layout.height}`} style={{ display: "block", direction: "ltr" }}>
         <defs>
           {Object.entries(color).map(([k, c]) => (
             <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -70,7 +118,22 @@ export function StoryMap(p: { story: StoryGraph; selected: string | null; onSele
           const a = layout.pos.get(e.from.id);
           const b = layout.pos.get(e.to);
           if (!a || !b) return null;
-          const back = b.x <= a.x;
+          // Onto the next line: down from the scene, back along the gap between lines, down into the next scene.
+          if (b.band > a.band) {
+            const gapY = b.y - BAND_GAP / 2 - 4;
+            const d = `M${a.x + W / 2} ${a.y + H} V ${gapY} H ${b.x + W / 2} V ${b.y}`;
+            return (
+              <g key={i}>
+                <path d={d} fill="none" stroke={color[e.kind]} strokeWidth={1.6} markerEnd={`url(#arrow-${e.kind})`} strokeDasharray={e.kind === "no" ? "4 3" : "6 3"} strokeLinejoin="round" />
+                {e.label && (
+                  <text x={(a.x + b.x + W) / 2} y={gapY - 4} fontSize={10} fill={color[e.kind]} textAnchor="middle">
+                    {e.label.slice(0, 16)}
+                  </text>
+                )}
+              </g>
+            );
+          }
+          const back = b.band < a.band || b.x <= a.x;
           const x1 = a.x + W;
           const y1 = a.y + H / 2;
           const x2 = back ? b.x + W / 2 : b.x;
@@ -105,6 +168,7 @@ export function StoryMap(p: { story: StoryGraph; selected: string | null; onSele
           );
         })}
       </svg>
+    </div>
     </div>
   );
 }
