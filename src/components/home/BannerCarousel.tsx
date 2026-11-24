@@ -1,6 +1,7 @@
 "use client";
-// Home hero: featured series as big poster cards (swipe between them). Each card: status pill and TOP badge on
-// the poster, Watch now, quality / language chip, then title, genres, bookmark, views, episodes and Share.
+// Home hero: featured series as poster cards (swipe between them). Everything sits on the poster: status pill and
+// TOP badge at the top; genres, title, views · episodes · quality chip, then Watch now, bookmark and Share at the
+// bottom over a dark fade — one compact card, the next one peeking in.
 // Native scroll-snap (swipe works without JS); dots follow the scroll; gentle auto-advance until touched.
 
 /* eslint-disable @next/next/no-img-element */
@@ -37,7 +38,7 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
     const el = ref.current;
     if (!el) return;
     const onScroll = () => {
-      const w = el.firstElementChild instanceof HTMLElement ? el.firstElementChild.offsetWidth + 12 : el.clientWidth;
+      const w = el.firstElementChild instanceof HTMLElement ? el.firstElementChild.offsetWidth + 10 : el.clientWidth;
       setActive(Math.min(slides.length - 1, Math.round(Math.abs(el.scrollLeft) / w)));
     };
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -57,47 +58,40 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
   }
 
   return (
-    <section aria-roledescription="carousel" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div ref={ref} className="wc-scroller" onPointerDown={() => setPaused(true)} onFocus={() => setPaused(true)}>
+    <section aria-roledescription="carousel" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div ref={ref} className="wc-scroller wc-hero-row" onPointerDown={() => setPaused(true)} onFocus={() => setPaused(true)}>
         {slides.map((s, i) => (
           <article key={s.key} role="group" aria-roledescription="slide" aria-label={slideLabels[i] ?? ""} className="wc-hero">
-            <div className="wc-hero-frame">
-              <Link href={s.href} className="wc-hero-art" tabIndex={-1} aria-hidden="true">
-                {s.imageUrl ? <img src={s.imageUrl} alt="" /> : <span className="wc-poster-fallback">{s.title}</span>}
-                <span className="wc-hero-shade" />
-              </Link>
-              <span className="wc-hero-status">
-                <span className="wc-dot" aria-hidden="true" />
-                {s.status}
-              </span>
-              {s.top && <span className="wc-hero-top">{s.top}</span>}
-              <div className="wc-hero-actions">
-                <Link href={s.href} className="wc-btn wc-btn-sm">
-                  <PlayIcon size={16} />
-                  {s.cta}
-                </Link>
-                <span className="wc-hero-chip">{s.chip}</span>
-              </div>
-            </div>
-            <div className="wc-hero-body">
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <h2 className="wc-clamp1">{s.title}</h2>
-                  {s.genres && <p className="wc-sub wc-clamp1">{s.genres}</p>}
-                </div>
-                <BookmarkButton code={s.bookmark.code} saved={s.bookmark.saved} labels={s.bookmark.labels} />
-              </div>
-              <div className="wc-hero-meta">
+            <Link href={s.href} className="wc-hero-art" tabIndex={-1} aria-hidden="true">
+              {s.imageUrl ? <img src={s.imageUrl} alt="" loading={i === 0 ? "eager" : "lazy"} /> : <span className="wc-poster-fallback">{s.title}</span>}
+              <span className="wc-hero-shade" />
+            </Link>
+            <span className="wc-hero-status">
+              <span className="wc-dot" aria-hidden="true" />
+              {s.status}
+            </span>
+            {s.top && <span className="wc-hero-top">{s.top}</span>}
+            <div className="wc-hero-info">
+              {s.genres && <p className="wc-hero-genres wc-clamp1">{s.genres}</p>}
+              <h2 className="wc-clamp2">{s.title}</h2>
+              <p className="wc-hero-meta">
                 {s.views && (
                   <span>
-                    <PlayIcon size={13} fill="var(--wc-coral)" /> {s.views}
+                    <PlayIcon size={12} fill="var(--wc-coral)" /> {s.views}
                   </span>
                 )}
-                {s.views && <span className="wc-sep" aria-hidden="true" />}
                 <span>{s.episodes}</span>
+                {s.chip && <span className="wc-hero-chip">{s.chip}</span>}
+              </p>
+              <div className="wc-hero-actions">
+                <Link href={s.href} className="wc-btn wc-btn-sm wc-hero-cta">
+                  <PlayIcon size={16} />
+                  <span className="wc-clamp1">{s.cta}</span>
+                </Link>
+                <BookmarkButton code={s.bookmark.code} saved={s.bookmark.saved} labels={s.bookmark.labels} />
                 {s.share && (
-                  <a href={s.share.href} target="_blank" rel="noopener noreferrer" className="wc-hero-share">
-                    <ShareIcon size={16} /> {s.share.label}
+                  <a href={s.share.href} target="_blank" rel="noopener noreferrer" className="wc-iconbtn" aria-label={s.share.label} title={s.share.label}>
+                    <ShareIcon size={18} />
                   </a>
                 )}
               </div>
@@ -117,9 +111,9 @@ export function BannerCarousel({ slides, label, slideLabels }: { slides: Slide[]
                 setPaused(true);
                 go(i);
               }}
-              style={{ width: 28, height: 28, padding: 0, border: 0, background: "transparent", display: "grid", placeItems: "center", cursor: "pointer" }}
+              style={{ width: 24, height: 24, padding: 0, border: 0, background: "transparent", display: "grid", placeItems: "center", cursor: "pointer" }}
             >
-              <span style={{ width: i === active ? 22 : 7, height: 7, borderRadius: 999, background: i === active ? "var(--wc-coral)" : "#4a4356", transition: "width .2s" }} />
+              <span style={{ width: i === active ? 18 : 6, height: 6, borderRadius: 999, background: i === active ? "var(--wc-coral)" : "#4a4356", transition: "width .2s" }} />
             </button>
           ))}
         </div>

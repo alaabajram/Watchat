@@ -22,6 +22,7 @@ import { STORY_STYLES, blankScene, nextId, type Character, type Scene, type Stor
 import { hasErrors, validateStory, type StoryIssue } from "@/lib/story/validate";
 import { SceneEditor } from "./SceneEditor";
 import { StoryMap } from "./StoryMap";
+import { FloatingPreview } from "./FloatingPreview";
 import { StoryPlayer } from "./StoryPlayer";
 import { uploadStoryFile } from "./upload";
 
@@ -511,26 +512,36 @@ export function StoryBuilder(p: Props) {
           )}
         </div>
 
-        {/* Phone preview */}
-        <div className="story-phone-col">
-          <div className="row" style={{ gap: 6 }}>
-            <button type="button" className={previewLang === "ar" ? "small" : "secondary small"} onClick={() => setPreviewLang("ar")}>
-              عربي
-            </button>
-            <button type="button" className={previewLang === "en" ? "small" : "secondary small"} onClick={() => setPreviewLang("en")}>
-              English
-            </button>
-            <button
-              type="button"
-              className="secondary small"
-              onClick={() => {
-                setPreviewFrom(null);
-                setPreviewKey((k) => k + 1);
-              }}
-            >
-              ↺ From the start
-            </button>
-          </div>
+        {/* Phone preview: a floating window, drag it anywhere */}
+        <FloatingPreview
+          title="Preview"
+          tools={
+            <>
+              <button type="button" className={previewLang === "ar" ? "small" : "secondary small"} onClick={() => setPreviewLang("ar")}>
+                عربي
+              </button>
+              <button type="button" className={previewLang === "en" ? "small" : "secondary small"} onClick={() => setPreviewLang("en")}>
+                English
+              </button>
+              <button
+                type="button"
+                className="secondary small"
+                onClick={() => {
+                  setPreviewFrom(null);
+                  setPreviewKey((k) => k + 1);
+                }}
+              >
+                ↺ From the start
+              </button>
+            </>
+          }
+          footer={
+            <span className="muted" style={{ fontSize: 12, textAlign: "center", maxWidth: 260 }}>
+              Draft preview: tap to go on. Premium choices are free here; nothing is saved.
+              {hasErrors(issues) ? " Fix the red problems before publishing." : ""}
+            </span>
+          }
+        >
           <div className="story-phone wc">
             {story && story.scenes.length > 0 ? (
               <StoryPlayer key={`${ep?.id}-${previewKey}-${previewLang}`} story={story} style={style} characters={characters} locale={previewLang} preview jumpTo={previewFrom} />
@@ -540,11 +551,7 @@ export function StoryBuilder(p: Props) {
               </div>
             )}
           </div>
-          <span className="muted" style={{ fontSize: 12, textAlign: "center", maxWidth: 280 }}>
-            Preview of the draft: tap to go on. Premium choices are free here; nothing is saved.
-            {hasErrors(issues) ? " Fix the red problems before publishing." : ""}
-          </span>
-        </div>
+        </FloatingPreview>
       </div>
     </>
   );
