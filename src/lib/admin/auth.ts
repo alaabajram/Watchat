@@ -26,6 +26,7 @@ export const PERMISSIONS = {
   dashboard: ["owner", "content", "marketing", "support", "finance"],
   spend: ["owner", "finance", "marketing"],
   content: ["owner", "content"],
+  play: ["owner", "content", "marketing"],
   bot: ["owner", "content", "marketing"],
   messaging: ["owner", "marketing"],
   viewers: ["owner", "support", "finance"],

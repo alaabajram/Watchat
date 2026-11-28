@@ -115,3 +115,28 @@ export const TranslateIcon = ({ size = 14, color = "currentColor" }: P) => (
   </svg>
 );
 
+export const RoomsIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="8" cy="9" r="3" />
+    <circle cx="16.5" cy="9.5" r="2.5" />
+    <path d="M2.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M13.5 15.2c.9-.8 1.9-1.2 3-1.2 2.3 0 4 1.7 4.5 4.5" />
+  </svg>
+);
+export const SparkIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={1.8} strokeLinejoin="round">
+    <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />
+    <path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z" />
+  </svg>
+);
+export const BotIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="8" width="16" height="12" rx="4" />
+    <path d="M12 4v4M9 14h.01M15 14h.01" />
+  </svg>
+);
+export const CompassIcon = ({ size = 22, color = "currentColor", fill = "none" }: P) => (
+  <svg {...base(size)} fill={fill} stroke={color} strokeWidth={1.8} strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M15.5 8.5l-2 5-5 2 2-5z" />
+  </svg>
+);

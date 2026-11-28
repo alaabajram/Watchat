@@ -9,7 +9,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AgentIcon } from "./AgentIcon";
 
-const HIDDEN = [/^\/watch(\/|$)/, /^\/assistant(\/|$)/, /^\/admin(\/|$)/, /^\/business(\/|$)/, /^\/w\//, /^\/payment(\/|$)/, /^\/link-expired/, /^\/data-deletion/, /^\/tg(\/|$)/];
+const HIDDEN = [/^\/watch(\/|$)/, /^\/assistant(\/|$)/, /^\/admin(\/|$)/, /^\/business(\/|$)/, /^\/w\//, /^\/payment(\/|$)/, /^\/link-expired/, /^\/data-deletion/, /^\/tg(\/|$)/, /^\/people\/[^/]+/];
 
 export function chatFabHidden(path: string): boolean {
   return HIDDEN.some((r) => r.test(path));

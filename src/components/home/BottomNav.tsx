@@ -1,49 +1,57 @@
-// Bottom bar on every viewer page: Home · Explore · (Rewards, the raised coral button) · My List · Profile.
-// The wallet isn't here: the Ping balance is in the top bar and the wallet opens from it and from Profile.
+// Bottom bar on every viewer page: Home · Rooms · Today (the raised coral button: card, horoscope, daily question)
+// · AI People · Profile. Stories, rewards and My List are reached from Discover (Home) and Profile; the wallet
+// opens from the Ping balance in the top bar.
 
 import Link from "next/link";
-import { BookmarkIcon, ExploreIcon, GiftIcon, HomeIcon, UserIcon } from "@/components/brand/icons";
+import { BotIcon, HomeIcon, RoomsIcon, SparkIcon, UserIcon } from "@/components/brand/icons";
 import { webCopy, type Locale } from "@/lib/web-copy";
 
-export type NavKey = "home" | "explore" | "rewards" | "list" | "profile" | null;
+export type NavKey = "home" | "rooms" | "today" | "people" | "profile" | "explore" | "rewards" | "list" | null;
+
+const LABELS = {
+  ar: { rooms: "الغرف", today: "اليوم", people: "شخصيات" },
+  en: { rooms: "Rooms", today: "Today", people: "AI People" },
+} as const;
 
 export function BottomNav({ locale, current }: { locale: Locale; current: NavKey }) {
   const t = webCopy(locale);
+  const l = LABELS[locale];
   const on = (k: NavKey) => k === current;
   const cur = (k: NavKey) => (on(k) ? ("page" as const) : undefined);
   const coral = "var(--wc-coral, #ff5a48)";
+  const tint = (k: NavKey) => ({ fill: on(k) ? coral : "none", color: on(k) ? coral : "currentColor" });
   return (
     <nav className="wc-nav" aria-label={t.navLabel}>
       <ul>
         <li>
           <Link href="/" aria-current={cur("home")}>
-            <HomeIcon fill={on("home") ? coral : "none"} color={on("home") ? coral : "currentColor"} />
+            <HomeIcon {...tint("home")} />
             {t.home}
           </Link>
         </li>
         <li>
-          <Link href="/explore" aria-current={cur("explore")}>
-            <ExploreIcon fill={on("explore") ? coral : "none"} color={on("explore") ? coral : "currentColor"} />
-            {t.explore}
+          <Link href="/rooms" aria-current={cur("rooms")}>
+            <RoomsIcon color={tint("rooms").color} />
+            {l.rooms}
           </Link>
         </li>
         <li>
-          <Link href="/rewards" aria-current={cur("rewards")} style={{ color: on("rewards") ? coral : "var(--wc-ink)" }}>
+          <Link href="/today" aria-current={cur("today")} style={{ color: on("today") ? coral : "var(--wc-ink)" }}>
             <span className="wc-fab">
-              <GiftIcon color="#fff" size={26} />
+              <SparkIcon color="#fff" size={26} />
             </span>
-            {t.rewardsNav}
+            {l.today}
           </Link>
         </li>
         <li>
-          <Link href="/list" aria-current={cur("list")}>
-            <BookmarkIcon fill={on("list") ? coral : "none"} color={on("list") ? coral : "currentColor"} />
-            {t.myList}
+          <Link href="/people" aria-current={cur("people")}>
+            <BotIcon color={tint("people").color} />
+            {l.people}
           </Link>
         </li>
         <li>
           <Link href="/me" aria-current={cur("profile")}>
-            <UserIcon fill={on("profile") ? coral : "none"} color={on("profile") ? coral : "currentColor"} />
+            <UserIcon {...tint("profile")} />
             {t.profile}
           </Link>
         </li>
