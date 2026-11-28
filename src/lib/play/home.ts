@@ -12,9 +12,18 @@ export type HomeContent = {
   rooms: { title: L; sub: L; badge: L };
   people: { title: L; sub: L; badge: L };
   discover: { title: L; tiles: HomeTile[] };
+  /** The Heroes (AI People) page header. */
+  heroes: { kicker: L; title: L; badge: L; sub: L };
 };
 
 const l = (ar: string, en: string): L => ({ ar, en });
+
+const DEFAULT_HEROES = {
+  kicker: l("قائمة الأبطال", "Roster hub // squad ready"),
+  title: l("الأبطال والرفاق", "Heroes & companions"),
+  badge: l("فئة +S", "Tier S+"),
+  sub: l("اختر رفيقك من شخصيات الذكاء الاصطناعي: حكايات، تحديات وسوالف آخر الليل.", "Summon your AI companion for roleplay quests, tactical debates & deep late-night banter."),
+};
 
 export const DEFAULT_HOME: HomeContent = {
   kicker: l("ساحة واتشات", "Watchat lobby"),
@@ -46,7 +55,9 @@ export const DEFAULT_HOME: HomeContent = {
       },
     ],
   },
+  heroes: DEFAULT_HEROES,
 };
+
 
 const clip = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 
@@ -104,6 +115,12 @@ export function sanitizeHome(raw: unknown): HomeContent {
     rooms: { title: cleanL(r.rooms?.title, d.rooms.title, 60), sub: cleanL(r.rooms?.sub, d.rooms.sub, 120), badge: cleanL(r.rooms?.badge, d.rooms.badge, 30) },
     people: { title: cleanL(r.people?.title, d.people.title, 60), sub: cleanL(r.people?.sub, d.people.sub, 120), badge: cleanL(r.people?.badge, d.people.badge, 30) },
     discover: { title: cleanL(r.discover?.title, d.discover.title, 60), tiles },
+    heroes: {
+      kicker: cleanL(r.heroes?.kicker, d.heroes.kicker, 60),
+      title: cleanL(r.heroes?.title, d.heroes.title, 60),
+      badge: cleanL(r.heroes?.badge, d.heroes.badge, 20),
+      sub: cleanL(r.heroes?.sub, d.heroes.sub, 200),
+    },
   };
 }
 

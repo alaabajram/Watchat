@@ -10,15 +10,13 @@ import Link from "next/link";
 import { SignedOut } from "@/components/play/PlayShell";
 import { BottomNav } from "@/components/home/BottomNav";
 import { HomeScreenTip } from "@/components/HomeScreenTip";
-import { PingIcon } from "@/components/brand/PingIcon";
+import { PlayHeader } from "@/components/play/PlayHeader";
 import { SIGNS } from "@/lib/daily/daily";
 import { cardById, cardMeaning } from "@/lib/daily/tarot";
 import { compact, homeLayout, type L } from "@/lib/play/home";
 import { activeToday, ensureStarter, homeContent, liveRooms, livePeople, playImage, todayFor, touchHabit, type RoomCard } from "@/lib/play/store";
 import { AI_LABEL } from "@/lib/people/persona";
 import { getSessionViewer } from "@/lib/session";
-import { DEFAULT_SITE } from "@/lib/site/brand";
-import { getSiteSafe } from "@/lib/site/store";
 import { currentTenantId } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
 import { dirFor } from "@/lib/web-copy";
@@ -110,16 +108,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   const ar = locale === "ar";
   const u = UI[locale];
   const T = (x: L) => (ar ? x.ar || x.en : x.en || x.ar);
-  const [balance, site, today, rooms, people, content, online] = await Promise.all([
+  const [balance, today, rooms, people, content, online] = await Promise.all([
     getBalance(viewer.id),
-    getSiteSafe(),
     todayFor(tenantId, viewer.id),
     liveRooms(tenantId, viewer.id),
     livePeople(tenantId),
     homeContent(tenantId),
     activeToday(tenantId),
   ]);
-  const logo = site.logoOnDark !== DEFAULT_SITE.logoOnDark ? site.logoOnDark : `/brand/wordmark-${ar ? "ar" : "en"}-white.png`;
   const card = cardById(today.card.card);
   const sign = today.sign ? SIGNS.find((s) => s.key === today.sign) : null;
   const { hero, tiles, wide } = homeLayout(rooms);
@@ -130,21 +126,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
 
   return (
     <div className="wc wc-app hm" dir={dirFor(locale)} lang={locale}>
-      <header className="hm-head">
-        <Link href="/" className="hm-brand" aria-label="Watchat">
-          <img src={logo} alt="Watchat" style={{ height: 26, width: "auto", display: "block" }} />
-          <span className="hm-live">{u.live}</span>
-        </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Link href="/wallet" className="hm-ping" aria-label={`Ping: ${balance}`}>
-            <PingIcon size={18} />
-            {balance}
-          </Link>
-          <Link href="/today#alerts" className="hm-bell" aria-label={ar ? "التنبيهات" : "Alerts"}>
-            🔔
-          </Link>
-        </div>
-      </header>
+      <PlayHeader locale={locale} balance={balance} />
 
       <main className="pl-page">
         {/* Streak banner */}

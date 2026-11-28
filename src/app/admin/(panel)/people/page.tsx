@@ -4,6 +4,7 @@
 
 import { Flash } from "@/components/admin/Flash";
 import { ImageField } from "@/components/admin/ImageField";
+import { statsText } from "@/lib/people/card";
 import { requireAdmin } from "@/lib/admin/auth";
 import { playDay } from "@/lib/daily/daily";
 import { ensureStarter, playSettings, toPerson, type PersonRow } from "@/lib/play/store";
@@ -76,6 +77,83 @@ function PersonForm({ p }: { p?: PersonRow }) {
           <input name="role_en" defaultValue={p?.roleEn} />
         </label>
       </div>
+      <fieldset style={{ border: "1px solid var(--a-line, #ddd)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+        <legend>
+          <strong>Heroes page card</strong>
+        </legend>
+        <div className="row" style={{ alignItems: "flex-start", gap: 20 }}>
+          <ImageField name="voice_path" kind="audio" label="Voice note" hint="Plays on the card (MP3 / M4A, under 5 MB)." path={p?.voicePath ?? null} url={p?.voice ?? null} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+            <div className="row">
+              <label style={{ flex: 1 }}>
+                Group (Arabic) — the filter tab
+                <input name="group_ar" defaultValue={p?.card.groupAr} dir="rtl" maxLength={30} />
+              </label>
+              <label style={{ flex: 1 }}>
+                Group (English), e.g. “Mythic &amp; story”
+                <input name="group_en" defaultValue={p?.card.groupEn} maxLength={30} />
+              </label>
+            </div>
+            <div className="row">
+              <label style={{ flex: 1 }}>
+                Class line (Arabic)
+                <input name="kicker_ar" defaultValue={p?.card.kickerAr} dir="rtl" maxLength={40} />
+              </label>
+              <label style={{ flex: 1 }}>
+                Class line (English), e.g. “Class A • Mint”
+                <input name="kicker_en" defaultValue={p?.card.kickerEn} maxLength={40} />
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="row">
+          <label style={{ flex: 1 }}>
+            Subtitle (Arabic)
+            <input name="subtitle_ar" defaultValue={p?.card.subtitleAr} dir="rtl" maxLength={60} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Subtitle (English), e.g. “Brutally honest big sister”
+            <input name="subtitle_en" defaultValue={p?.card.subtitleEn} maxLength={60} />
+          </label>
+        </div>
+        <div className="row">
+          <label>
+            Portrait badge (Arabic)
+            <input name="badge_ar" defaultValue={p?.card.badgeAr} dir="rtl" maxLength={16} style={{ width: 120 }} />
+          </label>
+          <label>
+            Portrait badge (English), shown as “Lv.N HONEST”
+            <input name="badge_en" defaultValue={p?.card.badgeEn} maxLength={16} style={{ width: 120 }} />
+          </label>
+          <label>
+            Chip emoji
+            <input name="feature_emoji" defaultValue={p?.card.featureEmoji} style={{ width: 70 }} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Chip (Arabic)
+            <input name="feature_ar" defaultValue={p?.card.featureAr} dir="rtl" maxLength={40} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Chip (English), e.g. “Derby debate active”
+            <input name="feature_en" defaultValue={p?.card.featureEn} maxLength={40} />
+          </label>
+        </div>
+        <label>
+          Stats, up to three, one per line: Arabic label | English label | value
+          <textarea name="stats" rows={3} defaultValue={p ? statsText(p.card.stats) : ""} placeholder={"الحدس | Intuition | 98%"} />
+        </label>
+        <div className="row">
+          <label style={{ flex: 1 }}>
+            Button (Arabic)
+            <input name="cta_ar" defaultValue={p?.card.ctaAr} dir="rtl" maxLength={24} />
+          </label>
+          <label style={{ flex: 1 }}>
+            Button (English), e.g. “Connect”
+            <input name="cta_en" defaultValue={p?.card.ctaEn} maxLength={24} />
+          </label>
+        </div>
+        <p className="muted" style={{ margin: 0 }}>The level on the portrait is each viewer&apos;s own affinity: it goes up by one for every 5 messages they send this hero.</p>
+      </fieldset>
       <label>
         Personality (who they are, how they talk, what they like to do in a chat)
         <textarea name="persona" rows={4} defaultValue={p?.persona} required />

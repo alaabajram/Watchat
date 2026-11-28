@@ -7,7 +7,8 @@ import { useState } from "react";
 import { createPlayUpload } from "@/app/admin/play-actions";
 import { sendUpload } from "@/lib/storage/send";
 
-export function ImageField({ name, label, hint, path, url, ratio = "16 / 9" }: { name: string; label: string; hint?: string; path: string | null; url: string | null; ratio?: string }) {
+export function ImageField({ name, label, hint, path, url, ratio = "16 / 9", kind = "image" }: { name: string; label: string; hint?: string; path: string | null; url: string | null; ratio?: string; kind?: "image" | "audio" }) {
+  const audio = kind === "audio";
   const [value, setValue] = useState(path ?? "");
   const [preview, setPreview] = useState(url);
   const [status, setStatus] = useState<string | null>(null);
@@ -16,6 +17,13 @@ export function ImageField({ name, label, hint, path, url, ratio = "16 / 9" }: {
       <strong style={{ fontSize: 14 }}>{label}</strong>
       {hint ? <span className="muted" style={{ fontSize: 12 }}>{hint}</span> : null}
       <input type="hidden" name={name} value={value} />
+      {audio ? (
+        preview ? (
+          <audio src={preview} controls preload="metadata" style={{ width: 240 }} />
+        ) : (
+          <span className="muted" style={{ fontSize: 12 }}>No voice note</span>
+        )
+      ) : (
       <div style={{ width: 200, aspectRatio: ratio, borderRadius: 12, overflow: "hidden", background: "#13101a", display: "grid", placeItems: "center", border: "1px solid var(--a-line, #ddd)" }}>
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -24,19 +32,20 @@ export function ImageField({ name, label, hint, path, url, ratio = "16 / 9" }: {
           <span className="muted" style={{ fontSize: 12 }}>No picture (emoji shows)</span>
         )}
       </div>
+      )}
       <div className="row">
         <label className="abtn secondary" style={{ cursor: "pointer" }}>
           Upload
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={audio ? "audio/mpeg,audio/mp4,audio/x-m4a,audio/wav" : "image/png,image/jpeg,image/webp"}
             style={{ display: "none" }}
             onChange={async (e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
               if (!f) return;
-              if (f.size > 8 * 1048576) {
-                setStatus("Keep pictures under 8 MB.");
+              if (f.size > (audio ? 5 : 8) * 1048576) {
+                setStatus(audio ? "Keep voice notes under 5 MB." : "Keep pictures under 8 MB.");
                 return;
               }
               try {

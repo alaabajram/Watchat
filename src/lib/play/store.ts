@@ -8,6 +8,7 @@ import { sendPush } from "../push/push";
 import { cardById, readingPrompt, READING_TOOL, readingWithoutAi } from "../daily/tarot";
 import { grantPing } from "../economy/rewards";
 import { trackEvent } from "../events";
+import { cardRow, STARTER_CARDS, toCard, type HeroCard } from "../people/card";
 import { nextMessageQuota, parseReply, personaSystemPrompt, recentTurns, REPLY_TOOL, STARTER_PEOPLE, type Person } from "../people/persona";
 import { answerCorrect, currentRound, isMechanic, parseRounds, roundsPrompt, roundsTool, sanitizeConfig, sanitizeRound, tally, validOption, type Mechanic, type RoomConfig, type Round, type Tally } from "../rooms/engine";
 import { STARTER_ROOMS } from "../rooms/starter";
@@ -96,7 +97,7 @@ export async function addStarterPeople(tenantId: string, onlyIfEmpty = true): Pr
   }
   const { data: have } = await db().from("ai_people").select("slug").eq("tenant_id", tenantId);
   const taken = new Set((have ?? []).map((r) => r.slug as string));
-  const rows = STARTER_PEOPLE.filter((p) => !taken.has(p.slug)).map((p, i) => ({ tenant_id: tenantId, ...personRow(p), slug: p.slug, status: "live", sort: i, tag_ar: STARTER_TAGS[p.slug]?.[0] ?? "", tag_en: STARTER_TAGS[p.slug]?.[1] ?? "" }));
+  const rows = STARTER_PEOPLE.filter((p) => !taken.has(p.slug)).map((p, i) => ({ tenant_id: tenantId, ...personRow(p), slug: p.slug, status: "live", sort: i, tag_ar: STARTER_TAGS[p.slug]?.[0] ?? "", tag_en: STARTER_TAGS[p.slug]?.[1] ?? "", ...(STARTER_CARDS[p.slug] ? cardRow(STARTER_CARDS[p.slug]) : {}) }));
   if (!rows.length) return 0;
   const { error } = await db().from("ai_people").insert(rows);
   return error ? 0 : rows.length;
@@ -315,7 +316,18 @@ export async function draftRounds(tenantId: string, adminId: string, roomId: str
 // AI People.
 // ---------------------------------------------------------------------------
 
-export type PersonRow = Person & { id: string; status: string; sort: number; imagePath: string | null; image: string | null; tagAr: string; tagEn: string };
+export type PersonRow = Person & {
+  id: string;
+  status: string;
+  sort: number;
+  imagePath: string | null;
+  image: string | null;
+  tagAr: string;
+  tagEn: string;
+  card: HeroCard;
+  voicePath: string | null;
+  voice: string | null;
+};
 
 export function toPerson(r: Record<string, unknown>): PersonRow {
   return {
@@ -339,7 +351,23 @@ export function toPerson(r: Record<string, unknown>): PersonRow {
     image: playImage(r.image_path),
     tagAr: (r.tag_ar as string) ?? "",
     tagEn: (r.tag_en as string) ?? "",
+    card: toCard(r),
+    voicePath: cleanPath(r.voice_path),
+    voice: playImage(r.voice_path),
   };
+}
+
+/** How many messages the viewer has sent each AI person (for the affinity level on the Heroes page). */
+export async function affinities(viewerId: string): Promise<Map<string, number>> {
+  const { data: chats } = await db().from("ai_chats").select("id, person_id").eq("viewer_id", viewerId);
+  const out = new Map<string, number>();
+  await Promise.all(
+    (chats ?? []).map(async (c) => {
+      const { count } = await db().from("ai_chat_messages").select("id", { count: "exact", head: true }).eq("chat_id", c.id).eq("role", "user");
+      out.set(c.person_id as string, count ?? 0);
+    }),
+  );
+  return out;
 }
 
 export async function livePeople(tenantId: string): Promise<PersonRow[]> {
