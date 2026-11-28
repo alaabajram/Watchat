@@ -5,10 +5,10 @@ import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
 import { playDay } from "@/lib/daily/daily";
-import { ensureStarter, toRoom } from "@/lib/play/store";
+import { ensureStarter, playSettings, toRoom } from "@/lib/play/store";
 import { currentRound, daysPlanned, MECHANIC_KEYS, MECHANICS } from "@/lib/rooms/engine";
 import { db } from "@/lib/supabase";
-import { addStarterRoomsAction, createRoomAction } from "../../play-actions";
+import { addStarterRoomsAction, createRoomAction, savePlaySettingsAction } from "../../play-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,7 @@ export default async function AdminRooms({ searchParams }: { searchParams: Promi
   const admin = await requireAdmin("play");
   const sp = await searchParams;
   await ensureStarter(admin.tenantId);
+  const settings = await playSettings(admin.tenantId);
   const day = playDay();
   const [{ data: rooms }, { data: rounds }] = await Promise.all([
     db().from("rooms").select("*").eq("tenant_id", admin.tenantId).order("sort"),
@@ -83,6 +84,20 @@ export default async function AdminRooms({ searchParams }: { searchParams: Promi
       </table>
       <form action={addStarterRoomsAction} style={{ marginTop: 12 }}>
         <button type="submit" className="secondary">Add the six starter rooms (skips any you already have)</button>
+      </form>
+
+      <h2>Weekly jackpot</h2>
+      <form action={savePlaySettingsAction} className="card row" style={{ alignItems: "flex-end", gap: 12 }}>
+        <input type="hidden" name="back" value="rooms" />
+        <label>
+          Ping for the week&apos;s top scorer (0 = off)
+          <input name="weekly_prize_ping" type="number" min={0} max={100000} defaultValue={settings.weeklyPrizePing} style={{ width: 120 }} />
+        </label>
+        <button type="submit">Save</button>
+        <span className="muted" style={{ flex: "1 1 260px" }}>
+          Counts right answers in Who Is Lying / Guess the Mystery rooms, Monday to Sunday. Paid automatically on Monday to everyone tied for first
+          (no prize if more than 50 tie or nobody scored). The banner text and rules are on Home page → Rooms page.
+        </span>
       </form>
 
       <h2>New room</h2>

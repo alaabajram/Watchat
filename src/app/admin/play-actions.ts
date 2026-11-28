@@ -34,6 +34,10 @@ function roomFields(fd: FormData) {
     image_path: cleanPath(str(fd, "image_path", 300)),
     tag_ar: str(fd, "tag_ar", 40),
     tag_en: str(fd, "tag_en", 40),
+    group_ar: str(fd, "group_ar", 30),
+    group_en: str(fd, "group_en", 30),
+    cta_ar: str(fd, "cta_ar", 24),
+    cta_en: str(fd, "cta_en", 24),
     home_slot: isHomeSlot(slot) ? slot : "tile",
     title_ar: str(fd, "title_ar", 80),
     title_en: str(fd, "title_en", 80),
@@ -52,7 +56,7 @@ export async function createRoomAction(fd: FormData) {
   const admin = await requireAdmin("play");
   const slug = str(fd, "slug", 40).toLowerCase();
   const mechanic = str(fd, "mechanic");
-  if (!SLUG.test(slug)) done(ROOMS, "Address: 2–40 lowercase letters, numbers or dashes.", "err");
+  if (!SLUG.test(slug) || slug === "random") done(ROOMS, "Address: 2–40 lowercase letters, numbers or dashes (not “random”).", "err");
   if (!isMechanic(mechanic)) done(ROOMS, "Pick a format.", "err");
   const f = roomFields(fd);
   if (!f.title_ar || !f.title_en) done(ROOMS, "The room needs an Arabic and an English name.", "err");
@@ -266,7 +270,8 @@ export async function addStarterPeopleAction() {
 
 export async function savePlaySettingsAction(fd: FormData) {
   const admin = await requireAdmin("play");
-  const back = str(fd, "back", 40) === "people" ? PEOPLE : DAILY;
+  const backKey = str(fd, "back", 40);
+  const back = backKey === "people" ? PEOPLE : backKey === "rooms" ? ROOMS : DAILY;
   const { data: cur } = await db().from("playground_settings").select("*").eq("tenant_id", admin.tenantId).maybeSingle();
   const row = {
     tenant_id: admin.tenantId,
@@ -275,6 +280,7 @@ export async function savePlaySettingsAction(fd: FormData) {
     horoscope_auto_approve: fd.has("horoscope_form") ? bool(fd, "horoscope_auto_approve") : (cur?.horoscope_auto_approve ?? false),
     streak_rewards: fd.has("streak_rewards") ? parseStreakRewards(str(fd, "streak_rewards", 400)) : (cur?.streak_rewards ?? { 3: 5, 7: 15, 14: 25, 30: 60 }),
     morning_push: fd.has("horoscope_form") ? bool(fd, "morning_push") : (cur?.morning_push ?? true),
+    weekly_prize_ping: fd.has("weekly_prize_ping") ? Math.min(Math.max(int(fd, "weekly_prize_ping", 0), 0), 100000) : (cur?.weekly_prize_ping ?? 0),
     morning_hour: fd.has("morning_hour") ? Math.min(Math.max(int(fd, "morning_hour", 8), 5), 12) : (cur?.morning_hour ?? 8),
     updated_at: new Date().toISOString(),
   };
@@ -377,6 +383,17 @@ export async function saveHomeAction(fd: FormData) {
     rooms: { title: L(fd, "rooms_title", 60), sub: L(fd, "rooms_sub", 120), badge: L(fd, "rooms_badge", 30) },
     people: { title: L(fd, "people_title", 60), sub: L(fd, "people_sub", 120), badge: L(fd, "people_badge", 30) },
     discover: { title: L(fd, "discover_title", 60), tiles },
+    roomsPage: {
+      kicker: L(fd, "rp_kicker", 60),
+      title: L(fd, "rp_title", 40),
+      sub: L(fd, "rp_sub", 200),
+      jackpot: L(fd, "rp_jackpot", 40),
+      rules: L(fd, "rp_rules", 600),
+      gridTitle: L(fd, "rp_grid", 60),
+      quickTitle: L(fd, "rp_qtitle", 60),
+      quickText: L(fd, "rp_qtext", 120),
+      quickCta: L(fd, "rp_qcta", 30),
+    },
     heroes: { kicker: L(fd, "heroes_kicker", 60), title: L(fd, "heroes_title", 60), badge: L(fd, "heroes_badge", 20), sub: L(fd, "heroes_sub", 200) },
   });
   const { error } = await db().from("home_content").upsert({ tenant_id: admin.tenantId, content, updated_at: new Date().toISOString() });

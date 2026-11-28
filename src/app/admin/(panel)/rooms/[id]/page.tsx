@@ -8,6 +8,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { addDays, playDay } from "@/lib/daily/daily";
 import { toRoom, toRound, type RoundRow } from "@/lib/play/store";
 import { MECHANICS, roundIssues, tally, type Mechanic } from "@/lib/rooms/engine";
+import { DEFAULT_CTA } from "@/lib/rooms/display";
 import { db } from "@/lib/supabase";
 import { approveRoundsAction, deleteRoundAction, draftRoundsAction, saveRoomAction, saveRoundAction } from "../../../play-actions";
 
@@ -176,6 +177,22 @@ export default async function AdminRoom({ params, searchParams }: { params: Prom
               <label>
                 Label (English), e.g. “Casual PvP”
                 <input name="tag_en" defaultValue={room.tagEn} maxLength={40} />
+              </label>
+              <label>
+                Group (Arabic) — filter tab on the Rooms page
+                <input name="group_ar" defaultValue={room.groupAr} dir="rtl" maxLength={30} />
+              </label>
+              <label>
+                Group (English), e.g. “PvP &amp; debate”
+                <input name="group_en" defaultValue={room.groupEn} maxLength={30} />
+              </label>
+              <label>
+                Button (Arabic) — empty uses «{DEFAULT_CTA[room.mechanic].ar}»
+                <input name="cta_ar" defaultValue={room.ctaAr} dir="rtl" maxLength={24} />
+              </label>
+              <label>
+                Button (English) — empty uses “{DEFAULT_CTA[room.mechanic].en}”
+                <input name="cta_en" defaultValue={room.ctaEn} maxLength={24} />
               </label>
             </div>
           </div>

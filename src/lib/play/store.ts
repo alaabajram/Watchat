@@ -13,13 +13,14 @@ import { nextMessageQuota, parseReply, personaSystemPrompt, recentTurns, REPLY_T
 import { answerCorrect, currentRound, isMechanic, parseRounds, roundsPrompt, roundsTool, sanitizeConfig, sanitizeRound, tally, validOption, type Mechanic, type RoomConfig, type Round, type Tally } from "../rooms/engine";
 import { STARTER_ROOMS } from "../rooms/starter";
 import { publicUrlFor } from "../storage/cloudflare";
+import { weeklyWinners } from "../rooms/display";
 import { cleanPath, isHomeSlot, sanitizeHome, type HomeContent, type HomeSlot } from "./home";
 import { allow } from "../security/rate-limit";
 import type { SessionViewer } from "../session";
 import { currentTenantId, db } from "../supabase";
 import { getBalance } from "../wallet";
 
-export type Settings = { readingPing: number; peopleDailyAiCap: number; horoscopeAutoApprove: boolean; streakRewards: StreakRewards; morningPush: boolean; morningHour: number };
+export type Settings = { readingPing: number; peopleDailyAiCap: number; horoscopeAutoApprove: boolean; streakRewards: StreakRewards; morningPush: boolean; morningHour: number; weeklyPrizePing: number };
 
 export async function playSettings(tenantId: string): Promise<Settings> {
   const { data } = await db().from("playground_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
@@ -30,6 +31,7 @@ export async function playSettings(tenantId: string): Promise<Settings> {
     streakRewards: data?.streak_rewards ? parseStreakRewards(data.streak_rewards) : parseStreakRewards({ 3: 5, 7: 15, 14: 25, 30: 60 }),
     morningPush: data?.morning_push ?? true,
     morningHour: data?.morning_hour ?? 8,
+    weeklyPrizePing: data?.weekly_prize_ping ?? 0,
   };
 }
 
@@ -76,7 +78,7 @@ export async function addStarterRooms(tenantId: string, onlyIfEmpty = true): Pro
     if (taken.has(r.slug)) continue;
     const { data: room, error } = await db()
       .from("rooms")
-      .insert({ tenant_id: tenantId, slug: r.slug, mechanic: r.mechanic, title_ar: r.titleAr, title_en: r.titleEn, blurb_ar: r.blurbAr, blurb_en: r.blurbEn, emoji: r.emoji, color: r.color, status: "live", config: sanitizeConfig(r.config), sort: i, tag_ar: r.tagAr ?? "", tag_en: r.tagEn ?? "", home_slot: r.homeSlot ?? "tile" })
+      .insert({ tenant_id: tenantId, slug: r.slug, mechanic: r.mechanic, title_ar: r.titleAr, title_en: r.titleEn, blurb_ar: r.blurbAr, blurb_en: r.blurbEn, emoji: r.emoji, color: r.color, status: "live", config: sanitizeConfig(r.config), sort: i, tag_ar: r.tagAr ?? "", tag_en: r.tagEn ?? "", home_slot: r.homeSlot ?? "tile", group_ar: r.groupAr ?? "", group_en: r.groupEn ?? "" })
       .select("id")
       .single();
     if (error || !room) continue;
@@ -163,6 +165,10 @@ export type RoomRow = {
   tagAr: string;
   tagEn: string;
   homeSlot: HomeSlot;
+  groupAr: string;
+  groupEn: string;
+  ctaAr: string;
+  ctaEn: string;
 };
 
 /** A link for a stored Playground picture (only paths we made). */
@@ -192,6 +198,10 @@ export function toRoom(r: Record<string, unknown>): RoomRow {
     tagAr: (r.tag_ar as string) ?? "",
     tagEn: (r.tag_en as string) ?? "",
     homeSlot: isHomeSlot(r.home_slot) ? r.home_slot : "tile",
+    groupAr: (r.group_ar as string) ?? "",
+    groupEn: (r.group_en as string) ?? "",
+    ctaAr: (r.cta_ar as string) ?? "",
+    ctaEn: (r.cta_en as string) ?? "",
   };
 }
 
@@ -203,7 +213,7 @@ export function toRound(mechanic: Mechanic, r: Record<string, unknown>): RoundRo
   return { ...clean, id: r.id as string, day: r.day as string, status: r.status as string, source: r.source as string };
 }
 
-export type RoomCard = RoomRow & { round: RoundRow | null; answered: boolean; players: number };
+export type RoomCard = RoomRow & { round: RoundRow | null; answered: boolean; players: number; /** How many rounds this room has run so far (today's included). */ roundNo: number };
 
 /** Live rooms with today's round and whether this viewer has played it. */
 export async function liveRooms(tenantId: string, viewerId: string | null, day = playDay()): Promise<RoomCard[]> {
@@ -218,8 +228,10 @@ export async function liveRooms(tenantId: string, viewerId: string | null, day =
     .lte("day", day)
     .gte("day", addDays(day, -60));
   const byRoom = new Map<string, RoundRow>();
+  const roundNo = new Map<string, number>();
   for (const room of list) {
     const mine = (rounds ?? []).filter((r) => r.room_id === room.id) as Record<string, unknown>[];
+    roundNo.set(room.id, mine.length);
     const cur = currentRound(mine as { day: string; status: string }[], day) as Record<string, unknown> | null;
     if (cur) byRoom.set(room.id, toRound(room.mechanic, cur));
   }
@@ -232,7 +244,7 @@ export async function liveRooms(tenantId: string, viewerId: string | null, day =
   const players = new Map(counts);
   return list.map((room) => {
     const round = byRoom.get(room.id) ?? null;
-    return { ...room, round, answered: round ? played.has(round.id) : false, players: round ? (players.get(round.id) ?? 0) : 0 };
+    return { ...room, round, answered: round ? played.has(round.id) : false, players: round ? (players.get(round.id) ?? 0) : 0, roundNo: roundNo.get(room.id) ?? 0 };
   });
 }
 
@@ -647,17 +659,45 @@ export async function draftHoroscopes(tenantId: string, adminId: string | null, 
 
 export type WeeklyScore = { correct: number; rank: number | null; players: number; since: string };
 
-export async function weeklyScore(tenantId: string, viewerId: string): Promise<WeeklyScore> {
-  const since = weekStart(playDay());
-  const { data } = await db()
+async function weekScores(tenantId: string, since: string, until?: string): Promise<Map<string, number>> {
+  let q = db()
     .from("room_answers")
     .select("viewer_id, room_rounds!inner(tenant_id)")
     .eq("room_rounds.tenant_id", tenantId)
     .eq("correct", true)
-    .gte("created_at", new Date(`${since}T00:00:00+04:00`).toISOString())
-    .limit(100000);
+    .gte("created_at", new Date(`${since}T00:00:00+04:00`).toISOString());
+  if (until) q = q.lt("created_at", new Date(`${until}T00:00:00+04:00`).toISOString());
+  const { data } = await q.limit(100000);
   const by = new Map<string, number>();
   for (const a of data ?? []) by.set(a.viewer_id as string, (by.get(a.viewer_id as string) ?? 0) + 1);
+  return by;
+}
+
+/** Cron: pay last week's jackpot (once per winner per week, through grant_reward). */
+export async function awardWeeklyPrize(tenantId: string): Promise<{ winners: number; ping: number } | string> {
+  const settings = await playSettings(tenantId);
+  if (settings.weeklyPrizePing <= 0) return "off";
+  const thisWeek = weekStart(playDay());
+  const lastWeek = addDays(thisWeek, -7);
+  const winners = weeklyWinners(await weekScores(tenantId, lastWeek, thisWeek));
+  let paid = 0;
+  for (const id of winners) {
+    if (await grantPing(id, settings.weeklyPrizePing, "weekly_prize", `weekly:${lastWeek}:${id}`)) paid += 1;
+  }
+  return { winners: paid, ping: settings.weeklyPrizePing };
+}
+
+/** A live room the viewer hasn't answered today (random), else any live room. */
+export async function quickMatch(tenantId: string, viewerId: string): Promise<string | null> {
+  const rooms = (await liveRooms(tenantId, viewerId)).filter((r) => r.round);
+  const open = rooms.filter((r) => !r.answered);
+  const pool = open.length ? open : rooms;
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)].slug : null;
+}
+
+export async function weeklyScore(tenantId: string, viewerId: string): Promise<WeeklyScore> {
+  const since = weekStart(playDay());
+  const by = await weekScores(tenantId, since);
   const mine = by.get(viewerId) ?? 0;
   const rank = mine > 0 ? [...by.values()].filter((n) => n > mine).length + 1 : null;
   return { correct: mine, rank, players: by.size, since };
@@ -731,5 +771,11 @@ export async function runPlayCron(tenantId: string): Promise<Record<string, unkn
   } catch (e) {
     morning = e instanceof Error ? e.message : "morning push failed";
   }
-  return { horoscopes, pruned, morning };
+  let jackpot: unknown = "skipped";
+  try {
+    jackpot = await awardWeeklyPrize(tenantId);
+  } catch (e) {
+    jackpot = e instanceof Error ? e.message : "jackpot failed";
+  }
+  return { horoscopes, pruned, morning, jackpot };
 }

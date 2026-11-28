@@ -123,6 +123,20 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
           <Pair name="people_sub" label="Line under the title" value={c.people.sub} n={120} />
         </div>
 
+        <h2>Rooms page</h2>
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Pair name="rp_kicker" label="Small line" value={c.roomsPage.kicker} n={60} />
+          <Pair name="rp_title" label="Title" value={c.roomsPage.title} n={40} />
+          <Pair name="rp_sub" label="Line under the title" value={c.roomsPage.sub} n={200} area />
+          <Pair name="rp_jackpot" label="Jackpot label" value={c.roomsPage.jackpot} n={40} />
+          <Pair name="rp_rules" label="Jackpot rules" value={c.roomsPage.rules} n={600} area />
+          <Pair name="rp_grid" label="Grid title" value={c.roomsPage.gridTitle} n={60} />
+          <Pair name="rp_qtitle" label="Quick match title" value={c.roomsPage.quickTitle} n={60} />
+          <Pair name="rp_qtext" label="Quick match line" value={c.roomsPage.quickText} n={120} />
+          <Pair name="rp_qcta" label="Quick match button" value={c.roomsPage.quickCta} n={30} />
+          <p className="muted" style={{ margin: 0 }}>The jackpot amount is set on <Link href="/admin/rooms">Rooms</Link>; each room&apos;s picture, label, group and button are on its own page. The main stage is the Home hero room.</p>
+        </div>
+
         <h2>Heroes page (top)</h2>
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <Pair name="heroes_kicker" label="Small line" value={c.heroes.kicker} n={60} />

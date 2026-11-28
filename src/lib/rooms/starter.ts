@@ -18,6 +18,8 @@ export type StarterRoom = {
   tagAr?: string;
   tagEn?: string;
   homeSlot?: "hero" | "tile" | "wide" | "hidden";
+  groupAr?: string;
+  groupEn?: string;
   rounds: Omit<Round, "extra">[] | Round[];
 };
 
@@ -26,6 +28,8 @@ const o = (ar: string, en: string, more: Record<string, unknown> = {}) => ({ id:
 export const STARTER_ROOMS: StarterRoom[] = [
   {
     slug: "hot-seat",
+    groupAr: "المسرح المباشر",
+    groupEn: "Live stage",
     tagAr: "المسرح الرئيسي",
     tagEn: "Main stage",
     homeSlot: "hero",
@@ -69,6 +73,8 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "would-you-rather",
+    groupAr: "تحدي ونقاش",
+    groupEn: "PvP & debate",
     tagAr: "تحدي سريع",
     tagEn: "Casual PvP",
     homeSlot: "tile",
@@ -90,6 +96,8 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "unpopular-opinions",
+    groupAr: "تحدي ونقاش",
+    groupEn: "PvP & debate",
     tagAr: "ساحة ساخنة",
     tagEn: "Heated arena",
     homeSlot: "tile",
@@ -111,6 +119,8 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "who-is-lying",
+    groupAr: "ألغاز وذكاء",
+    groupEn: "Mystery & mind games",
     tagAr: "لعبة ذكاء",
     tagEn: "Mind game",
     homeSlot: "tile",
@@ -145,6 +155,8 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "guess-the-mystery",
+    groupAr: "ألغاز وذكاء",
+    groupEn: "Mystery & mind games",
     tagAr: "مهمة جماعية",
     tagEn: "Co-op quest",
     homeSlot: "wide",
@@ -179,6 +191,8 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "debate",
+    groupAr: "تحدي ونقاش",
+    groupEn: "PvP & debate",
     tagAr: "الحلبة",
     tagEn: "The ring",
     homeSlot: "tile",

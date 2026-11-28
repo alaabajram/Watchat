@@ -14,6 +14,8 @@ export type HomeContent = {
   discover: { title: L; tiles: HomeTile[] };
   /** The Heroes (AI People) page header. */
   heroes: { kicker: L; title: L; badge: L; sub: L };
+  /** The Rooms page: header, the weekly jackpot banner, the grid title and the quick-match bar. */
+  roomsPage: { kicker: L; title: L; sub: L; jackpot: L; rules: L; gridTitle: L; quickTitle: L; quickText: L; quickCta: L };
 };
 
 const l = (ar: string, en: string): L => ({ ar, en });
@@ -23,6 +25,21 @@ const DEFAULT_HEROES = {
   title: l("الأبطال والرفاق", "Heroes & companions"),
   badge: l("فئة +S", "Tier S+"),
   sub: l("اختر رفيقك من شخصيات الذكاء الاصطناعي: حكايات، تحديات وسوالف آخر الليل.", "Summon your AI companion for roleplay quests, tactical debates & deep late-night banter."),
+};
+
+const DEFAULT_ROOMS_PAGE = {
+  kicker: l("ساحة الغرف // الحلبات شغّالة", "Lobby hub // active arenas"),
+  title: l("الغرف", "Rooms"),
+  sub: l("جولة جديدة كل يوم. جاوب، نافس، وشوف وين الناس.", "A new round every day. Answer, battle, and see where everyone landed."),
+  jackpot: l("جائزة الأسبوع", "Weekly jackpot"),
+  rules: l(
+    "في غرف «مين يكذب؟» و«خمّن السر» كل إجابة صح تحسب نقطة. صاحب أعلى نقاط من الإثنين للأحد ياخذ الجائزة (لو تعادلتوا، كل واحد ياخذها). تنزل الجائزة في محفظتك يوم الإثنين.",
+    "In Who Is Lying and Guess the Mystery rooms every right answer scores a point. The top scorer from Monday to Sunday wins the prize (ties all win). It lands in your wallet on Monday.",
+  ),
+  gridTitle: l("اختر حلبتك // فردي وجماعي", "Arena selection // 2-player & multi"),
+  quickTitle: l("تحدي عشوائي", "Random battle // auto match"),
+  quickText: l("ندخلك فوراً غرفة ما لعبتها اليوم", "Instantly match into a room you haven't played today"),
+  quickCta: l("ادخل الحين", "Quick match"),
 };
 
 export const DEFAULT_HOME: HomeContent = {
@@ -56,7 +73,9 @@ export const DEFAULT_HOME: HomeContent = {
     ],
   },
   heroes: DEFAULT_HEROES,
+  roomsPage: DEFAULT_ROOMS_PAGE,
 };
+
 
 
 const clip = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
@@ -120,6 +139,17 @@ export function sanitizeHome(raw: unknown): HomeContent {
       title: cleanL(r.heroes?.title, d.heroes.title, 60),
       badge: cleanL(r.heroes?.badge, d.heroes.badge, 20),
       sub: cleanL(r.heroes?.sub, d.heroes.sub, 200),
+    },
+    roomsPage: {
+      kicker: cleanL(r.roomsPage?.kicker, d.roomsPage.kicker, 60),
+      title: cleanL(r.roomsPage?.title, d.roomsPage.title, 40),
+      sub: cleanL(r.roomsPage?.sub, d.roomsPage.sub, 200),
+      jackpot: cleanL(r.roomsPage?.jackpot, d.roomsPage.jackpot, 40),
+      rules: cleanL(r.roomsPage?.rules, d.roomsPage.rules, 600),
+      gridTitle: cleanL(r.roomsPage?.gridTitle, d.roomsPage.gridTitle, 60),
+      quickTitle: cleanL(r.roomsPage?.quickTitle, d.roomsPage.quickTitle, 60),
+      quickText: cleanL(r.roomsPage?.quickText, d.roomsPage.quickText, 120),
+      quickCta: cleanL(r.roomsPage?.quickCta, d.roomsPage.quickCta, 30),
     },
   };
 }
