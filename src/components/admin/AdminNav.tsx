@@ -8,12 +8,15 @@ import { usePathname } from "next/navigation";
 export type NavItem = { href: string; label: string; icon: IconName; group: string; also?: string[]; hint?: string };
 export type IconName =
   | "dashboard" | "spend" | "cms" | "flow" | "replies" | "template" | "sequence" | "campaign"
-  | "growth" | "viewers" | "orders" | "pricing" | "offers" | "team" | "ai" | "audit" | "brand";
+  | "growth" | "viewers" | "orders" | "pricing" | "offers" | "team" | "ai" | "audit" | "brand" | "rooms" | "people" | "daily";
 
 const PATHS: Record<IconName, string> = {
   dashboard: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z",
   spend: "M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3S9.5 10.5 12 11s4.5 1.3 4.5 3.5-2 3-4.5 3-4.5-1.3-4.5-3",
   cms: "M4 5h16v14H4zM4 9h16M9 9v10",
+  rooms: "M8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM16.5 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM2.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M13.5 15.2c.9-.8 1.9-1.2 3-1.2 2.3 0 4 1.7 4.5 4.5",
+  people: "M4 8h16v12H4zM12 4v4M9 14h.01M15 14h.01",
+  daily: "M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z",
   flow: "M6 4h5v5H6zM13 15h5v5h-5zM8.5 9v3.5h7V15",
   replies: "M21 12a8 8 0 0 1-11.8 7L4 20.5l1.5-5A8 8 0 1 1 21 12zM8.5 11h7M8.5 14h4",
   template: "M5 4h14v16H5zM9 8h6M9 12h6M9 16h3",

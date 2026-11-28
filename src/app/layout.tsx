@@ -5,6 +5,7 @@ import { brandCss } from "@/lib/site/brand";
 import { getSiteSafe } from "@/lib/site/store";
 import "./globals.css";
 import "./brand.css";
+import "./play.css";
 
 // Brand & site settings (name, icon, colours) are read from the database; refreshed at most every minute.
 export const revalidate = 60;

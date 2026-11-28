@@ -9,6 +9,10 @@ import { DEFAULT_MODEL } from "./anthropic";
 export const ASSISTANT_PURPOSE = "viewer_assistant";
 /** Cheapest, fastest model: the assistant only classifies short messages. */
 export const ASSISTANT_MODEL = "claude-haiku-5-5";
+/** Viewer-facing Playground AI (AI People chats, tarot readings): its own daily cap, not the team's monthly limit. */
+export const PLAY_PURPOSES = ["ai_people", "fortune"] as const;
+/** Purposes that don't count toward the team's monthly limit. */
+const VIEWER_PURPOSES = `(${[ASSISTANT_PURPOSE, ...PLAY_PURPOSES].join(",")})`;
 
 function dayStart(): string {
   const d = new Date();
@@ -25,6 +29,19 @@ export async function assistantAccount(tenantId: string): Promise<{ ok: true; ap
   if (!data?.api_key_enc || !data.enabled || !data.assistant_enabled) return { ok: false, reason: "off" };
   const { count } = await db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("purpose", ASSISTANT_PURPOSE).gte("created_at", dayStart());
   if ((count ?? 0) >= data.assistant_daily_limit) return { ok: false, reason: "daily limit" };
+  try {
+    return { ok: true, apiKey: openSecret(data.api_key_enc, env.settingsEncryptionKey), model: ASSISTANT_MODEL };
+  } catch {
+    return { ok: false, reason: "key unreadable" };
+  }
+}
+
+/** The key for viewer Playground AI, within the label's daily cap (Admin → AI People → settings). */
+export async function playAccount(tenantId: string, dailyCap: number): Promise<{ ok: true; apiKey: string; model: string } | { ok: false; reason: string }> {
+  const { data } = await db().from("tenant_ai_settings").select("api_key_enc, enabled").eq("tenant_id", tenantId).maybeSingle();
+  if (!data?.api_key_enc || !data.enabled) return { ok: false, reason: "off" };
+  const { count } = await db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).in("purpose", [...PLAY_PURPOSES]).gte("created_at", dayStart());
+  if ((count ?? 0) >= dailyCap) return { ok: false, reason: "daily cap" };
   try {
     return { ok: true, apiKey: openSecret(data.api_key_enc, env.settingsEncryptionKey), model: ASSISTANT_MODEL };
   } catch {
@@ -62,7 +79,7 @@ export async function getAiSettings(tenantId: string): Promise<AiSettings> {
       .select("api_key_enc, api_key_last4, model, monthly_request_limit, enabled, updated_at")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).neq("purpose", ASSISTANT_PURPOSE).gte("created_at", monthStart()),
+    db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).not("purpose", "in", VIEWER_PURPOSES).gte("created_at", monthStart()),
   ]);
   return {
     connected: Boolean(data?.api_key_enc),
@@ -84,7 +101,7 @@ export async function aiAccount(tenantId: string): Promise<{ ok: true; apiKey: s
     .maybeSingle();
   if (!data?.api_key_enc) return { ok: false, reason: "No AI account is connected. The owner can add one in Admin → AI account." };
   if (!data.enabled) return { ok: false, reason: "AI is switched off for this label in Admin → AI account." };
-  const { count } = await db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).neq("purpose", ASSISTANT_PURPOSE).gte("created_at", monthStart());
+  const { count } = await db().from("ai_usage").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).not("purpose", "in", VIEWER_PURPOSES).gte("created_at", monthStart());
   if ((count ?? 0) >= data.monthly_request_limit) return { ok: false, reason: `This month's AI limit (${data.monthly_request_limit} requests) is used up.` };
   try {
     return { ok: true, apiKey: openSecret(data.api_key_enc, env.settingsEncryptionKey), model: data.model };

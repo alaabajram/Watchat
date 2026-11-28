@@ -4,7 +4,7 @@ export type Locale = "ar" | "en";
 
 const strings = {
   ar: {
-    tagline: "دراما حقيقية في الشات",
+    tagline: "دايماً في شي ممتع يصير",
     startInWhatsApp: "ابدأ في واتساب",
     linkExpiredTitle: "انتهت صلاحية هذا الرابط",
     linkExpiredBody: "الروابط الشخصية صالحة لمدة 7 أيام. اطلب رابط جديد من واتساب وكمّل من حيث وقفت.",
@@ -201,7 +201,7 @@ const strings = {
     shareText: (title: string, url: string) => `تابع «${title}» على واتشات — دراما قصيرة تبدأها من الشات 👇\n${url}`,
   },
   en: {
-    tagline: "Real drama, in the chat",
+    tagline: "Something interesting is always happening",
     startInWhatsApp: "Start in WhatsApp",
     linkExpiredTitle: "This link has expired",
     linkExpiredBody: "Personal links work for 7 days. Get a fresh link in WhatsApp and continue where you left off.",

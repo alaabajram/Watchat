@@ -9,6 +9,7 @@ import { syncTemplateStatuses } from "@/lib/messaging/template-store";
 import { currentTenantId } from "@/lib/supabase";
 import { wabaConfigured } from "@/lib/whatsapp/templates";
 import { runMessaging } from "@/lib/messaging/runner";
+import { runPlayCron } from "@/lib/play/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,14 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     billing = e instanceof Error ? e.message : "billing failed";
   }
+  // Playground: draft tomorrow's horoscopes (once), prune AI chats older than 30 days.
+  let play: unknown = "skipped";
+  try {
+    play = await runPlayCron(await currentTenantId());
+  } catch (e) {
+    play = e instanceof Error ? e.message : "play cron failed";
+  }
   const summary = await runMessaging();
-  console.log("[cron] messaging", JSON.stringify({ templates, flows, growth, billing, ...summary }));
-  return NextResponse.json({ templates, flows, growth, ...summary });
+  console.log("[cron] messaging", JSON.stringify({ templates, flows, growth, billing, play, ...summary }));
+  return NextResponse.json({ templates, flows, growth, play, ...summary });
 }
