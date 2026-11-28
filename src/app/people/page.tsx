@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // AI People: the personality cards. Each is an AI character (labelled) the team manages in Admin → AI People.
 
 import Link from "next/link";
@@ -29,7 +30,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
       <div className="pl-section">
         {people.map((p) => (
           <Link key={p.id} href={`/people/${p.slug}`} className="pl-card pl-person" style={{ ["--pl-accent" as string]: p.color }}>
-            <span className="pl-avatar" aria-hidden="true">{p.emoji}</span>
+            <span className="pl-avatar" aria-hidden="true">{p.image ? <img src={p.image} alt="" /> : p.emoji}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="pl-row">
                 <b style={{ fontSize: 17 }}>{L(p.nameAr, p.nameEn)}</b>

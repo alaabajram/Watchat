@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 // settings fold away. Nothing was removed: the chat tools are kept for a channel that may come back.
 const NAV: (NavItem & { area: Area })[] = [
   { href: "/admin", label: "Dashboard", area: "dashboard", icon: "dashboard", group: "", hint: "How viewers and money are doing" },
+  { href: "/admin/home", label: "Home page", area: "play", icon: "brand", group: "Play", hint: "Headline, section texts, pictures and Discover tiles" },
   { href: "/admin/rooms", label: "Rooms", area: "play", icon: "rooms", group: "Play", hint: "Daily rounds: polls, would-you-rather, hot seat, debates…" },
   { href: "/admin/people", label: "AI People", area: "play", icon: "people", group: "Play", hint: "AI characters viewers chat with, and their limits" },
   { href: "/admin/daily", label: "Daily", area: "play", icon: "daily", group: "Play", hint: "Horoscope approvals, Fortune Teller price" },

@@ -3,6 +3,7 @@
 // care…) are added to every persona in code and can't be switched off here.
 
 import { Flash } from "@/components/admin/Flash";
+import { ImageField } from "@/components/admin/ImageField";
 import { requireAdmin } from "@/lib/admin/auth";
 import { playDay } from "@/lib/daily/daily";
 import { ensureStarter, playSettings, toPerson, type PersonRow } from "@/lib/play/store";
@@ -41,6 +42,19 @@ function PersonForm({ p }: { p?: PersonRow }) {
           Order
           <input name="sort" type="number" defaultValue={p?.sort ?? 0} style={{ width: 80 }} />
         </label>
+      </div>
+      <div className="row" style={{ alignItems: "flex-start", gap: 20 }}>
+        <ImageField name="image_path" label="Portrait" hint="Square works best. Without one, the emoji shows." path={p?.imagePath ?? null} url={p?.image ?? null} ratio="1 / 1" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label>
+            Label (Arabic), e.g. «الأخت الكبيرة»
+            <input name="tag_ar" defaultValue={p?.tagAr} dir="rtl" maxLength={40} />
+          </label>
+          <label>
+            Label (English), e.g. “Big sister”
+            <input name="tag_en" defaultValue={p?.tagEn} maxLength={40} />
+          </label>
+        </div>
       </div>
       <div className="row">
         <label style={{ flex: 1 }}>

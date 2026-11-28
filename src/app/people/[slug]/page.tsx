@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // Chat with one AI person.
 
 import { notFound } from "next/navigation";
@@ -24,7 +25,7 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
   return (
     <PlayShell locale={locale} balance={state.balance} nav="people" backHref="/people">
       <header className="pl-person" style={{ ["--pl-accent" as string]: person.color }}>
-        <span className="pl-avatar" aria-hidden="true">{person.emoji}</span>
+        <span className="pl-avatar" aria-hidden="true">{person.image ? <img src={person.image} alt="" /> : person.emoji}</span>
         <div>
           <h1 className="pl-title">{ar ? person.nameAr : person.nameEn}</h1>
           <p className="pl-muted">{ar ? person.roleAr : person.roleEn}</p>

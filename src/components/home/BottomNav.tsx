@@ -10,7 +10,7 @@ export type NavKey = "home" | "rooms" | "today" | "people" | "profile" | "explor
 
 const LABELS = {
   ar: { rooms: "الغرف", today: "اليوم", people: "شخصيات" },
-  en: { rooms: "Rooms", today: "Today", people: "AI People" },
+  en: { rooms: "Rooms", today: "Today", people: "Heroes" },
 } as const;
 
 export function BottomNav({ locale, current }: { locale: Locale; current: NavKey }) {

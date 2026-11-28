@@ -11,6 +11,8 @@ import { trackEvent } from "../events";
 import { nextMessageQuota, parseReply, personaSystemPrompt, recentTurns, REPLY_TOOL, STARTER_PEOPLE, type Person } from "../people/persona";
 import { answerCorrect, currentRound, isMechanic, parseRounds, roundsPrompt, roundsTool, sanitizeConfig, sanitizeRound, tally, validOption, type Mechanic, type RoomConfig, type Round, type Tally } from "../rooms/engine";
 import { STARTER_ROOMS } from "../rooms/starter";
+import { publicUrlFor } from "../storage/cloudflare";
+import { cleanPath, isHomeSlot, sanitizeHome, type HomeContent, type HomeSlot } from "./home";
 import { allow } from "../security/rate-limit";
 import type { SessionViewer } from "../session";
 import { currentTenantId, db } from "../supabase";
@@ -73,7 +75,7 @@ export async function addStarterRooms(tenantId: string, onlyIfEmpty = true): Pro
     if (taken.has(r.slug)) continue;
     const { data: room, error } = await db()
       .from("rooms")
-      .insert({ tenant_id: tenantId, slug: r.slug, mechanic: r.mechanic, title_ar: r.titleAr, title_en: r.titleEn, blurb_ar: r.blurbAr, blurb_en: r.blurbEn, emoji: r.emoji, color: r.color, status: "live", config: sanitizeConfig(r.config), sort: i })
+      .insert({ tenant_id: tenantId, slug: r.slug, mechanic: r.mechanic, title_ar: r.titleAr, title_en: r.titleEn, blurb_ar: r.blurbAr, blurb_en: r.blurbEn, emoji: r.emoji, color: r.color, status: "live", config: sanitizeConfig(r.config), sort: i, tag_ar: r.tagAr ?? "", tag_en: r.tagEn ?? "", home_slot: r.homeSlot ?? "tile" })
       .select("id")
       .single();
     if (error || !room) continue;
@@ -94,11 +96,22 @@ export async function addStarterPeople(tenantId: string, onlyIfEmpty = true): Pr
   }
   const { data: have } = await db().from("ai_people").select("slug").eq("tenant_id", tenantId);
   const taken = new Set((have ?? []).map((r) => r.slug as string));
-  const rows = STARTER_PEOPLE.filter((p) => !taken.has(p.slug)).map((p, i) => ({ tenant_id: tenantId, ...personRow(p), slug: p.slug, status: "live", sort: i }));
+  const rows = STARTER_PEOPLE.filter((p) => !taken.has(p.slug)).map((p, i) => ({ tenant_id: tenantId, ...personRow(p), slug: p.slug, status: "live", sort: i, tag_ar: STARTER_TAGS[p.slug]?.[0] ?? "", tag_en: STARTER_TAGS[p.slug]?.[1] ?? "" }));
   if (!rows.length) return 0;
   const { error } = await db().from("ai_people").insert(rows);
   return error ? 0 : rows.length;
 }
+
+/** Home page labels for the starter AI People. */
+const STARTER_TAGS: Record<string, [string, string]> = {
+  layla: ["الأخت الكبيرة", "Big sister"],
+  "abu-saleh": ["الحكواتي", "Storyteller"],
+  "chef-salma": ["الشيف", "Home chef"],
+  "coach-fahd": ["مشجع", "Super fan"],
+  nour: ["شاعرة", "Poet"],
+  zain: ["قيمر", "Gamer"],
+  "madame-zahra": ["عرّافة", "Fortune teller"],
+};
 
 export function personRow(p: Omit<Person, "slug">) {
   return {
@@ -131,7 +144,31 @@ export async function ensureStarter(tenantId: string): Promise<void> {
 // Rooms.
 // ---------------------------------------------------------------------------
 
-export type RoomRow = { id: string; slug: string; mechanic: Mechanic; titleAr: string; titleEn: string; blurbAr: string; blurbEn: string; emoji: string; color: string; status: string; config: RoomConfig; sort: number };
+export type RoomRow = {
+  id: string;
+  slug: string;
+  mechanic: Mechanic;
+  titleAr: string;
+  titleEn: string;
+  blurbAr: string;
+  blurbEn: string;
+  emoji: string;
+  color: string;
+  status: string;
+  config: RoomConfig;
+  sort: number;
+  imagePath: string | null;
+  image: string | null;
+  tagAr: string;
+  tagEn: string;
+  homeSlot: HomeSlot;
+};
+
+/** A link for a stored Playground picture (only paths we made). */
+export function playImage(path: unknown): string | null {
+  const p = cleanPath(path);
+  return p ? publicUrlFor(p) : null;
+}
 export type RoundRow = Round & { id: string; day: string; status: string; source: string };
 
 export function toRoom(r: Record<string, unknown>): RoomRow {
@@ -149,6 +186,11 @@ export function toRoom(r: Record<string, unknown>): RoomRow {
     status: r.status as string,
     config: sanitizeConfig(r.config),
     sort: (r.sort as number) ?? 0,
+    imagePath: cleanPath(r.image_path),
+    image: playImage(r.image_path),
+    tagAr: (r.tag_ar as string) ?? "",
+    tagEn: (r.tag_en as string) ?? "",
+    homeSlot: isHomeSlot(r.home_slot) ? r.home_slot : "tile",
   };
 }
 
@@ -273,7 +315,7 @@ export async function draftRounds(tenantId: string, adminId: string, roomId: str
 // AI People.
 // ---------------------------------------------------------------------------
 
-export type PersonRow = Person & { id: string; status: string; sort: number };
+export type PersonRow = Person & { id: string; status: string; sort: number; imagePath: string | null; image: string | null; tagAr: string; tagEn: string };
 
 export function toPerson(r: Record<string, unknown>): PersonRow {
   return {
@@ -293,6 +335,10 @@ export function toPerson(r: Record<string, unknown>): PersonRow {
     pingPerMessage: (r.ping_per_message as number) ?? 1,
     status: r.status as string,
     sort: (r.sort as number) ?? 0,
+    imagePath: cleanPath(r.image_path),
+    image: playImage(r.image_path),
+    tagAr: (r.tag_ar as string) ?? "",
+    tagEn: (r.tag_en as string) ?? "",
   };
 }
 
@@ -624,6 +670,21 @@ export async function runMorningPush(tenantId: string, batch = 200): Promise<{ s
     if (ok) sent += 1;
   }
   return { sent, skipped: null };
+}
+
+// ---------------------------------------------------------------------------
+// Home page content and live numbers.
+// ---------------------------------------------------------------------------
+
+export async function homeContent(tenantId: string): Promise<HomeContent> {
+  const { data } = await db().from("home_content").select("content").eq("tenant_id", tenantId).maybeSingle();
+  return sanitizeHome(data?.content ?? {});
+}
+
+/** Viewers who opened the Playground today (Gulf time). */
+export async function activeToday(tenantId: string): Promise<number> {
+  const { count } = await db().from("habit_days").select("viewer_id, viewers!inner(tenant_id)", { count: "exact", head: true }).eq("viewers.tenant_id", tenantId).eq("day", playDay());
+  return count ?? 0;
 }
 
 /** Cron: make sure tomorrow's horoscopes are drafted (once), and prune old chats. */

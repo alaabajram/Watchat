@@ -10,6 +10,10 @@ import { isSign, parseStreakRewards } from "@/lib/daily/daily";
 import { sanitizePerson } from "@/lib/people/persona";
 import { addStarterPeople, addStarterRooms, draftHoroscopes, draftRounds, personRow } from "@/lib/play/store";
 import { isMechanic, MECHANICS, roundIssues, sanitizeConfig, sanitizeRound, type Mechanic } from "@/lib/rooms/engine";
+import { cleanHref, cleanPath, isHomeSlot, sanitizeHome } from "@/lib/play/home";
+import { randomToken } from "@/lib/crypto";
+import { uploadTarget } from "@/lib/storage/cloudflare";
+import type { UploadTarget } from "@/lib/storage/refs";
 import { db } from "@/lib/supabase";
 
 const ROOMS = "/admin/rooms";
@@ -24,7 +28,12 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function roomFields(fd: FormData) {
   const color = str(fd, "color", 7);
+  const slot = str(fd, "home_slot", 10);
   return {
+    image_path: cleanPath(str(fd, "image_path", 300)),
+    tag_ar: str(fd, "tag_ar", 40),
+    tag_en: str(fd, "tag_en", 40),
+    home_slot: isHomeSlot(slot) ? slot : "tile",
     title_ar: str(fd, "title_ar", 80),
     title_en: str(fd, "title_en", 80),
     blurb_ar: str(fd, "blurb_ar", 200),
@@ -63,8 +72,10 @@ export async function saveRoomAction(fd: FormData) {
     const { count } = await db().from("room_rounds").select("id", { count: "exact", head: true }).eq("room_id", id).eq("status", "approved");
     if (!count) done(back, "Approve at least one round before setting the room live.", "err");
   }
+  if (f.home_slot === "hero") await db().from("rooms").update({ home_slot: "tile" }).eq("tenant_id", admin.tenantId).eq("home_slot", "hero").neq("id", id);
   const { error } = await db().from("rooms").update(f).eq("id", id).eq("tenant_id", admin.tenantId);
   if (error) done(back, `Save failed: ${error.message}`, "err");
+  revalidatePath("/");
   await audit(admin, "room.saved", "room", id, { status: f.status });
   revalidatePath("/rooms");
   done(back, "Room saved.");
@@ -200,7 +211,7 @@ export async function savePersonAction(fd: FormData) {
   if (!p.nameAr || !p.nameEn || !p.persona) done(PEOPLE, "Each AI person needs Arabic and English names and a personality.", "err");
   if (!/ذكاء اصطناعي/.test(p.greetingAr) || !/\bAI\b/i.test(p.greetingEn)) done(PEOPLE, "The greeting must say it's an AI character (Arabic: «ذكاء اصطناعي», English: “AI”).", "err");
   const status = str(fd, "status") === "live" ? "live" : "draft";
-  const row = { ...personRow(p), status, sort: int(fd, "sort", 0) };
+  const row = { ...personRow(p), status, sort: int(fd, "sort", 0), image_path: cleanPath(str(fd, "image_path", 300)), tag_ar: str(fd, "tag_ar", 40), tag_en: str(fd, "tag_en", 40) };
   if (id) {
     const { error } = await db().from("ai_people").update(row).eq("id", id).eq("tenant_id", admin.tenantId);
     if (error) done(PEOPLE, `Save failed: ${error.message}`, "err");
@@ -303,4 +314,59 @@ export async function draftHoroscopesAction(fd: FormData) {
   const r = await draftHoroscopes(admin.tenantId, admin.id, day, str(fd, "brief", 500));
   await audit(admin, "horoscope.ai_drafted", "horoscope", null, { day, drafted: r.drafted });
   done(`${DAILY}?day=${day}`, r.error ? `AI: ${r.error}` : `${r.drafted} readings drafted. Check and approve them.`, r.error ? "err" : "ok");
+}
+
+// ---------------------------------------------------------------------------
+// Pictures and the Home page
+// ---------------------------------------------------------------------------
+
+const PIC_EXT = ["png", "jpg", "jpeg", "webp"];
+
+/** Where the browser sends a Playground picture (rooms, AI People, Home page). */
+export async function createPlayUpload(ext: string): Promise<UploadTarget> {
+  const admin = await requireAdmin("play");
+  const e = ext.toLowerCase();
+  if (!PIC_EXT.includes(e)) throw new Error("Use a JPG, PNG or WebP picture.");
+  return uploadTarget(`play/${admin.tenantId}/${Date.now()}-${randomToken(6)}.${e}`);
+}
+
+const L = (fd: FormData, key: string, n = 160) => ({ ar: str(fd, `${key}_ar`, n), en: str(fd, `${key}_en`, n) });
+
+export async function saveHomeAction(fd: FormData) {
+  const admin = await requireAdmin("play");
+  const tiles = Array.from({ length: 6 }, (_, i) => ({
+    kicker: L(fd, `t${i}_kicker`, 60),
+    title: L(fd, `t${i}_title`, 80),
+    text: L(fd, `t${i}_text`, 200),
+    cta: L(fd, `t${i}_cta`, 30),
+    href: cleanHref(str(fd, `t${i}_href`, 300)),
+    image: cleanPath(str(fd, `t${i}_image`, 300)),
+    color: str(fd, `t${i}_color`, 7),
+  })).filter((t) => t.title.ar || t.title.en);
+  const content = sanitizeHome({
+    kicker: L(fd, "kicker", 60),
+    headline: L(fd, "headline", 80),
+    highlight: L(fd, "highlight", 80),
+    day: { title: L(fd, "day_title", 60), sub: L(fd, "day_sub", 120), cardImage: str(fd, "card_image", 300), horoscopeImage: str(fd, "horoscope_image", 300) },
+    rooms: { title: L(fd, "rooms_title", 60), sub: L(fd, "rooms_sub", 120), badge: L(fd, "rooms_badge", 30) },
+    people: { title: L(fd, "people_title", 60), sub: L(fd, "people_sub", 120), badge: L(fd, "people_badge", 30) },
+    discover: { title: L(fd, "discover_title", 60), tiles },
+  });
+  const { error } = await db().from("home_content").upsert({ tenant_id: admin.tenantId, content, updated_at: new Date().toISOString() });
+  if (error) done("/admin/home", `Save failed: ${error.message}`, "err");
+  await audit(admin, "home.saved", "home_content", null, { tiles: content.discover.tiles.length });
+  revalidatePath("/");
+  done("/admin/home", "Home page saved. Empty boxes use the default text.");
+}
+
+export async function saveHomeSlotAction(fd: FormData) {
+  const admin = await requireAdmin("play");
+  const id = uuid(fd, "id");
+  const slot = str(fd, "home_slot", 10);
+  if (!id || !isHomeSlot(slot)) done("/admin/home", "Pick a room and a place.", "err");
+  if (slot === "hero") await db().from("rooms").update({ home_slot: "tile" }).eq("tenant_id", admin.tenantId).eq("home_slot", "hero");
+  await db().from("rooms").update({ home_slot: slot }).eq("id", id).eq("tenant_id", admin.tenantId);
+  await audit(admin, "home.room_slot", "room", id, { slot });
+  revalidatePath("/");
+  done("/admin/home", "Room placement saved.");
 }

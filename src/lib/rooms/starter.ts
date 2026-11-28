@@ -14,6 +14,10 @@ export type StarterRoom = {
   emoji: string;
   color: string;
   config: Partial<RoomConfig>;
+  /** Home page label and place. */
+  tagAr?: string;
+  tagEn?: string;
+  homeSlot?: "hero" | "tile" | "wide" | "hidden";
   rounds: Omit<Round, "extra">[] | Round[];
 };
 
@@ -22,6 +26,9 @@ const o = (ar: string, en: string, more: Record<string, unknown> = {}) => ({ id:
 export const STARTER_ROOMS: StarterRoom[] = [
   {
     slug: "hot-seat",
+    tagAr: "المسرح الرئيسي",
+    tagEn: "Main stage",
+    homeSlot: "hero",
     mechanic: "hot_seat",
     titleAr: "الكرسي الساخن",
     titleEn: "Daily Hot Seat",
@@ -62,6 +69,9 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "would-you-rather",
+    tagAr: "تحدي سريع",
+    tagEn: "Casual PvP",
+    homeSlot: "tile",
     mechanic: "would_you_rather",
     titleAr: "تفضّل إيش؟",
     titleEn: "Would You Rather",
@@ -80,6 +90,9 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "unpopular-opinions",
+    tagAr: "ساحة ساخنة",
+    tagEn: "Heated arena",
+    homeSlot: "tile",
     mechanic: "opinion",
     titleAr: "رأي غير شعبي",
     titleEn: "Unpopular Opinions",
@@ -98,6 +111,9 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "who-is-lying",
+    tagAr: "لعبة ذكاء",
+    tagEn: "Mind game",
+    homeSlot: "tile",
     mechanic: "liar",
     titleAr: "مين يكذب؟",
     titleEn: "Who Is Lying",
@@ -129,6 +145,9 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "guess-the-mystery",
+    tagAr: "مهمة جماعية",
+    tagEn: "Co-op quest",
+    homeSlot: "wide",
     mechanic: "guess",
     titleAr: "خمّن السر",
     titleEn: "Guess the Mystery",
@@ -160,6 +179,9 @@ export const STARTER_ROOMS: StarterRoom[] = [
   },
   {
     slug: "debate",
+    tagAr: "الحلبة",
+    tagEn: "The ring",
+    homeSlot: "tile",
     mechanic: "debate",
     titleAr: "المناظرة",
     titleEn: "The Debate",
