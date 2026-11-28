@@ -1,7 +1,7 @@
 // The animated Watchat emblem (bubble strip + pulsing dot) with the wordmark — the same logo on every sign-in screen.
 
 /* eslint-disable @next/next/no-img-element */
-// Each scroll flips the bubble's colour (coral ↔ mint, play mark in ink #120E18) and it settles on mint.
+// Each scroll flips the bubble's colour (coral ↔ mint, play mark in #F7F5F2) and it settles on mint.
 const FRAMES = ["/brand/emblem-bubble-coral-ink.png", "/brand/emblem-bubble-mint-ink.png", "/brand/emblem-bubble-coral-ink.png", "/brand/emblem-bubble-mint-ink.png"];
 
 export function AnimatedLogo() {
