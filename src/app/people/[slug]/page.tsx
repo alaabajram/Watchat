@@ -3,6 +3,7 @@
 
 import { notFound } from "next/navigation";
 import { PersonChat } from "@/components/play/PersonChat";
+import { VoiceChip } from "@/components/play/VoiceChip";
 import { PlayShell, SignedOut } from "@/components/play/PlayShell";
 import { AI_LABEL } from "@/lib/people/persona";
 import { chatState, personBySlug } from "@/lib/play/store";
@@ -30,6 +31,11 @@ export default async function PersonPage({ params, searchParams }: { params: Pro
           <h1 className="pl-title">{ar ? person.nameAr : person.nameEn}</h1>
           <p className="pl-muted">{ar ? person.roleAr : person.roleEn}</p>
           <span className="pl-tag pl-tag-ai">{AI_LABEL[locale]}</span>
+          {person.voice ? (
+            <div style={{ marginTop: 8 }}>
+              <VoiceChip src={person.voice} label={ar ? person.card.featureAr || "رسالة صوتية" : person.card.featureEn || "Voice note"} emoji={person.card.featureEmoji || "🎙️"} />
+            </div>
+          ) : null}
         </div>
       </header>
       <PersonChat

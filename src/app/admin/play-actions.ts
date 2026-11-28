@@ -8,6 +8,7 @@ import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, str, uuid } from "@/lib/admin/forms";
 import { isSign, parseStreakRewards } from "@/lib/daily/daily";
 import { sanitizePerson } from "@/lib/people/persona";
+import { cardRow, sanitizeStats, toCard } from "@/lib/people/card";
 import { addStarterPeople, addStarterRooms, draftHoroscopes, draftRounds, personRow } from "@/lib/play/store";
 import { isMechanic, MECHANICS, roundIssues, sanitizeConfig, sanitizeRound, type Mechanic } from "@/lib/rooms/engine";
 import { cleanHref, cleanPath, isHomeSlot, sanitizeHome } from "@/lib/play/home";
@@ -211,7 +212,32 @@ export async function savePersonAction(fd: FormData) {
   if (!p.nameAr || !p.nameEn || !p.persona) done(PEOPLE, "Each AI person needs Arabic and English names and a personality.", "err");
   if (!/ذكاء اصطناعي/.test(p.greetingAr) || !/\bAI\b/i.test(p.greetingEn)) done(PEOPLE, "The greeting must say it's an AI character (Arabic: «ذكاء اصطناعي», English: “AI”).", "err");
   const status = str(fd, "status") === "live" ? "live" : "draft";
-  const row = { ...personRow(p), status, sort: int(fd, "sort", 0), image_path: cleanPath(str(fd, "image_path", 300)), tag_ar: str(fd, "tag_ar", 40), tag_en: str(fd, "tag_en", 40) };
+  const card = toCard({
+    group_ar: str(fd, "group_ar"),
+    group_en: str(fd, "group_en"),
+    kicker_ar: str(fd, "kicker_ar"),
+    kicker_en: str(fd, "kicker_en"),
+    badge_ar: str(fd, "badge_ar"),
+    badge_en: str(fd, "badge_en"),
+    subtitle_ar: str(fd, "subtitle_ar"),
+    subtitle_en: str(fd, "subtitle_en"),
+    feature_ar: str(fd, "feature_ar"),
+    feature_en: str(fd, "feature_en"),
+    feature_emoji: str(fd, "feature_emoji"),
+    stats: sanitizeStats(str(fd, "stats", 1000)),
+    cta_ar: str(fd, "cta_ar"),
+    cta_en: str(fd, "cta_en"),
+  });
+  const row = {
+    ...personRow(p),
+    ...cardRow(card),
+    status,
+    sort: int(fd, "sort", 0),
+    image_path: cleanPath(str(fd, "image_path", 300)),
+    voice_path: cleanPath(str(fd, "voice_path", 300)),
+    tag_ar: str(fd, "tag_ar", 40),
+    tag_en: str(fd, "tag_en", 40),
+  };
   if (id) {
     const { error } = await db().from("ai_people").update(row).eq("id", id).eq("tenant_id", admin.tenantId);
     if (error) done(PEOPLE, `Save failed: ${error.message}`, "err");
@@ -320,13 +346,13 @@ export async function draftHoroscopesAction(fd: FormData) {
 // Pictures and the Home page
 // ---------------------------------------------------------------------------
 
-const PIC_EXT = ["png", "jpg", "jpeg", "webp"];
+const PIC_EXT = ["png", "jpg", "jpeg", "webp", "mp3", "m4a", "wav"];
 
-/** Where the browser sends a Playground picture (rooms, AI People, Home page). */
+/** Where the browser sends a Playground picture or voice note (rooms, AI People, Home page). */
 export async function createPlayUpload(ext: string): Promise<UploadTarget> {
   const admin = await requireAdmin("play");
   const e = ext.toLowerCase();
-  if (!PIC_EXT.includes(e)) throw new Error("Use a JPG, PNG or WebP picture.");
+  if (!PIC_EXT.includes(e)) throw new Error("Use a JPG, PNG or WebP picture, or an MP3 / M4A / WAV voice note.");
   return uploadTarget(`play/${admin.tenantId}/${Date.now()}-${randomToken(6)}.${e}`);
 }
 
@@ -351,6 +377,7 @@ export async function saveHomeAction(fd: FormData) {
     rooms: { title: L(fd, "rooms_title", 60), sub: L(fd, "rooms_sub", 120), badge: L(fd, "rooms_badge", 30) },
     people: { title: L(fd, "people_title", 60), sub: L(fd, "people_sub", 120), badge: L(fd, "people_badge", 30) },
     discover: { title: L(fd, "discover_title", 60), tiles },
+    heroes: { kicker: L(fd, "heroes_kicker", 60), title: L(fd, "heroes_title", 60), badge: L(fd, "heroes_badge", 20), sub: L(fd, "heroes_sub", 200) },
   });
   const { error } = await db().from("home_content").upsert({ tenant_id: admin.tenantId, content, updated_at: new Date().toISOString() });
   if (error) done("/admin/home", `Save failed: ${error.message}`, "err");

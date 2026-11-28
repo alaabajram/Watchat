@@ -1,4 +1,4 @@
-// Admin → Home page: every text and picture on the viewer Home (headline, section titles, the Today pictures,
+// Admin → Home page: every text and picture on the viewer Home (and the Heroes page header) (headline, section titles, the Today pictures,
 // Discover tiles) and where each room shows (hero / tile / wide / hidden). Room and AI People pictures and
 // labels are set on their own pages. Empty boxes fall back to the default text.
 
@@ -121,6 +121,15 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
           <Pair name="people_title" label="Title" value={c.people.title} n={60} />
           <Pair name="people_badge" label="Badge" value={c.people.badge} n={30} />
           <Pair name="people_sub" label="Line under the title" value={c.people.sub} n={120} />
+        </div>
+
+        <h2>Heroes page (top)</h2>
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Pair name="heroes_kicker" label="Small line" value={c.heroes.kicker} n={60} />
+          <Pair name="heroes_title" label="Title" value={c.heroes.title} n={60} />
+          <Pair name="heroes_badge" label="Badge" value={c.heroes.badge} n={20} />
+          <Pair name="heroes_sub" label="Line under the title" value={c.heroes.sub} n={200} area />
+          <p className="muted" style={{ margin: 0 }}>Each hero&apos;s card (portrait, voice note, group tab, stats, button) is set in <Link href="/admin/people">AI People</Link>.</p>
         </div>
 
         <h2>Discover tiles</h2>
