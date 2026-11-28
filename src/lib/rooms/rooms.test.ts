@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cardOfDay, playDay, questionOfDay, readingCards, signFor, streak, parseHoroscopes, fallbackHoroscope, DAILY_QUESTIONS } from "../daily/daily";
+import { addDays, cardOfDay, playDay, questionOfDay, readingCards, signFor, streak, parseHoroscopes, fallbackHoroscope, DAILY_QUESTIONS, parseStreakRewards, streakReward, nextMilestone, streakStart, weekStart, playHour, morningPush, streakRewardsText } from "../daily/daily";
 import { DECK, readingWithoutAi, cardById } from "../daily/tarot";
 import { nextMessageQuota, parseReply, personaSystemPrompt, recentTurns, sanitizePerson, STARTER_PEOPLE } from "../people/persona";
 import { answerCorrect, currentRound, daysPlanned, MECHANICS, OPINION_SCALE, parseRounds, roundIssues, sanitizeConfig, sanitizeRound, tally, type Mechanic } from "./engine";
@@ -159,5 +159,34 @@ describe("AI people", () => {
   it("reply and person input are cleaned", () => {
     expect(parseReply({ text: " hi ", suggestions: ["a", 1, "b", "c", "d"] })).toEqual({ text: "hi", suggestions: ["a", "b", "c"] });
     expect(sanitizePerson({ color: "red", freePerDay: -4 })).toMatchObject({ color: "#7c5cff", freePerDay: 0, emoji: "🙂" });
+  });
+});
+
+describe("phase 2: streaks, week, morning reminder", () => {
+  it("streak rewards parse from text or JSON and drop junk", () => {
+    expect(parseStreakRewards("7:15, 3:5, 1:9, x:2, 30:5000")).toEqual({ 3: 5, 7: 15, 30: 1000 });
+    expect(parseStreakRewards({ "14": 25 })).toEqual({ 14: 25 });
+    expect(streakRewardsText({ 3: 5, 7: 15 })).toBe("3:5, 7:15");
+  });
+
+  it("milestones pay on the exact day and point to the next one", () => {
+    const r = { 3: 5, 7: 15 };
+    expect(streakReward(3, r)).toBe(5);
+    expect(streakReward(4, r)).toBe(0);
+    expect(nextMilestone(4, r)).toEqual({ day: 7, ping: 15, left: 3 });
+    expect(nextMilestone(7, r)).toBeNull();
+    expect(streakStart("2026-11-28", 3)).toBe("2026-11-26");
+  });
+
+  it("the week starts on Monday", () => {
+    expect(weekStart("2026-11-28")).toBe("2026-11-23"); // Saturday → Monday
+    expect(weekStart("2026-11-23")).toBe("2026-11-23");
+    expect(weekStart("2026-11-29")).toBe("2026-11-23"); // Sunday
+  });
+
+  it("Gulf hour and reminder texts", () => {
+    expect(playHour(new Date("2026-11-28T04:30:00Z"))).toBe(8);
+    expect(morningPush("leo", "ar").title).toMatch(/الأسد/);
+    expect(morningPush(null, "en").url).toBe("/today");
   });
 });

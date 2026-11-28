@@ -6,7 +6,8 @@ import { PlayShell, SignedOut } from "@/components/play/PlayShell";
 import { RoomPlay } from "@/components/play/RoomPlay";
 import { trackEvent } from "@/lib/events";
 import { playCopy } from "@/lib/play/copy";
-import { liveRooms, roomView } from "@/lib/play/store";
+import { liveRooms, roomView, weeklyScore } from "@/lib/play/store";
+import { MECHANICS } from "@/lib/rooms/engine";
 import { getSessionViewer } from "@/lib/session";
 import { currentTenantId } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
@@ -24,8 +25,14 @@ export default async function RoomPage({ params, searchParams }: { params: Promi
   const locale = viewer.uiLocale;
   const t = playCopy(locale);
   const L = (a: string, e: string) => (locale === "ar" ? a : e);
-  const [balance, others] = await Promise.all([getBalance(viewer.id), liveRooms(tenantId, viewer.id), trackEvent({ viewerHmac: viewer.phoneHmac, name: "room_view", props: { room: slug } })]);
   const { room } = view;
+  const scored = MECHANICS[room.mechanic].oneCorrect;
+  const [balance, others, score] = await Promise.all([
+    getBalance(viewer.id),
+    liveRooms(tenantId, viewer.id),
+    scored ? weeklyScore(tenantId, viewer.id) : Promise.resolve(null),
+    trackEvent({ viewerHmac: viewer.phoneHmac, name: "room_view", props: { room: slug } }),
+  ]);
   return (
     <PlayShell locale={locale} balance={balance} nav="rooms" backHref="/rooms">
       <header className="pl-card" style={{ ["--pl-accent" as string]: room.color }}>
@@ -36,6 +43,7 @@ export default async function RoomPage({ params, searchParams }: { params: Promi
             <p className="pl-muted">{L(room.blurbAr, room.blurbEn)}</p>
           </div>
         </div>
+        {score ? <p className="pl-tag" style={{ marginTop: 10 }}>🏆 {t.weekScore(score.correct, score.rank)}</p> : null}
       </header>
       <RoomPlay initial={view} locale={locale} />
       {others.filter((r) => r.slug !== slug).length ? (

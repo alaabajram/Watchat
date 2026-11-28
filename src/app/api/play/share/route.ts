@@ -7,7 +7,7 @@ import { readJson, sameOrigin } from "@/lib/security/request";
 import { getSessionViewer } from "@/lib/session";
 
 export const runtime = "nodejs";
-const EVENTS = new Set(["room_share", "card_share", "horoscope_share"]);
+const EVENTS = new Set(["room_share", "card_share", "horoscope_share", "room_share_image", "card_share_image", "horoscope_share_image", "question_share_image"]);
 
 export async function POST(req: NextRequest) {
   if (!sameOrigin(req)) return new NextResponse(null, { status: 204 });

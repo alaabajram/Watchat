@@ -3,7 +3,8 @@
 
 import { AiError, callTool } from "../ai/anthropic";
 import { aiAccount, logAiUsage, playAccount } from "../ai/settings";
-import { cardOfDay, fallbackHoroscope, horoscopePrompt, HOROSCOPE_TOOL, isSign, parseHoroscopes, playDay, questionOfDay, readingCards, streak, addDays, type Sign } from "../daily/daily";
+import { cardOfDay, fallbackHoroscope, horoscopePrompt, HOROSCOPE_TOOL, isSign, morningPush, nextMilestone, parseHoroscopes, parseStreakRewards, playDay, playHour, questionOfDay, readingCards, streak, streakReward, streakStart, weekStart, addDays, type Sign, type StreakRewards } from "../daily/daily";
+import { sendPush } from "../push/push";
 import { cardById, readingPrompt, READING_TOOL, readingWithoutAi } from "../daily/tarot";
 import { grantPing } from "../economy/rewards";
 import { trackEvent } from "../events";
@@ -12,14 +13,21 @@ import { answerCorrect, currentRound, isMechanic, parseRounds, roundsPrompt, rou
 import { STARTER_ROOMS } from "../rooms/starter";
 import { allow } from "../security/rate-limit";
 import type { SessionViewer } from "../session";
-import { db } from "../supabase";
+import { currentTenantId, db } from "../supabase";
 import { getBalance } from "../wallet";
 
-export type Settings = { readingPing: number; peopleDailyAiCap: number; horoscopeAutoApprove: boolean };
+export type Settings = { readingPing: number; peopleDailyAiCap: number; horoscopeAutoApprove: boolean; streakRewards: StreakRewards; morningPush: boolean; morningHour: number };
 
 export async function playSettings(tenantId: string): Promise<Settings> {
   const { data } = await db().from("playground_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
-  return { readingPing: data?.reading_ping ?? 20, peopleDailyAiCap: data?.people_daily_ai_cap ?? 2000, horoscopeAutoApprove: data?.horoscope_auto_approve ?? false };
+  return {
+    readingPing: data?.reading_ping ?? 20,
+    peopleDailyAiCap: data?.people_daily_ai_cap ?? 2000,
+    horoscopeAutoApprove: data?.horoscope_auto_approve ?? false,
+    streakRewards: data?.streak_rewards ? parseStreakRewards(data.streak_rewards) : parseStreakRewards({ 3: 5, 7: 15, 14: 25, 30: 60 }),
+    morningPush: data?.morning_push ?? true,
+    morningHour: data?.morning_hour ?? 8,
+  };
 }
 
 async function spendPing(viewerId: string, amount: number, refType: string, refId: string, key: string): Promise<"ok" | "already" | "insufficient"> {
@@ -28,8 +36,24 @@ async function spendPing(viewerId: string, amount: number, refType: string, refI
   return data as "ok" | "already" | "insufficient";
 }
 
-export async function touchHabit(viewerId: string, day = playDay()): Promise<void> {
-  await db().from("habit_days").upsert({ viewer_id: viewerId, day }, { onConflict: "viewer_id,day", ignoreDuplicates: true });
+async function habitDays(viewerId: string, day: string): Promise<string[]> {
+  const { data } = await db().from("habit_days").select("day").eq("viewer_id", viewerId).gte("day", addDays(day, -400));
+  return (data ?? []).map((h) => h.day as string);
+}
+
+/** Mark the viewer active today; on the first visit of a day that reaches a streak milestone, grant its Ping (once per run). */
+export async function touchHabit(viewerId: string, day = playDay()): Promise<number> {
+  const { data } = await db().from("habit_days").upsert({ viewer_id: viewerId, day }, { onConflict: "viewer_id,day", ignoreDuplicates: true }).select("day");
+  if (!data?.length) return 0; // already counted today
+  try {
+    const settings = await playSettings(await currentTenantId());
+    const days = streak(await habitDays(viewerId, day), day);
+    const ping = streakReward(days, settings.streakRewards);
+    if (ping > 0 && (await grantPing(viewerId, ping, "streak", `streak:${viewerId}:${streakStart(day, days)}:${days}`))) return ping;
+  } catch (e) {
+    console.error("[play] streak reward failed", e);
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +408,9 @@ export type Today = {
   sign: Sign | null;
   horoscope: { ar: string; en: string; luckyNumber: number; moodAr: string; moodEn: string } | null;
   streak: number;
+  /** Ping earned today for reaching a streak milestone (0 if none). */
+  streakPing: number;
+  next: { day: number; ping: number; left: number } | null;
   readingPing: number;
 };
 
@@ -407,12 +434,14 @@ async function questionResults(tenantId: string, day: string) {
 
 export async function todayFor(tenantId: string, viewerId: string): Promise<Today> {
   const day = playDay();
-  const [{ data: draws }, { data: v }, { data: habit }, settings] = await Promise.all([
+  const [{ data: draws }, { data: v }, habit, settings] = await Promise.all([
     db().from("daily_draws").select("kind, pick, reversed").eq("viewer_id", viewerId).eq("day", day),
     db().from("viewers").select("star_sign").eq("id", viewerId).maybeSingle(),
-    db().from("habit_days").select("day").eq("viewer_id", viewerId).gte("day", addDays(day, -400)),
+    habitDays(viewerId, day),
     playSettings(tenantId),
   ]);
+  const days = streak(habit, day);
+  const milestone = habit.includes(day) ? streakReward(days, settings.streakRewards) : 0;
   const cardDraw = (draws ?? []).find((d) => d.kind === "card");
   const qDraw = (draws ?? []).find((d) => d.kind === "question");
   const fate = cardOfDay(viewerId, day);
@@ -424,7 +453,9 @@ export async function todayFor(tenantId: string, viewerId: string): Promise<Toda
     question: { index, answer: qDraw ? (qDraw.pick as number) : null, results: qDraw ? await questionResults(tenantId, day) : null },
     sign,
     horoscope: sign ? await horoscopeFor(tenantId, sign, day) : null,
-    streak: streak((habit ?? []).map((h) => h.day as string), day),
+    streak: days,
+    streakPing: milestone,
+    next: nextMilestone(days, settings.streakRewards),
     readingPing: settings.readingPing,
   };
 }
@@ -536,6 +567,65 @@ export async function draftHoroscopes(tenantId: string, adminId: string | null, 
   }
 }
 
+// ---------------------------------------------------------------------------
+// Weekly score (right answers in Who Is Lying / Guess the Mystery rooms) and the morning reminder.
+// ---------------------------------------------------------------------------
+
+export type WeeklyScore = { correct: number; rank: number | null; players: number; since: string };
+
+export async function weeklyScore(tenantId: string, viewerId: string): Promise<WeeklyScore> {
+  const since = weekStart(playDay());
+  const { data } = await db()
+    .from("room_answers")
+    .select("viewer_id, room_rounds!inner(tenant_id)")
+    .eq("room_rounds.tenant_id", tenantId)
+    .eq("correct", true)
+    .gte("created_at", new Date(`${since}T00:00:00+04:00`).toISOString())
+    .limit(100000);
+  const by = new Map<string, number>();
+  for (const a of data ?? []) by.set(a.viewer_id as string, (by.get(a.viewer_id as string) ?? 0) + 1);
+  const mine = by.get(viewerId) ?? 0;
+  const rank = mine > 0 ? [...by.values()].filter((n) => n > mine).length + 1 : null;
+  return { correct: mine, rank, players: by.size, since };
+}
+
+/** Morning reminder by web push: once a day per viewer with alerts on, from the chosen Gulf hour. */
+export async function runMorningPush(tenantId: string, batch = 200): Promise<{ sent: number; skipped: string | null }> {
+  const settings = await playSettings(tenantId);
+  if (!settings.morningPush) return { sent: 0, skipped: "off" };
+  const hour = playHour();
+  if (hour < settings.morningHour || hour >= 22) return { sent: 0, skipped: "not_time" };
+  const day = playDay();
+  const { data: subs } = await db()
+    .from("push_subscriptions")
+    .select("viewer_id, viewers!inner(tenant_id, ui_locale, star_sign)")
+    .eq("viewers.tenant_id", tenantId)
+    .is("revoked_at", null)
+    .limit(20000);
+  const viewers = new Map<string, { locale: "ar" | "en"; sign: Sign | null }>();
+  for (const s of (subs ?? []) as unknown as { viewer_id: string; viewers: { ui_locale: string; star_sign: string | null } }[]) {
+    viewers.set(s.viewer_id, { locale: s.viewers.ui_locale === "en" ? "en" : "ar", sign: isSign(s.viewers.star_sign) ? s.viewers.star_sign : null });
+  }
+  if (!viewers.size) return { sent: 0, skipped: null };
+  const { data: done } = await db().from("play_pushes").select("viewer_id").eq("tenant_id", tenantId).eq("day", day).eq("kind", "morning").limit(20000);
+  const already = new Set((done ?? []).map((d) => d.viewer_id as string));
+  // Skip viewers who already opened the Playground today: they don't need reminding.
+  const { data: active } = await db().from("habit_days").select("viewer_id").eq("day", day).in("viewer_id", [...viewers.keys()].slice(0, 5000));
+  const visited = new Set((active ?? []).map((a) => a.viewer_id as string));
+  const due = [...viewers.entries()].filter(([id]) => !already.has(id) && !visited.has(id)).slice(0, batch);
+  let sent = 0;
+  for (const [viewerId, v] of due) {
+    // Claim first: a second tick sees the row and skips.
+    const { data: claim } = await db().from("play_pushes").upsert({ viewer_id: viewerId, tenant_id: tenantId, day, kind: "morning" }, { onConflict: "viewer_id,kind,day", ignoreDuplicates: true }).select("viewer_id");
+    if (!claim?.length) continue;
+    const msg = morningPush(v.sign, v.locale);
+    const ok = await sendPush(tenantId, viewerId, { ...msg, tag: `morning-${day}` }).catch(() => false);
+    await db().from("play_pushes").update({ delivered: ok }).eq("viewer_id", viewerId).eq("kind", "morning").eq("day", day);
+    if (ok) sent += 1;
+  }
+  return { sent, skipped: null };
+}
+
 /** Cron: make sure tomorrow's horoscopes are drafted (once), and prune old chats. */
 export async function runPlayCron(tenantId: string): Promise<Record<string, unknown>> {
   const tomorrow = addDays(playDay(), 1);
@@ -546,5 +636,11 @@ export async function runPlayCron(tenantId: string): Promise<Record<string, unkn
     horoscopes = (await allow(`horoscope-draft:${tenantId}:${tomorrow}`, 1, 3600)) ? await draftHoroscopes(tenantId, null, tomorrow) : "waiting";
   }
   const pruned = await pruneChats();
-  return { horoscopes, pruned };
+  let morning: unknown = "skipped";
+  try {
+    morning = await runMorningPush(tenantId);
+  } catch (e) {
+    morning = e instanceof Error ? e.message : "morning push failed";
+  }
+  return { horoscopes, pruned, morning };
 }

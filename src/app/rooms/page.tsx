@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { PlayShell, SignedOut } from "@/components/play/PlayShell";
 import { playCopy } from "@/lib/play/copy";
-import { ensureStarter, liveRooms } from "@/lib/play/store";
+import { ensureStarter, liveRooms, weeklyScore } from "@/lib/play/store";
 import { getSessionViewer } from "@/lib/session";
 import { currentTenantId } from "@/lib/supabase";
 import { getBalance } from "@/lib/wallet";
@@ -19,12 +19,13 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
   const locale = viewer.uiLocale;
   const t = playCopy(locale);
   const L = (a: string, e: string) => (locale === "ar" ? a : e);
-  const [balance, rooms] = await Promise.all([getBalance(viewer.id), liveRooms(tenantId, viewer.id)]);
+  const [balance, rooms, score] = await Promise.all([getBalance(viewer.id), liveRooms(tenantId, viewer.id), weeklyScore(tenantId, viewer.id)]);
   return (
     <PlayShell locale={locale} balance={balance} nav="rooms">
       <header className="pl-hero">
         <h1 className="pl-h1">{t.roomsTitle}</h1>
         <p className="pl-sub">{t.roomsHint}</p>
+        <span className="pl-tag" style={{ alignSelf: "flex-start" }}>🏆 {t.weekScore(score.correct, score.rank)}</span>
       </header>
       <div className="pl-section">
         {rooms.map((r) => (

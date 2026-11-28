@@ -10,6 +10,7 @@ import { cardById, cardMeaning } from "@/lib/daily/tarot";
 import { playCopy } from "@/lib/play/copy";
 import type { Today } from "@/lib/play/store";
 import { postJson } from "./post";
+import { ShareImageButton } from "./ShareImage";
 import { ShareLink } from "./ShareLink";
 
 export function TodayPanel({ initial, locale, compact = false }: { initial: Today; locale: "ar" | "en"; compact?: boolean }) {
@@ -53,7 +54,17 @@ export function TodayPanel({ initial, locale, compact = false }: { initial: Toda
         {today.card.drawn ? (
           <div className="pl-section pl-pop" style={{ gap: 10 }}>
             <p style={{ fontSize: 16, textAlign: "center" }}>{cardMeaning(card, today.card.reversed, locale)}</p>
-            {!compact ? <ShareLink path="/today" locale={locale} event="card_share" text={ar ? `بطاقتي اليوم: ${card.nameAr} ${card.emoji} — كلمتي «${card.wordAr}». وش بطاقتك؟` : `My card today: ${card.nameEn} ${card.emoji} — my word is “${card.wordEn}”. What's yours?`} /> : null}
+            {!compact ? (
+              <div className="pl-row" style={{ justifyContent: "center", flexWrap: "wrap" }}>
+                <ShareLink path="/today" locale={locale} event="card_share" text={ar ? `بطاقتي اليوم: ${card.nameAr} ${card.emoji} — كلمتي «${card.wordAr}». وش بطاقتك؟` : `My card today: ${card.nameEn} ${card.emoji} — my word is “${card.wordEn}”. What's yours?`} />
+                <ShareImageButton
+                  locale={locale}
+                  file="watchat-card"
+                  event="card_share_image"
+                  card={{ kicker: t.cardOfDay, emoji: card.emoji, title: `${ar ? card.nameAr : card.nameEn} · ${ar ? card.wordAr : card.wordEn}`, body: cardMeaning(card, today.card.reversed, locale), accent: "#f5c242", footer: `watchat · ${t.disclaimer}` }}
+                />
+              </div>
+            ) : null}
           </div>
         ) : (
           <button type="button" className="pl-btn pl-btn-gold" style={{ width: "100%" }} onClick={() => act({ action: "draw" })} disabled={busy}>
@@ -75,7 +86,19 @@ export function TodayPanel({ initial, locale, compact = false }: { initial: Toda
             </button>
           ))}
         </div>
-        {today.question.results ? <p className="pl-muted" style={{ marginTop: 8 }}>{t.people(today.question.results.total)}</p> : null}
+        {today.question.results ? (
+          <div className="pl-row" style={{ marginTop: 8 }}>
+            <p className="pl-muted">{t.people(today.question.results.total)}</p>
+            {!compact ? (
+              <ShareImageButton
+                locale={locale}
+                file="watchat-question"
+                event="question_share_image"
+                card={{ kicker: t.dailyQuestion, title: ar ? q.ar : q.en, accent: "#31e5a0", bars: q.options.map((o, i) => ({ label: ar ? o.ar : o.en, pct: qPct(i), mine: today.question.answer === i })), footer: `watchat · ${t.tagline}` }}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {/* Horoscope */}
@@ -98,7 +121,15 @@ export function TodayPanel({ initial, locale, compact = false }: { initial: Toda
             {compact ? (
               <Link href="/horoscope" className="wc-link">{t.horoscope} →</Link>
             ) : (
-              <ShareLink path="/horoscope" locale={locale} event="horoscope_share" text={ar ? `برجي ${sign.ar} ${sign.symbol} اليوم: ${today.horoscope.ar}` : `${sign.en} ${sign.symbol} today: ${today.horoscope.en}`} />
+              <div className="pl-row" style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
+                <ShareLink path="/horoscope" locale={locale} event="horoscope_share" text={ar ? `برجي ${sign.ar} ${sign.symbol} اليوم: ${today.horoscope.ar}` : `${sign.en} ${sign.symbol} today: ${today.horoscope.en}`} />
+                <ShareImageButton
+                  locale={locale}
+                  file={`watchat-${sign.key}`}
+                  event="horoscope_share_image"
+                  card={{ kicker: t.horoscopeTitle, emoji: sign.symbol, title: ar ? sign.ar : sign.en, body: ar ? today.horoscope.ar : today.horoscope.en, accent: "#7c5cff", footer: `watchat · ${t.disclaimer}` }}
+                />
+              </div>
             )}
           </div>
         ) : (

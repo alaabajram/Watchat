@@ -208,3 +208,63 @@ export function fallbackHoroscope(sign: Sign, day: string): { ar: string; en: st
   const f = FALLBACK[h % FALLBACK.length];
   return { ...f, luckyNumber: (h % 99) + 1 };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2: streak rewards, the weekly score window and the morning reminder.
+// ---------------------------------------------------------------------------
+
+export type StreakRewards = Record<number, number>;
+export const DEFAULT_STREAK_REWARDS: StreakRewards = { 3: 5, 7: 15, 14: 25, 30: 60 };
+
+/** Clean the admin's "3:5, 7:15" text or the stored JSON into day → Ping (days 2–365, Ping 1–1000, at most 10). */
+export function parseStreakRewards(raw: unknown): StreakRewards {
+  const pairs: [number, number][] =
+    typeof raw === "string"
+      ? raw.split(/[,\n]/).map((p) => p.split(/[:=]/).map((x) => Number(x.trim())) as [number, number])
+      : raw && typeof raw === "object"
+        ? Object.entries(raw as Record<string, unknown>).map(([k, v]) => [Number(k), Number(v)])
+        : [];
+  const out: StreakRewards = {};
+  for (const [d, p] of pairs) {
+    if (Number.isInteger(d) && d >= 2 && d <= 365 && Number.isFinite(p) && p >= 1) out[d] = Math.min(Math.round(p), 1000);
+  }
+  return Object.fromEntries(Object.entries(out).sort((a, b) => Number(a[0]) - Number(b[0])).slice(0, 10));
+}
+
+export const streakRewardsText = (r: StreakRewards) => Object.entries(r).map(([d, p]) => `${d}:${p}`).join(", ");
+
+/** The reward for reaching exactly `days` in a row (0 when that day isn't a milestone). */
+export const streakReward = (days: number, r: StreakRewards) => r[days] ?? 0;
+
+/** The next milestone after `days`, or null. */
+export function nextMilestone(days: number, r: StreakRewards): { day: number; ping: number; left: number } | null {
+  const d = Object.keys(r).map(Number).sort((a, b) => a - b).find((x) => x > days);
+  return d ? { day: d, ping: r[d], left: d - days } : null;
+}
+
+/** The streak's first day, so each run of days earns each milestone once. */
+export const streakStart = (today: string, days: number) => addDays(today, -(days - 1));
+
+/** Monday of the Playground week (weekly scores reset then). */
+export function weekStart(day: string): string {
+  const dow = new Date(`${day}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(day, -((dow + 6) % 7));
+}
+
+/** The Gulf-time hour (0–23). */
+export function playHour(at: Date = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: PLAY_TZ, hour: "2-digit", hour12: false }).format(at)) % 24;
+}
+
+/** The morning reminder: the sign's reading if the viewer picked one, else the card of the day. */
+export function morningPush(sign: Sign | null, lang: "ar" | "en"): { title: string; body: string; url: string } {
+  const s = sign ? signInfo(sign) : null;
+  if (lang === "ar") {
+    return s
+      ? { title: `${s.symbol} برج ${s.ar} لليوم جاهز`, body: "وبطاقة اليوم تنتظرك 🔮 لا تضيّع سلسلتك!", url: "/today" }
+      : { title: "🔮 بطاقة اليوم تنتظرك", body: "اسحبها، جاوب سؤال اليوم، وكمّل سلسلتك.", url: "/today" };
+  }
+  return s
+    ? { title: `${s.symbol} Your ${s.en} reading for today is ready`, body: "Your card of the day is waiting too 🔮 Keep your streak going!", url: "/today" }
+    : { title: "🔮 Your card of the day is waiting", body: "Draw it, answer today's question and keep your streak going.", url: "/today" };
+}
