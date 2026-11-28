@@ -11,7 +11,7 @@ import { HomeScreenTip } from "@/components/HomeScreenTip";
 import { questionOfDay, SIGNS } from "@/lib/daily/daily";
 import { cardById } from "@/lib/daily/tarot";
 import { playCopy } from "@/lib/play/copy";
-import { ensureStarter, liveRooms, livePeople, todayFor } from "@/lib/play/store";
+import { ensureStarter, liveRooms, livePeople, todayFor, touchHabit } from "@/lib/play/store";
 import { AI_LABEL } from "@/lib/people/persona";
 import { getSessionViewer } from "@/lib/session";
 import { DEFAULT_SITE } from "@/lib/site/brand";
@@ -28,7 +28,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   if (!viewer) return <SignedOut path="/" lang={params.lang} />;
 
   const tenantId = await currentTenantId();
-  await ensureStarter(tenantId);
+  await Promise.all([ensureStarter(tenantId), touchHabit(viewer.id)]);
   const locale = viewer.uiLocale;
   const ar = locale === "ar";
   const t = playCopy(locale);
@@ -46,6 +46,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
         <section className="pl-hero">
           <h1 className="pl-h1">{t.tagline}</h1>
           <span className="pl-streak">🔥 {t.streak(today.streak)}</span>
+          {today.streakPing ? <span className="pl-tag pl-tag-done pl-pop">{t.streakEarned(today.streakPing)}</span> : today.next ? <span className="pl-muted">{t.nextMilestone(today.next.left, today.next.ping)}</span> : null}
         </section>
 
         <section className="pl-section" aria-label={t.todayTitle}>

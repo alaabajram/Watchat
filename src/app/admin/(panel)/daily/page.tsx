@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { Flash } from "@/components/admin/Flash";
 import { requireAdmin } from "@/lib/admin/auth";
-import { addDays, playDay, SIGNS } from "@/lib/daily/daily";
+import { addDays, playDay, SIGNS, streakRewardsText } from "@/lib/daily/daily";
 import { playSettings } from "@/lib/play/store";
 import { db } from "@/lib/supabase";
 import { approveAllHoroscopesAction, draftHoroscopesAction, saveHoroscopeAction, savePlaySettingsAction } from "../../play-actions";
@@ -17,14 +17,18 @@ export default async function AdminDaily({ searchParams }: { searchParams: Promi
   const today = playDay();
   const day = sp.day && /^\d{4}-\d{2}-\d{2}$/.test(sp.day) ? sp.day : addDays(today, 1);
   const since = new Date(`${today}T00:00:00+04:00`).toISOString();
-  const [settings, { data: rows }, { count: cards }, { count: answers }, { data: readings }, { count: streakers }] = await Promise.all([
+  const [settings, { data: rows }, { count: cards }, { count: answers }, { data: readings }, { count: streakers }, { data: pushes }, { data: streakGrants }] = await Promise.all([
     playSettings(admin.tenantId),
     db().from("horoscopes").select("*").eq("tenant_id", admin.tenantId).eq("day", day),
     db().from("daily_draws").select("viewer_id", { count: "exact", head: true }).eq("tenant_id", admin.tenantId).eq("day", today).eq("kind", "card"),
     db().from("daily_draws").select("viewer_id", { count: "exact", head: true }).eq("tenant_id", admin.tenantId).eq("day", today).eq("kind", "question"),
     db().from("tarot_readings").select("id").eq("tenant_id", admin.tenantId).gte("created_at", since),
     db().from("habit_days").select("viewer_id", { count: "exact", head: true }).eq("day", today),
+    db().from("play_pushes").select("delivered").eq("tenant_id", admin.tenantId).eq("day", today),
+    db().from("wallet_ledger").select("delta, viewers!inner(tenant_id)").eq("viewers.tenant_id", admin.tenantId).eq("reason", "grant").eq("ref_type", "streak").gte("created_at", since).limit(20000),
   ]);
+  const pushed = (pushes ?? []).filter((p) => p.delivered).length;
+  const streakPing = (streakGrants ?? []).reduce((a, g) => a + Number(g.delta), 0);
   const bySign = new Map((rows ?? []).map((r) => [r.sign as string, r]));
   const approved = (rows ?? []).filter((r) => r.status === "approved").length;
   const drafts = (rows ?? []).filter((r) => r.status === "draft").length;
@@ -34,7 +38,7 @@ export default async function AdminDaily({ searchParams }: { searchParams: Promi
       <h1>Daily</h1>
       <Flash ok={sp.ok} err={sp.err} />
       <p className="muted">
-        Today ({today}): {cards ?? 0} cards drawn · {answers ?? 0} answered the daily question · {readings?.length ?? 0} paid readings · {streakers ?? 0} viewers active. Horoscopes and
+        Today ({today}): {cards ?? 0} cards drawn · {answers ?? 0} answered the daily question · {readings?.length ?? 0} paid readings · {streakers ?? 0} viewers active · {pushed} morning reminders delivered · {streakPing} Ping given for streaks. Horoscopes and
         readings are shown as entertainment and personal reflection, never predictions.
       </p>
 
@@ -48,6 +52,24 @@ export default async function AdminDaily({ searchParams }: { searchParams: Promi
         <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <input type="checkbox" name="horoscope_auto_approve" defaultChecked={settings.horoscopeAutoApprove} />
           Publish AI horoscopes without review
+        </label>
+        <label>
+          Streak rewards (days in a row : Ping)
+          <input name="streak_rewards" defaultValue={streakRewardsText(settings.streakRewards)} style={{ width: 220 }} dir="ltr" />
+        </label>
+        <label style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" name="morning_push" defaultChecked={settings.morningPush} />
+          Morning reminder (web push, viewers with alerts on)
+        </label>
+        <label>
+          from (Gulf time)
+          <select name="morning_hour" defaultValue={String(settings.morningHour)}>
+            {[5, 6, 7, 8, 9, 10, 11, 12].map((h) => (
+              <option key={h} value={h}>
+                {h}:00
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit">Save</button>
       </form>

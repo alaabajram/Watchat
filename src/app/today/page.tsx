@@ -1,6 +1,7 @@
 // Today: the daily habit page — card of the day, the daily question, your horoscope and your streak.
 
 import Link from "next/link";
+import { AlertsOptIn } from "@/components/assistant/AlertsOptIn";
 import { PlayShell, SignedOut } from "@/components/play/PlayShell";
 import { TodayPanel } from "@/components/play/TodayPanel";
 import { playCopy } from "@/lib/play/copy";
@@ -26,8 +27,10 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <p className="pl-muted">{date}</p>
         <h1 className="pl-h1">{t.todayTitle}</h1>
         <span className="pl-streak">🔥 {t.streak(today.streak)}</span>
+        {today.streakPing ? <span className="pl-tag pl-tag-done pl-pop">{t.streakEarned(today.streakPing)}</span> : today.next ? <span className="pl-muted">{t.nextMilestone(today.next.left, today.next.ping)}</span> : null}
       </header>
       <TodayPanel initial={today} locale={locale} />
+      <AlertsOptIn locale={locale} compact />
       <Link href="/fortune" className="pl-card pl-person" style={{ ["--pl-accent" as string]: "#ff9f43" }}>
         <span className="pl-avatar" aria-hidden="true">🃏</span>
         <div>

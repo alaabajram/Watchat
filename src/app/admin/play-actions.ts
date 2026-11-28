@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { audit, requireAdmin } from "@/lib/admin/auth";
 import { bool, done, int, str, uuid } from "@/lib/admin/forms";
-import { isSign } from "@/lib/daily/daily";
+import { isSign, parseStreakRewards } from "@/lib/daily/daily";
 import { sanitizePerson } from "@/lib/people/persona";
 import { addStarterPeople, addStarterRooms, draftHoroscopes, draftRounds, personRow } from "@/lib/play/store";
 import { isMechanic, MECHANICS, roundIssues, sanitizeConfig, sanitizeRound, type Mechanic } from "@/lib/rooms/engine";
@@ -236,6 +236,9 @@ export async function savePlaySettingsAction(fd: FormData) {
     reading_ping: fd.has("reading_ping") ? Math.min(Math.max(int(fd, "reading_ping", 20), 0), 10000) : (cur?.reading_ping ?? 20),
     people_daily_ai_cap: fd.has("people_daily_ai_cap") ? Math.min(Math.max(int(fd, "people_daily_ai_cap", 2000), 0), 1000000) : (cur?.people_daily_ai_cap ?? 2000),
     horoscope_auto_approve: fd.has("horoscope_form") ? bool(fd, "horoscope_auto_approve") : (cur?.horoscope_auto_approve ?? false),
+    streak_rewards: fd.has("streak_rewards") ? parseStreakRewards(str(fd, "streak_rewards", 400)) : (cur?.streak_rewards ?? { 3: 5, 7: 15, 14: 25, 30: 60 }),
+    morning_push: fd.has("horoscope_form") ? bool(fd, "morning_push") : (cur?.morning_push ?? true),
+    morning_hour: fd.has("morning_hour") ? Math.min(Math.max(int(fd, "morning_hour", 8), 5), 12) : (cur?.morning_hour ?? 8),
     updated_at: new Date().toISOString(),
   };
   const { error } = await db().from("playground_settings").upsert(row);

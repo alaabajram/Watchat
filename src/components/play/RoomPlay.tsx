@@ -8,6 +8,7 @@ import { shareLine } from "@/lib/rooms/engine";
 import { playCopy } from "@/lib/play/copy";
 import type { RoomView } from "@/lib/play/store";
 import { postJson } from "./post";
+import { ShareImageButton } from "./ShareImage";
 import { ShareLink } from "./ShareLink";
 
 export function RoomPlay({ initial, locale }: { initial: RoomView; locale: "ar" | "en" }) {
@@ -16,6 +17,7 @@ export function RoomPlay({ initial, locale }: { initial: RoomView; locale: "ar" 
   const [busy, setBusy] = useState<string | null>(null);
   const [rewarded, setRewarded] = useState(0);
   const [error, setError] = useState("");
+  const [shownClues, setShownClues] = useState(1);
   const { room, round } = view;
   const ar = locale === "ar";
   const L = (a: string, e: string) => (ar ? a || e : e || a);
@@ -50,12 +52,29 @@ export function RoomPlay({ initial, locale }: { initial: RoomView; locale: "ar" 
 
       {clues?.length ? (
         <div className="pl-clues">
-          {clues.map((c, i) => (
-            <div key={i} className="pl-clue">
+          {clues.slice(0, answered ? clues.length : shownClues).map((c, i) => (
+            <div key={i} className="pl-clue pl-pop">
               <b>{t.clue(i + 1)}</b>
               {c}
             </div>
           ))}
+          {!answered && shownClues < clues.length ? (
+            <button type="button" className="pl-btn pl-btn-soft" onClick={() => setShownClues((n) => n + 1)}>
+              {t.nextClue}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {room.mechanic === "debate" && !answered ? (
+        <div className="pl-section" style={{ gap: 10 }}>
+          {round.options.map((o) => (
+            <div key={o.id} className="pl-reveal">
+              <b>{L(o.ar, o.en)}</b>
+              <div>{L(o.revealAr ?? "", o.revealEn ?? "")}</div>
+            </div>
+          ))}
+          <p className="pl-muted">{t.whoWins}</p>
         </div>
       ) : null}
 
@@ -81,7 +100,22 @@ export function RoomPlay({ initial, locale }: { initial: RoomView; locale: "ar" 
           {mine && (mine.revealAr || mine.revealEn) ? <div className="pl-reveal">{L(mine.revealAr ?? "", mine.revealEn ?? "")}</div> : null}
           {right && (round.extra.explainAr || round.extra.explainEn) ? <div className="pl-reveal">{L(round.extra.explainAr ?? "", round.extra.explainEn ?? "")}</div> : null}
           {!view.showResults ? <p className="pl-muted">{t.resultsTomorrow}</p> : <p className="pl-muted">{t.people(view.results?.total ?? 0)}</p>}
-          <ShareLink path={`/rooms/${room.slug}`} locale={locale} event="room_share" text={view.results && view.myAnswer ? shareLine(round, view.myAnswer, view.results.rows, locale) : L(round.promptAr, round.promptEn)} />
+          <div className="pl-row" style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
+            <ShareLink path={`/rooms/${room.slug}`} locale={locale} event="room_share" text={view.results && view.myAnswer ? shareLine(round, view.myAnswer, view.results.rows, locale) : L(round.promptAr, round.promptEn)} />
+            <ShareImageButton
+              locale={locale}
+              file={`watchat-${room.slug}`}
+              event="room_share_image"
+              card={{
+                kicker: `${room.emoji} ${L(room.titleAr, room.titleEn)}`,
+                title: L(round.promptAr, round.promptEn),
+                accent: room.color,
+                bars: view.results ? round.options.map((o) => ({ label: L(o.ar, o.en), pct: pct(o.id), mine: o.id === view.myAnswer })) : undefined,
+                body: view.results ? undefined : mine ? `${t.youPicked}: ${L(mine.ar, mine.en)}` : undefined,
+                footer: `watchat · ${t.tagline}`,
+              }}
+            />
+          </div>
         </div>
       ) : null}
     </div>

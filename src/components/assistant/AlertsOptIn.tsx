@@ -1,6 +1,6 @@
 "use client";
 
-// Turn on new-episode alerts here (web push) and keep Watchat on the home screen: the free alternative to
+// Turn on morning alerts here (web push) and keep Watchat on the home screen: the free alternative to
 // WhatsApp messages. iPhone only allows web alerts from an app added to the home screen, so there we show how
 // to add it first; Android and computers can turn alerts on straight away (and Android can install the app).
 
@@ -11,8 +11,8 @@ type State = "loading" | "unsupported" | "ios_install" | "ask" | "on" | "blocked
 
 const T = {
   ar: {
-    title: "تنبيهات الحلقات الجديدة",
-    body: "خلّ واتشات على شاشتك الرئيسية، ونرسل لك تنبيه أول ما تنزل حلقة جديدة. بدون رسائل واتساب.",
+    title: "تنبيه الصباح",
+    body: "خلّ واتشات على شاشتك الرئيسية، ونذكّرك كل صباح ببطاقتك وبرجك وجولات الغرف الجديدة.",
     turnOn: "فعّل التنبيهات",
     on: "التنبيهات شغّالة هنا ✓",
     off: "إيقاف",
@@ -20,13 +20,13 @@ const T = {
     install: "أضف واتشات للشاشة الرئيسية",
     iosTitle: "أضف واتشات للشاشة الرئيسية",
     iosSteps: ["اضغط زر المشاركة ⬆︎ تحت في سفاري", "اختر «إضافة إلى الشاشة الرئيسية»", "افتح واتشات من الشاشة الرئيسية وفعّل التنبيهات"],
-    unsupported: "احفظ هذه الصفحة في المفضلة لترجع للمساعد بسرعة.",
+    unsupported: "احفظ هذه الصفحة في المفضلة لترجع لها بسرعة.",
     error: "ما قدرنا نفعّل التنبيهات. جرّب مرة ثانية.",
     hide: "لاحقًا",
   },
   en: {
-    title: "New-episode alerts",
-    body: "Keep Watchat on your home screen and we'll alert you as soon as a new episode drops. No WhatsApp messages.",
+    title: "Morning alerts",
+    body: "Keep Watchat on your home screen and we'll remind you each morning: your card, your horoscope and new room rounds.",
     turnOn: "Turn on alerts",
     on: "Alerts are on here ✓",
     off: "Turn off",
@@ -34,7 +34,7 @@ const T = {
     install: "Add Watchat to your home screen",
     iosTitle: "Add Watchat to your home screen",
     iosSteps: ["Tap the Share button ⬆︎ in Safari", "Choose “Add to Home Screen”", "Open Watchat from your home screen and turn on alerts"],
-    unsupported: "Bookmark this page to get back to the assistant quickly.",
+    unsupported: "Bookmark this page to get back quickly.",
     error: "We couldn't turn on alerts. Try again.",
     hide: "Later",
   },

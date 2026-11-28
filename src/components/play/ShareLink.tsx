@@ -6,6 +6,15 @@ import { useState } from "react";
 import { ShareIcon } from "@/components/brand/icons";
 import { playCopy } from "@/lib/play/copy";
 
+/** One analytics event for a share tap (fire and forget). */
+export function trackShare(event: string) {
+  try {
+    navigator.sendBeacon?.("/api/play/share", JSON.stringify({ event }));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ShareLink({ path, text, locale, event }: { path: string; text: string; locale: "ar" | "en"; event?: string }) {
   const t = playCopy(locale);
   const [copied, setCopied] = useState(false);
@@ -19,7 +28,7 @@ export function ShareLink({ path, text, locale, event }: { path: string; text: s
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
-      if (event) navigator.sendBeacon?.("/api/play/share", JSON.stringify({ event }));
+      if (event) trackShare(event);
     } catch {
       /* cancelled */
     }
