@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 // Each scroll flips the bubble's colour (coral ↔ mint, play mark in #F7F5F2) and it settles on mint.
-const FRAMES = ["/brand/emblem-bubble-coral-ink.png", "/brand/emblem-bubble-mint-ink.png", "/brand/emblem-bubble-coral-ink.png", "/brand/emblem-bubble-mint-ink.png"];
+const FRAMES = ["/brand/emblem-bubble-coral-play.png", "/brand/emblem-bubble-mint-play.png", "/brand/emblem-bubble-coral-play.png", "/brand/emblem-bubble-mint-play.png"];
 
 export function AnimatedLogo() {
   return (
