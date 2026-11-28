@@ -30,7 +30,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         {today.streakPing ? <span className="pl-tag pl-tag-done pl-pop">{t.streakEarned(today.streakPing)}</span> : today.next ? <span className="pl-muted">{t.nextMilestone(today.next.left, today.next.ping)}</span> : null}
       </header>
       <TodayPanel initial={today} locale={locale} />
-      <AlertsOptIn locale={locale} compact />
+      <div id="alerts">
+        <AlertsOptIn locale={locale} compact />
+      </div>
       <Link href="/fortune" className="pl-card pl-person" style={{ ["--pl-accent" as string]: "#ff9f43" }}>
         <span className="pl-avatar" aria-hidden="true">🃏</span>
         <div>

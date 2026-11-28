@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Flash } from "@/components/admin/Flash";
+import { ImageField } from "@/components/admin/ImageField";
 import { requireAdmin } from "@/lib/admin/auth";
 import { addDays, playDay } from "@/lib/daily/daily";
 import { toRoom, toRound, type RoundRow } from "@/lib/play/store";
@@ -155,6 +156,28 @@ export default async function AdminRoom({ params, searchParams }: { params: Prom
               Order
               <input name="sort" type="number" defaultValue={room.sort} style={{ width: 80 }} />
             </label>
+          </div>
+          <div className="row" style={{ alignItems: "flex-start", gap: 20 }}>
+            <ImageField name="image_path" label="Picture" hint="Home tile, hero and room page. 4:3 or wider works best." path={room.imagePath} url={room.image} ratio="4 / 3" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label>
+                On the Home page
+                <select name="home_slot" defaultValue={room.homeSlot}>
+                  <option value="hero">Hero (the big card at the top — one room)</option>
+                  <option value="tile">Tile (two per row)</option>
+                  <option value="wide">Wide card (full width)</option>
+                  <option value="hidden">Not on Home</option>
+                </select>
+              </label>
+              <label>
+                Label (Arabic), e.g. «تحدي سريع»
+                <input name="tag_ar" defaultValue={room.tagAr} dir="rtl" maxLength={40} />
+              </label>
+              <label>
+                Label (English), e.g. “Casual PvP”
+                <input name="tag_en" defaultValue={room.tagEn} maxLength={40} />
+              </label>
+            </div>
           </div>
           <div className="row">
             <label style={{ flex: 1 }}>

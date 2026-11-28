@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // One room: today's round, then the results and a share card. Links to this page are what viewers share.
 
 import { notFound } from "next/navigation";
@@ -35,6 +36,7 @@ export default async function RoomPage({ params, searchParams }: { params: Promi
   ]);
   return (
     <PlayShell locale={locale} balance={balance} nav="rooms" backHref="/rooms">
+      {room.image ? <img src={room.image} alt="" className="pl-cover" /> : null}
       <header className="pl-card" style={{ ["--pl-accent" as string]: room.color }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <span className="pl-emoji" style={{ fontSize: 40 }} aria-hidden="true">{room.emoji}</span>

@@ -1,17 +1,20 @@
 // watchat.pro — one address, two doors:
 // • no session on this browser → splash with the animated logo and every way in (Telegram, phone number, email,
 //   and WhatsApp while it's sending; `SignInDoors`);
-// • a session → the Playground home: your day (card, sign, question, streak), live rooms, AI People, Discover.
+// • a session → the Playground home in the neon "carnival" look: streak banner, headline, the hero room, your day
+//   (card + horoscope), room tiles and wide room cards, AI People, Discover tiles. Every text and picture comes
+//   from Admin → Home page / Rooms / AI People (`home_content`, `rooms`, `ai_people`).
 
+/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { SignedOut } from "@/components/play/PlayShell";
-import { HomeHeader } from "@/components/home/HomeScreen";
 import { BottomNav } from "@/components/home/BottomNav";
 import { HomeScreenTip } from "@/components/HomeScreenTip";
-import { questionOfDay, SIGNS } from "@/lib/daily/daily";
-import { cardById } from "@/lib/daily/tarot";
-import { playCopy } from "@/lib/play/copy";
-import { ensureStarter, liveRooms, livePeople, todayFor, touchHabit } from "@/lib/play/store";
+import { PingIcon } from "@/components/brand/PingIcon";
+import { SIGNS } from "@/lib/daily/daily";
+import { cardById, cardMeaning } from "@/lib/daily/tarot";
+import { compact, homeLayout, type L } from "@/lib/play/home";
+import { activeToday, ensureStarter, homeContent, liveRooms, livePeople, playImage, todayFor, touchHabit, type RoomCard } from "@/lib/play/store";
 import { AI_LABEL } from "@/lib/people/persona";
 import { getSessionViewer } from "@/lib/session";
 import { DEFAULT_SITE } from "@/lib/site/brand";
@@ -22,6 +25,80 @@ import { dirFor } from "@/lib/web-copy";
 
 export const dynamic = "force-dynamic";
 
+const UI = {
+  ar: {
+    live: "مباشر",
+    day: (n: number) => (n <= 1 ? "اليوم ١ — سلسلتك بدأت" : `اليوم ${n} — سلسلتك شغّالة`),
+    toUnlock: (left: number) => (left === 1 ? "باقي يوم على" : `باقي ${left} أيام على`),
+    bonus: "مكافأة",
+    earned: (p: number) => `مبروك! +${p} بينج اليوم`,
+    claim: "استلم",
+    online: (n: string) => `${n} يلعبون اليوم`,
+    arena: "مباشر الحين",
+    playing: (n: string) => `${n} يلعبون`,
+    roundToday: "جولة اليوم",
+    voting: "التصويت مفتوح",
+    answered: "جاوبت ✓",
+    playNow: "العب الحين",
+    seeAll: "الكل",
+    explore: "استكشف",
+    card: "بطاقة اليوم",
+    tapReveal: "اكشف بطاقتك وكلمتك لليوم",
+    reveal: "اكشف حظك",
+    horoscope: "الأبراج",
+    pickSign: "اختر برجك",
+    pickHint: "مرة وحدة، وكل يوم يجيك كلامه",
+    readChart: "اقرأ البرج",
+    votes: (n: string) => `${n} صوت`,
+    play: "العب",
+    join: "ادخل",
+    open: "افتح",
+    pings: (n: number) => `+${n} بينج`,
+    heroes: (n: number) => `${n} شخصية`,
+    chat: "سولف",
+  },
+  en: {
+    live: "Live",
+    day: (n: number) => `Day ${Math.max(n, 1)} — daily streak active`,
+    toUnlock: (left: number) => `${left} more ${left === 1 ? "day" : "days"} to unlock`,
+    bonus: "bonus",
+    earned: (p: number) => `Streak bonus unlocked: +${p} Ping today`,
+    claim: "Claim",
+    online: (n: string) => `${n} playing today`,
+    arena: "Live arena",
+    playing: (n: string) => `${n} playing`,
+    roundToday: "Today's round",
+    voting: "Voting open",
+    answered: "You answered ✓",
+    playNow: "Play now",
+    seeAll: "See all",
+    explore: "Explore",
+    card: "Card of the day",
+    tapReveal: "Reveal your card and your word for today",
+    reveal: "Reveal fate",
+    horoscope: "Horoscope",
+    pickSign: "Pick your sign",
+    pickHint: "Just once — then a new reading daily",
+    readChart: "Read chart",
+    votes: (n: string) => `${n} votes`,
+    play: "Play",
+    join: "Join",
+    open: "Inspect",
+    pings: (n: number) => `+${n} Ping`,
+    heroes: (n: number) => `${n} heroes`,
+    chat: "Chat",
+  },
+};
+
+function Art({ src, emoji, accent, children, className = "" }: { src: string | null; emoji: string; accent: string; children?: React.ReactNode; className?: string }) {
+  return (
+    <div className={`hm-img ${className}`} style={{ ["--hm-accent" as string]: accent }}>
+      {src ? <img src={src} alt="" loading="lazy" /> : <span className="hm-emoji" aria-hidden="true">{emoji}</span>}
+      {children}
+    </div>
+  );
+}
+
 export default async function Home({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
   const params = await searchParams;
   const viewer = await getSessionViewer();
@@ -31,115 +108,247 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ l
   await Promise.all([ensureStarter(tenantId), touchHabit(viewer.id)]);
   const locale = viewer.uiLocale;
   const ar = locale === "ar";
-  const t = playCopy(locale);
-  const [balance, site, today, rooms, people] = await Promise.all([getBalance(viewer.id), getSiteSafe(), todayFor(tenantId, viewer.id), liveRooms(tenantId, viewer.id), livePeople(tenantId)]);
-  const logo = site.logoOnDark === DEFAULT_SITE.logoOnDark ? null : site.logoOnDark;
+  const u = UI[locale];
+  const T = (x: L) => (ar ? x.ar || x.en : x.en || x.ar);
+  const [balance, site, today, rooms, people, content, online] = await Promise.all([
+    getBalance(viewer.id),
+    getSiteSafe(),
+    todayFor(tenantId, viewer.id),
+    liveRooms(tenantId, viewer.id),
+    livePeople(tenantId),
+    homeContent(tenantId),
+    activeToday(tenantId),
+  ]);
+  const logo = site.logoOnDark !== DEFAULT_SITE.logoOnDark ? site.logoOnDark : `/brand/wordmark-${ar ? "ar" : "en"}-white.png`;
   const card = cardById(today.card.card);
   const sign = today.sign ? SIGNS.find((s) => s.key === today.sign) : null;
-  const q = questionOfDay(today.day).q;
-  const L = (a: string, e: string) => (ar ? a : e);
+  const { hero, tiles, wide } = homeLayout(rooms);
+  const R = (r: RoomCard, a: string, e: string) => (ar ? a || e : e || a);
+  const roomText = (r: RoomCard) => (r.round ? R(r, r.round.promptAr, r.round.promptEn) : R(r, r.blurbAr, r.blurbEn));
+  const cardImg = playImage(content.day.cardImage);
+  const signImg = playImage(content.day.horoscopeImage);
 
   return (
-    <div className="wc wc-app" dir={dirFor(locale)} lang={locale}>
-      <HomeHeader locale={locale} balance={balance} logo={logo} />
+    <div className="wc wc-app hm" dir={dirFor(locale)} lang={locale}>
+      <header className="hm-head">
+        <Link href="/" className="hm-brand" aria-label="Watchat">
+          <img src={logo} alt="Watchat" style={{ height: 26, width: "auto", display: "block" }} />
+          <span className="hm-live">{u.live}</span>
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Link href="/wallet" className="hm-ping" aria-label={`Ping: ${balance}`}>
+            <PingIcon size={18} />
+            {balance}
+          </Link>
+          <Link href="/today#alerts" className="hm-bell" aria-label={ar ? "التنبيهات" : "Alerts"}>
+            🔔
+          </Link>
+        </div>
+      </header>
+
       <main className="pl-page">
-        <section className="pl-hero">
-          <h1 className="pl-h1">{t.tagline}</h1>
-          <span className="pl-streak">🔥 {t.streak(today.streak)}</span>
-          {today.streakPing ? <span className="pl-tag pl-tag-done pl-pop">{t.streakEarned(today.streakPing)}</span> : today.next ? <span className="pl-muted">{t.nextMilestone(today.next.left, today.next.ping)}</span> : null}
+        {/* Streak banner */}
+        <section className="hm-streak" aria-label={u.day(today.streak)}>
+          <span className="hm-streak-icon" aria-hidden="true">🔥</span>
+          <div style={{ minWidth: 0 }}>
+            <b>{u.day(today.streak)}</b>
+            <small>
+              {today.streakPing ? (
+                u.earned(today.streakPing)
+              ) : today.next ? (
+                <>
+                  {u.toUnlock(today.next.left)} <em>+{today.next.ping} Ping</em> {u.bonus}
+                </>
+              ) : null}
+            </small>
+          </div>
+          <Link href="/rewards" className="hm-btn-red">
+            {u.claim}
+          </Link>
         </section>
 
-        <section className="pl-section" aria-label={t.todayTitle}>
-          <div className="pl-row">
-            <h2 className="wc-section-title">{t.todayTitle}</h2>
-            <Link className="wc-link" href="/today">{t.seeAll}</Link>
-          </div>
-          <div className="pl-rail">
-            <Link href="/today" className="pl-card pl-tile" style={{ width: 160, ["--pl-accent" as string]: "#f5c242" }}>
-              <span className="pl-emoji" aria-hidden="true">{today.card.drawn ? card.emoji : "🔮"}</span>
-              <span className="pl-muted">{t.cardOfDay}</span>
-              <span className="pl-title">{today.card.drawn ? L(card.nameAr, card.nameEn) : t.drawCard}</span>
-            </Link>
-            <Link href={sign ? "/horoscope" : "/today"} className="pl-card pl-tile" style={{ width: 160, ["--pl-accent" as string]: "#7c5cff" }}>
-              <span className="pl-emoji" aria-hidden="true">{sign ? sign.symbol : "✨"}</span>
-              <span className="pl-muted">{t.horoscope}</span>
-              <span className="pl-title">{sign ? L(sign.ar, sign.en) : t.pickSign}</span>
-            </Link>
-            <Link href="/today" className="pl-card pl-tile" style={{ width: 200, ["--pl-accent" as string]: "#31e5a0" }}>
-              <span className="pl-emoji" aria-hidden="true">{today.question.answer === null ? "❓" : "✅"}</span>
-              <span className="pl-muted">{t.dailyQuestion}</span>
-              <span className="pl-title" style={{ fontSize: 15 }}>{L(q.ar, q.en)}</span>
-            </Link>
-            <Link href="/fortune" className="pl-card pl-tile" style={{ width: 160, ["--pl-accent" as string]: "#ff9f43" }}>
-              <span className="pl-emoji" aria-hidden="true">🃏</span>
-              <span className="pl-muted">{t.fortune}</span>
-              <span className="pl-title">{t.fortuneTitle}</span>
-            </Link>
-          </div>
+        {/* Headline */}
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span className="hm-kicker">
+            {T(content.kicker)} • {u.online(compact(online, locale))}
+          </span>
+          <h1 className="hm-h1">
+            {T(content.headline)} <span>{T(content.highlight)}</span>
+          </h1>
         </section>
 
-        {rooms.length ? (
-          <section className="pl-section" aria-label={t.rooms}>
-            <div className="pl-row">
-              <h2 className="wc-section-title">{t.rooms}</h2>
-              <Link className="wc-link" href="/rooms">{t.seeAll}</Link>
-            </div>
-            <div className="pl-rail">
-              {rooms.map((r) => (
-                <Link key={r.id} href={`/rooms/${r.slug}`} className="pl-card pl-room pl-room-rail" style={{ ["--pl-accent" as string]: r.color }}>
-                  <div className="pl-row">
-                    <span className="pl-emoji" aria-hidden="true">{r.emoji}</span>
-                    {r.answered ? <span className="pl-tag pl-tag-done">{t.played}</span> : null}
-                  </div>
-                  <span className="pl-title" style={{ fontSize: 16 }}>{L(r.titleAr, r.titleEn)}</span>
-                  <span className="pl-q">{r.round ? L(r.round.promptAr, r.round.promptEn) : t.noRound}</span>
-                  <span className="pl-foot">
-                    <span>{t.people(r.players)}</span>
-                    <span className="wc-link">{t.play} →</span>
+        {/* Hero room */}
+        {hero ? (
+          <Link href={`/rooms/${hero.slug}`} className="hm-card hm-hero" style={{ ["--hm-accent" as string]: hero.color }}>
+            <Art src={hero.image} emoji={hero.emoji} accent={hero.color} className="hm-shade">
+              <span className="hm-badge">● {u.arena}</span>
+              <span className="hm-badge hm-badge-dark">👁 {u.playing(compact(hero.players, locale))}</span>
+            </Art>
+            <div className="hm-hero-body">
+              <div className="hm-tagline">
+                <span className="hm-pill">{R(hero, hero.tagAr, hero.tagEn) || R(hero, hero.titleAr, hero.titleEn)}</span>
+                <span style={{ color: "var(--hm-green)" }}>{u.roundToday}</span>
+              </div>
+              <h2 className="hm-title">{roomText(hero)}</h2>
+              <div className="hm-hero-foot">
+                <div className="hm-crowd">
+                  <span className="hm-dots" aria-hidden="true">
+                    <span>{hero.emoji}</span>
+                    <span className="hm-count">+{compact(hero.players, locale)}</span>
                   </span>
-                </Link>
-              ))}
+                  <span>
+                    <b>{R(hero, hero.titleAr, hero.titleEn)}</b>
+                    <small>{hero.answered ? u.answered : u.voting}</small>
+                  </span>
+                </div>
+                <span className="hm-btn-green">{u.playNow} ▸</span>
+              </div>
             </div>
-          </section>
+          </Link>
         ) : null}
 
-        {people.length ? (
-          <section className="pl-section" aria-label={t.aiPeople}>
-            <div className="pl-row">
-              <h2 className="wc-section-title">{t.aiPeople}</h2>
-              <Link className="wc-link" href="/people">{t.seeAll}</Link>
+        {/* Your day */}
+        <section className="pl-section" aria-label={T(content.day.title)}>
+          <div className="hm-sechead">
+            <div>
+              <h2 className="hm-h2">{T(content.day.title)} <span style={{ color: "var(--hm-red)" }}>✦</span></h2>
+              <p className="hm-sub">{T(content.day.sub)}</p>
             </div>
-            <div className="pl-rail">
-              {people.map((p) => (
-                <Link key={p.id} href={`/people/${p.slug}`} className="pl-card pl-person-rail" style={{ ["--pl-accent" as string]: p.color }}>
-                  <span className="pl-avatar" aria-hidden="true">{p.emoji}</span>
-                  <b>{L(p.nameAr, p.nameEn)}</b>
-                  <span className="pl-muted wc-clamp2">{L(p.roleAr, p.roleEn)}</span>
-                  <span className="pl-tag pl-tag-ai">{AI_LABEL[locale]}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="pl-section" aria-label={t.discover}>
-          <div className="pl-row">
-            <h2 className="wc-section-title">{t.discover}</h2>
-            <Link className="wc-link" href="/discover">{t.seeAll}</Link>
+            <Link href="/today" className="hm-more">{u.seeAll} ▸</Link>
           </div>
-          <div className="pl-grid2">
-            <Link href="/explore" className="pl-card pl-tile" style={{ ["--pl-accent" as string]: "#ff5a48" }}>
-              <span className="pl-emoji" aria-hidden="true">🎬</span>
-              <span className="pl-title">{t.stories}</span>
-              <span className="pl-muted">{t.storiesHint}</span>
+          <div className="hm-grid">
+            <Link href="/today" className="hm-card hm-card-red hm-tile" style={{ ["--hm-accent" as string]: "#f5c242" }}>
+              <Art src={cardImg} emoji={today.card.drawn ? card.emoji : "🔮"} accent="#f5c242">
+                <span className="hm-badge hm-badge-dark">{today.card.drawn ? (ar ? card.wordAr : card.wordEn) : "?"}</span>
+              </Art>
+              <div className="hm-tile-body">
+                <span className="hm-tile-kicker">{u.card}</span>
+                <span className="hm-tile-title">{today.card.drawn ? (ar ? card.nameAr : card.nameEn) : "???"}</span>
+                <span className="hm-tile-text">{today.card.drawn ? cardMeaning(card, today.card.reversed, locale) : u.tapReveal}</span>
+                <span className="hm-btn-line">{u.reveal} ▸</span>
+              </div>
             </Link>
-            <Link href="/rewards" className="pl-card pl-tile" style={{ ["--pl-accent" as string]: "#31e5a0" }}>
-              <span className="pl-emoji" aria-hidden="true">🎁</span>
-              <span className="pl-title">{t.rewards}</span>
-              <span className="pl-muted">{t.rewardsHint}</span>
+            <Link href={sign ? "/horoscope" : "/today"} className="hm-card hm-tile" style={{ ["--hm-accent" as string]: "#7c5cff" }}>
+              <Art src={signImg} emoji={sign ? sign.symbol : "✨"} accent="#7c5cff">
+                {today.horoscope?.luckyNumber ? <span className="hm-badge hm-badge-dark">#{today.horoscope.luckyNumber}</span> : null}
+              </Art>
+              <div className="hm-tile-body">
+                <span className="hm-tile-kicker" style={{ color: "#c4b5ff" }}>{u.horoscope}</span>
+                <span className="hm-tile-title">{sign ? (ar ? sign.ar : sign.en) : u.pickSign}</span>
+                <span className="hm-tile-text">{sign && today.horoscope ? (ar ? today.horoscope.ar : today.horoscope.en) : u.pickHint}</span>
+                <span className="hm-btn-line">{u.readChart} ▸</span>
+              </div>
             </Link>
           </div>
         </section>
+
+        {/* Rooms */}
+        {tiles.length || wide.length ? (
+          <section className="pl-section" aria-label={T(content.rooms.title)}>
+            <div className="hm-sechead">
+              <div>
+                <h2 className="hm-h2">
+                  {T(content.rooms.title)} <span className="hm-pill">{T(content.rooms.badge)}</span>
+                </h2>
+                <p className="hm-sub">{T(content.rooms.sub)}</p>
+              </div>
+              <Link href="/rooms" className="hm-more">{u.explore} ▸</Link>
+            </div>
+            {tiles.length ? (
+              <div className="hm-grid">
+                {tiles.map((r, i) => (
+                  <Link key={r.id} href={`/rooms/${r.slug}`} className={`hm-card hm-tile${i % 2 ? " hm-card-red" : ""}`} style={{ ["--hm-accent" as string]: r.color }}>
+                    <Art src={r.image} emoji={r.emoji} accent={r.color}>
+                      <span className="hm-badge">{compact(r.players, locale)} ●</span>
+                    </Art>
+                    <div className="hm-tile-body">
+                      <span className="hm-tile-kicker">{R(r, r.tagAr, r.tagEn) || (r.answered ? u.answered : u.roundToday)}</span>
+                      <span className="hm-tile-title">{R(r, r.titleAr, r.titleEn)}</span>
+                      <span className="hm-tile-text">{roomText(r)}</span>
+                      <span className="hm-tile-foot">
+                        <span>{u.votes(compact(r.players, locale))}</span>
+                        <span className="hm-btn-green">{i % 2 ? u.join : u.play} ▸</span>
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+            {wide.map((r) => (
+              <Link key={r.id} href={`/rooms/${r.slug}`} className="hm-card hm-wide" style={{ ["--hm-accent" as string]: r.color }}>
+                <Art src={r.image} emoji={r.emoji} accent={r.color} className="hm-shade">
+                  {R(r, r.tagAr, r.tagEn) ? <span className="hm-badge" style={{ background: "#f5c242", color: "#2a1a00" }}>{R(r, r.tagAr, r.tagEn)}</span> : null}
+                </Art>
+                <div className="hm-wide-body">
+                  <div className="hm-tagline">
+                    <span className="hm-pill">{R(r, r.titleAr, r.titleEn)}</span>
+                    <span style={{ color: "var(--wc-muted)", marginInlineStart: "auto" }}>● {u.playing(compact(r.players, locale))}</span>
+                  </div>
+                  <h3 className="hm-title" style={{ fontSize: 19 }}>{roomText(r)}</h3>
+                  <p className="hm-sub">{R(r, r.blurbAr, r.blurbEn)}</p>
+                  <div className="hm-hero-foot">
+                    {r.config.rewardPing ? <span className="hm-reward">🪙 {u.pings(r.config.rewardPing)}</span> : <span />}
+                    <span className="hm-btn-green">{u.open} ▸</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </section>
+        ) : null}
+
+        {/* AI People */}
+        {people.length ? (
+          <section className="pl-section" aria-label={T(content.people.title)}>
+            <div className="hm-sechead">
+              <div>
+                <h2 className="hm-h2">{T(content.people.title)}</h2>
+                <p className="hm-sub">{T(content.people.sub)}</p>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                <span className="hm-pill hm-pill-red">{T(content.people.badge)}</span>
+                <Link href="/people" className="hm-more">{u.heroes(people.length)}</Link>
+              </div>
+            </div>
+            <div className="hm-rail">
+              {people.map((p, i) => (
+                <Link key={p.id} href={`/people/${p.slug}`} className={`hm-card hm-person${i % 2 ? " hm-card-red" : ""}`} style={{ ["--hm-accent" as string]: p.color }}>
+                  <span className="hm-portrait">
+                    {p.image ? <img src={p.image} alt="" loading="lazy" /> : <span aria-hidden="true">{p.emoji}</span>}
+                  </span>
+                  <span className="hm-person-name">{ar ? p.nameAr : p.nameEn}</span>
+                  {(ar ? p.tagAr : p.tagEn) ? <span className="hm-pill">{ar ? p.tagAr : p.tagEn}</span> : null}
+                  <span className="hm-person-role">{ar ? p.roleAr : p.roleEn}</span>
+                  <span className="hm-ai">{AI_LABEL[locale]}</span>
+                  <span className="hm-btn-line" style={{ width: "100%", justifyContent: "center" }}>{u.chat}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* Discover */}
+        {content.discover.tiles.length ? (
+          <section className="pl-section" aria-label={T(content.discover.title)}>
+            <div className="hm-sechead">
+              <h2 className="hm-h2">{T(content.discover.title)}</h2>
+              <Link href="/discover" className="hm-more">{u.seeAll} ▸</Link>
+            </div>
+            {content.discover.tiles.map((tile, i) => {
+              const img = playImage(tile.image);
+              return (
+                <Link key={i} href={tile.href} className={`hm-card hm-disc${i % 2 ? " hm-card-red" : ""}`} style={{ ["--hm-accent" as string]: tile.color }}>
+                  <div className="hm-disc-body">
+                    {T(tile.kicker) ? <span className="hm-pill" style={{ color: tile.color, borderColor: tile.color }}>{T(tile.kicker)}</span> : null}
+                    <span className="hm-title" style={{ fontSize: 18 }}>{T(tile.title)}</span>
+                    {T(tile.text) ? <span className="hm-sub">{T(tile.text)}</span> : null}
+                    <span className={i % 2 ? "hm-btn-red" : "hm-btn-green"} style={{ marginInlineStart: 0 }}>{T(tile.cta)} ▸</span>
+                  </div>
+                  <span className="hm-disc-img">{img ? <img src={img} alt="" loading="lazy" /> : <span aria-hidden="true">{i % 2 ? "🎡" : "🎬"}</span>}</span>
+                </Link>
+              );
+            })}
+          </section>
+        ) : null}
         <HomeScreenTip locale={locale} />
       </main>
       <BottomNav locale={locale} current="home" />

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 // Rooms: every live room with today's round. A room is configuration (Admin → Rooms), so this list grows
 // without code.
 
@@ -32,7 +33,7 @@ export default async function RoomsPage({ searchParams }: { searchParams: Promis
           <Link key={r.id} href={`/rooms/${r.slug}`} className="pl-card pl-room" style={{ ["--pl-accent" as string]: r.color, minHeight: 0 }}>
             <div className="pl-row">
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <span className="pl-emoji" aria-hidden="true">{r.emoji}</span>
+                {r.image ? <img src={r.image} alt="" className="pl-thumb" /> : <span className="pl-emoji" aria-hidden="true">{r.emoji}</span>}
                 <div>
                   <div className="pl-title">{L(r.titleAr, r.titleEn)}</div>
                   <div className="pl-muted">{L(r.blurbAr, r.blurbEn)}</div>
